@@ -1,0 +1,39 @@
+{
+  "name": "@alaamh/msteams-voice",
+  "version": "0.1.0",
+  "description": "Self-contained Microsoft Teams CVI realtime-voice plugin for OpenClaw. Builds on the public realtime-voice SDK + api.runtime — no voice-call fork, no vendored CallManager. Single openclaw plugins install.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "docx": "^9.0.0",
+    "jszip": "^3.10.1",
+    "ws": "8.21.0",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.6.9"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.12",
+    "openclaw": "2026.6.9",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "openclaw": {
+    "extensions": ["./src/index.ts"],
+    "install": {
+      "npmSpec": "@alaamh/msteams-voice",
+      "defaultChoice": "npm"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  }
+}
