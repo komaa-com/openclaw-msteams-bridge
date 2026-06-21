@@ -1,0 +1,6 @@
+# Single-package "workspace" — exists only to pin one @types/node (avoids the multi-version
+# ChildProcess/EventEmitter clash @types/ws's "@types/node: *" otherwise introduces).
+packages:
+  - "."
+overrides:
+  "@types/node": "^22"
