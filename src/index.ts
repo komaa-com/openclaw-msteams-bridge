@@ -1,7 +1,9 @@
 // @alaamh/msteams-voice — plugin entry (self-contained Teams CVI voice).
 //
-// On startup, resolves the plugin config and (if enabled + a shared secret is set) starts the
-// MsteamsVoiceRuntime: the Teams media WS server, the CallLifecycle, and the per-call realtime bridge.
+// Registers a host-managed background service so the runtime's lifecycle (start on boot, stop on
+// shutdown/reload) is wired by OpenClaw — this is the teardown hook. On start the service brings up
+// the MsteamsVoiceRuntime (Teams media WS server, CallLifecycle, per-call bridge); on stop it tears
+// it all down (closes calls, stops the lifecycle reaper, closes the WS server).
 
 import { definePluginEntry } from "openclaw/plugin-sdk/core";
 import { MsteamsVoiceRuntime } from "./msteams-runtime.js";
@@ -21,15 +23,18 @@ export default definePluginEntry({
       return;
     }
 
-    const runtime = new MsteamsVoiceRuntime(api, cfg);
-    void runtime.start().catch((err) => {
-      logger.error(
-        `msteams-voice: failed to start — ${err instanceof Error ? err.message : String(err)}`,
-      );
+    let runtime: MsteamsVoiceRuntime | undefined;
+    api.registerService({
+      id: "msteams-voice",
+      start: async () => {
+        runtime = new MsteamsVoiceRuntime(api, cfg);
+        await runtime.start();
+      },
+      // Teardown: host calls stop() on shutdown/reload → close calls, stop reaper, close WS server.
+      stop: async () => {
+        await runtime?.stop();
+        runtime = undefined;
+      },
     });
-
-    // TODO(teardown): no on-dispose hook is wired yet — the media WS + reaper live for the process
-    // lifetime (the reaper interval is unref'd). Call runtime.stop() from a teardown hook once the
-    // plugin API exposes one.
   },
 });
