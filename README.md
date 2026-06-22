@@ -23,7 +23,7 @@ cd extensions/msteams-voice && pnpm install && pnpm build
 | How it talks | speech-to-speech realtime model (e.g. OpenAI Realtime) | your openclaw-configured **STT → agent/model → TTS** |
 | Needs a realtime provider | **yes** (`realtime.provider` + key) | **no** — uses openclaw's transcription + TTS + agent |
 | Latency | lowest | higher (per-turn) |
-| Continuous vision push | yes | on-demand (see vision note) |
+| Vision | continuous push (live) | attached to each agent turn |
 | Use it when | you have a realtime voice model | you want any STT/TTS/model, or lower cost |
 
 **Mode selection:** set `mode` to `"realtime"` or `"streaming"`. If omitted, the runtime auto-selects:
@@ -82,14 +82,22 @@ Config lives under `plugins.entries."msteams-voice".config` in your OpenClaw con
     "inboundGreeting": "Hello, this is the assistant.",
     "maxConcurrentCalls": 4,
     "groupCall": { "requireAddress": true, "wakePhrases": ["assistant"] },
-    "meetingRecap": true
+    "maxVisionPerMinute": 30,
+    "meetingRecap": true,
+    "stt": {
+      "provider": "<your-stt-provider>",
+      "providers": { "<your-stt-provider>": { "apiKey": "<key>" } }
+    }
   } } } }
 }
 ```
-In **streaming** mode the **STT (transcription), TTS, and agent/model come from your openclaw
-configuration** — there is no realtime provider or key to set here. The `realtime.*` block is ignored
-except the echo-guard knobs (`suppressInputDuringPlayback`, `echoSuppressionWindowMs`, `echoBargeInRms`),
-which apply to playback in both modes.
+In **streaming** mode the **TTS and agent/model come from your openclaw configuration**. STT uses a
+live transcription **session**: selected by `stt.provider`/`stt.providers` when set, otherwise your
+openclaw-configured transcription provider; if none resolves it falls back to VAD-segmented file
+transcription (`api.runtime.mediaUnderstanding.transcribeAudioFile`) — no regression. No realtime
+provider or key is needed. The `realtime.*` block is ignored except the echo-guard knobs
+(`suppressInputDuringPlayback`, `echoSuppressionWindowMs`, `echoBargeInRms`), which apply to playback
+in both modes. Group-call gating, DTMF, and vision work in streaming mode too.
 
 ### Outbound call-backs (optional, either mode)
 ```jsonc
@@ -101,7 +109,10 @@ which apply to playback in both modes.
   "defaultMode": "notify"        // "notify" delivers a message then ends; "conversation" opens a turn
 }
 ```
-Then call `runtime.placeCall(userObjectId, { message, mode })` (no-answer/declined → voicemail/no-answer).
+`placeCall(userObjectId, { message, mode })` is implemented on the runtime (no-answer/declined →
+voicemail/no-answer) and the `outbound` block above enables it, **but it is not yet exposed as an
+agent tool or HTTP endpoint** — triggering it currently requires a host call into the runtime. A
+built-in trigger (agent tool / endpoint) is a small follow-up.
 
 ### Key reference
 | Key | Applies | Meaning |
@@ -119,8 +130,9 @@ Then call `runtime.placeCall(userObjectId, { message, mode })` (no-answer/declin
 | `groupCall.{requireAddress,wakePhrases,followUpWindowMs}` | both | speak-only-when-addressed gating |
 | `maxVisionPerMinute` | both | vision spend cap |
 | `meetingRecap` / `bilingual` | both | post-call minutes / Arabic-English |
-| `realtime.{provider,providers,instructions,toolPolicy,…}` | realtime | the realtime voice provider + behavior |
-| `outbound.{…}` | both | outbound call-backs / voicemail |
+| `realtime.{provider,providers,instructions,toolPolicy,suppressInputDuringPlayback,echoSuppressionWindowMs,echoBargeInRms}` | realtime (echo knobs: both) | realtime voice provider + behavior; provider key is a secret input |
+| `stt.{provider,providers}` | streaming | live transcription provider (else openclaw STT / file fallback); provider key is a secret input |
+| `outbound.{enabled,workerBaseUrl,tenantId,answerTimeoutMs,defaultMode}` | both | outbound call-backs / voicemail (see trigger note above) |
 
 ## Architecture (why it's small)
 The hard parts come from OpenClaw (see [DESIGN.md](DESIGN.md)):
