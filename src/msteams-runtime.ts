@@ -13,6 +13,13 @@ import {
   resolveConfiguredRealtimeVoiceProvider,
   resolveRealtimeVoiceAgentConsultToolsAllow,
 } from "openclaw/plugin-sdk/realtime-voice";
+import {
+  getRealtimeTranscriptionProvider,
+  listRealtimeTranscriptionProviders,
+  type RealtimeTranscriptionProviderConfig,
+  type RealtimeTranscriptionProviderPlugin,
+} from "openclaw/plugin-sdk/realtime-transcription";
+import { resolveConfiguredCapabilityProvider } from "openclaw/plugin-sdk/provider-selection-runtime";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import { createHmac } from "node:crypto";
 import { promises as fs } from "node:fs";
@@ -54,6 +61,11 @@ export class MsteamsVoiceRuntime {
   private readonly calls = new Map<string, MsteamsRealtimeCall>();
   private readonly log: MsteamsLogger;
   private realtime?: { provider?: unknown; providerConfig?: unknown };
+  /** Resolved streaming STT provider (mode:"streaming"); undefined → file-based STT fallback. */
+  private transcription?: {
+    provider: RealtimeTranscriptionProviderPlugin;
+    providerConfig: RealtimeTranscriptionProviderConfig;
+  };
   /** Selected voice path; finalized in start() once the realtime provider is resolved. */
   private mode: "realtime" | "streaming" = "realtime";
   /** Lazily-built TTS provider for the streaming path (api.runtime.tts). */
@@ -139,6 +151,7 @@ export class MsteamsVoiceRuntime {
     // "realtime" when a realtime provider resolved (or explicitly configured), else "streaming".
     this.mode =
       this.cfg.voice.mode ?? (this.realtime?.provider ? "realtime" : "streaming");
+    if (this.mode === "streaming") this.resolveTranscriptionProvider();
     this.lifecycle.start();
     await this.media.start();
     this.log.info(`[msteams-voice] started (mode=${this.mode})`);
@@ -341,10 +354,52 @@ export class MsteamsVoiceRuntime {
     return `msteams:${session.caller?.aadId || session.callId}`;
   }
 
+  /**
+   * Resolve a streaming STT provider (mode:"streaming"). Auto-selects from the host's configured
+   * realtime transcription providers when `stt.provider` is omitted; leaves `this.transcription`
+   * undefined (→ file-based STT fallback) when none resolve.
+   */
+  private resolveTranscriptionProvider(): void {
+    const cfg = this.api.config as unknown as OpenClawConfig;
+    const res = resolveConfiguredCapabilityProvider({
+      configuredProviderId: this.cfg.voice.stt?.provider,
+      providerConfigs: this.cfg.voice.stt?.providers,
+      cfg,
+      cfgForResolve: cfg,
+      getConfiguredProvider: (id) => getRealtimeTranscriptionProvider(id, cfg),
+      listProviders: () => listRealtimeTranscriptionProviders(cfg),
+      resolveProviderConfig: ({ provider, cfg: c, rawConfig }) =>
+        provider.resolveConfig?.({ cfg: c, rawConfig }) ?? rawConfig,
+      isProviderConfigured: ({ provider, cfg: c, providerConfig }) =>
+        provider.isConfigured({ cfg: c, providerConfig }),
+    });
+    if (res.ok) {
+      this.transcription = { provider: res.provider, providerConfig: res.providerConfig };
+      this.log.info(`[msteams-voice] streaming STT provider: ${res.provider.id}`);
+    } else {
+      this.log.info(
+        `[msteams-voice] no streaming STT provider resolved (${res.code}); using file-based STT fallback`,
+      );
+    }
+  }
+
   private buildStreamingDeps(session: MsteamsSession, greeting?: string): MsteamsStreamingDeps {
     const cfg = this.api.config as unknown as OpenClawConfig;
     const agentRuntime = this.api.runtime.agent;
+    const transcription = this.transcription;
     return {
+      // Preferred: a live streaming STT session (lower latency) when a provider resolved.
+      ...(transcription
+        ? {
+            createTranscriptionSession: (callbacks) =>
+              transcription.provider.createSession({
+                cfg,
+                providerConfig: transcription.providerConfig,
+                ...callbacks,
+              }),
+          }
+        : {}),
+      // Fallback: VAD-segmented utterance → temp WAV → file STT (used when no provider resolved).
       transcribe: async (pcm16k: Buffer): Promise<string> => {
         const wav = pcmToWav(pcm16k, MSTEAMS_PCM_SAMPLE_RATE_HZ);
         const tmp = path.join(os.tmpdir(), `msteams-voice-${session.callId}-${this.sttSeq++}.wav`);

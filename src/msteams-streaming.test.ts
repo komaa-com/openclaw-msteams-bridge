@@ -1,7 +1,39 @@
 import { describe, expect, it, vi } from "vitest";
+import type {
+  RealtimeTranscriptionSession,
+  RealtimeTranscriptionSessionCallbacks,
+} from "openclaw/plugin-sdk/realtime-transcription";
 import type { MsteamsSession } from "./msteams-media-stream.js";
 import { createMsteamsStreamingCall, type MsteamsStreamingDeps } from "./msteams-streaming.js";
 import type { MsteamsTtsProvider } from "./msteams-tts.js";
+
+/** Fake live STT session: captures callbacks so a test can emit transcripts; records pushed audio. */
+function fakeSttSession() {
+  let cb: RealtimeTranscriptionSessionCallbacks = {};
+  let connected = false;
+  const audio: Buffer[] = [];
+  const session: RealtimeTranscriptionSession = {
+    connect: vi.fn(async () => {
+      connected = true;
+    }),
+    sendAudio: (b: Buffer) => {
+      audio.push(b);
+    },
+    close: vi.fn(() => {
+      connected = false;
+    }),
+    isConnected: () => connected,
+  };
+  return {
+    create: (callbacks: RealtimeTranscriptionSessionCallbacks): RealtimeTranscriptionSession => {
+      cb = callbacks;
+      return session;
+    },
+    emitTranscript: (t: string) => cb.onTranscript?.(t),
+    audio,
+    session,
+  };
+}
 
 /** 20 ms PCM 16 kHz mono frame (320 samples) at a given amplitude. amplitude 0 ⇒ silence. */
 function frame(amplitude: number): Buffer {
@@ -202,5 +234,64 @@ describe("createMsteamsStreamingCall", () => {
     call.notifyDtmf("5");
     await vi.waitFor(() => expect(consult).toHaveBeenCalledTimes(1));
     expect(consult.mock.calls[0]![0].question).toContain("5");
+  });
+
+  it("session mode: streams audio to the live STT session + answers on a final transcript", async () => {
+    const session = fakeSession();
+    const stt = fakeSttSession();
+    const transcribe = vi.fn(async () => "file-stt-should-not-run");
+    const consult = vi.fn(async () => ({ text: "Sure, here you go." }));
+    const call = createMsteamsStreamingCall({
+      session,
+      deps: baseDeps({ transcribe, consult, createTranscriptionSession: stt.create }),
+    });
+    await vi.waitFor(() => expect(stt.session.isConnected()).toBe(true));
+
+    // Inbound audio is forwarded to the live session (not buffered for file STT).
+    call.pushAudio(LOUD());
+    call.pushAudio(LOUD());
+    expect(stt.audio.length).toBeGreaterThan(0);
+    expect(transcribe).not.toHaveBeenCalled();
+
+    // A FINAL transcript drives one turn → agent → spoken reply.
+    stt.emitTranscript("what's on the screen");
+    await vi.waitFor(() => expect(consult).toHaveBeenCalledTimes(1));
+    expect(consult.mock.calls[0]![0].question).toBe("what's on the screen");
+    await vi.waitFor(() => expect(sentTypes(session)).toContain("audio.frame"));
+  });
+
+  it("session mode: group-call gate still applies to final transcripts", async () => {
+    const session = fakeSession();
+    const stt = fakeSttSession();
+    const consult = vi.fn(async () => ({ text: "ok" }));
+    const call = createMsteamsStreamingCall({
+      session,
+      deps: baseDeps({
+        consult,
+        createTranscriptionSession: stt.create,
+        groupCallGate: { requireAddress: true, wakePhrases: ["assistant"], followUpWindowMs: 8000 },
+      }),
+    });
+    call.setHumanCount(2); // meeting → gated
+    await vi.waitFor(() => expect(stt.session.isConnected()).toBe(true));
+
+    stt.emitTranscript("what time is it"); // unaddressed → not answered
+    await new Promise((r) => setTimeout(r, 20));
+    expect(consult).not.toHaveBeenCalled();
+
+    stt.emitTranscript("assistant what time is it"); // wake phrase → answered
+    await vi.waitFor(() => expect(consult).toHaveBeenCalledTimes(1));
+  });
+
+  it("session mode: close() closes the live STT session", async () => {
+    const session = fakeSession();
+    const stt = fakeSttSession();
+    const call = createMsteamsStreamingCall({
+      session,
+      deps: baseDeps({ createTranscriptionSession: stt.create }),
+    });
+    await vi.waitFor(() => expect(stt.session.isConnected()).toBe(true));
+    call.close();
+    expect(stt.session.close).toHaveBeenCalled();
   });
 });

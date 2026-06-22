@@ -14,6 +14,10 @@
  */
 
 import type { RealtimeVoiceAgentConsultTranscriptEntry } from "openclaw/plugin-sdk/realtime-voice";
+import type {
+  RealtimeTranscriptionSession,
+  RealtimeTranscriptionSessionCallbacks,
+} from "openclaw/plugin-sdk/realtime-transcription";
 import {
   MSTEAMS_PCM_SAMPLE_RATE_HZ,
   type MsteamsLogger,
@@ -34,8 +38,21 @@ const DEFAULT_ECHO_BARGE_IN_RMS = 0.15;
 const MAX_UTTERANCE_MS = 30_000;
 
 export interface MsteamsStreamingDeps {
-  /** Transcribe one utterance (PCM 16 kHz, 16-bit mono LE) → text ("" if nothing recognized). */
-  transcribe: (pcm16k: Buffer) => Promise<string>;
+  /**
+   * Fallback STT: transcribe one VAD-segmented utterance (PCM 16 kHz, 16-bit mono LE) → text. Used
+   * when {@link createTranscriptionSession} is not supplied (no streaming transcription provider
+   * resolved). Optional, but at least one of `transcribe` / `createTranscriptionSession` is required.
+   */
+  transcribe?: (pcm16k: Buffer) => Promise<string>;
+  /**
+   * Preferred STT: live streaming transcription session (lower latency). When supplied, inbound PCM
+   * is streamed to the session and a turn fires on each FINAL transcript; the energy-VAD +
+   * {@link transcribe} path is bypassed. The runtime wires this to the configured realtime
+   * transcription provider's `createSession`.
+   */
+  createTranscriptionSession?: (
+    callbacks: RealtimeTranscriptionSessionCallbacks,
+  ) => RealtimeTranscriptionSession;
   /** Run the agent for a caller question (with prior transcript + any shared frames) → reply text. */
   consult: (params: {
     question: string;
@@ -222,14 +239,16 @@ export function createMsteamsStreamingCall(params: {
   }
 
   async function endUtterance(): Promise<void> {
+    const transcribe = deps.transcribe;
     const pcm = Buffer.concat(speechBuffers);
     const lengthMs = bufferedMs;
     resetUtterance();
+    if (!transcribe) return; // session mode — no file fallback configured
     if (lengthMs < minUtteranceMs || pcm.length === 0) return;
     if (processing || speaking) return; // ignore overlapping speech while busy
     let text = "";
     try {
-      text = (await deps.transcribe(pcm)).trim();
+      text = (await transcribe(pcm)).trim();
     } catch (err) {
       log?.warn(`[msteams-voice] streaming STT failed for ${session.callId}: ${String(err)}`);
       return;
@@ -243,6 +262,24 @@ export function createMsteamsStreamingCall(params: {
     void runTurn(deps.greetingInstruction);
   }
 
+  // Preferred STT: a live streaming session. Final transcripts drive turns; partials are unused (we
+  // do energy-based barge-in below). When absent we fall back to the energy-VAD + `transcribe` path.
+  const sttSession: RealtimeTranscriptionSession | undefined = deps.createTranscriptionSession?.({
+    onTranscript: (t: string) => {
+      const text = t.trim();
+      if (text) void runTurn(text, { gated: true });
+    },
+    onError: (e: Error) =>
+      log?.warn(`[msteams-voice] streaming STT session error for ${session.callId}: ${e.message}`),
+  });
+  if (sttSession) {
+    void sttSession
+      .connect()
+      .catch((e) =>
+        log?.warn(`[msteams-voice] streaming STT connect failed for ${session.callId}: ${String(e)}`),
+      );
+  }
+
   return {
     pushAudio: (pcm16k: Buffer) => {
       if (closed) return;
@@ -251,7 +288,6 @@ export function createMsteamsStreamingCall(params: {
       // first inbound audio instead (fires once).
       if (!requireRecording) maybeGreet();
       const rms = frameRms(pcm16k);
-      const ms = frameMs(pcm16k);
 
       if (speaking) {
         // Echo guard: while we speak, only audio loud enough to be a genuine barge-in counts.
@@ -259,9 +295,17 @@ export function createMsteamsStreamingCall(params: {
         // Barge-in: caller interrupted → stop playback and start capturing their utterance.
         cancelPlayback();
       }
-      // While the agent/STT is processing, don't accumulate (we ignore overlapping turns anyway).
+      // While the agent/STT is processing, don't feed audio (we ignore overlapping turns anyway).
       if (processing) return;
 
+      if (sttSession) {
+        // Live STT: stream the frame; the final transcript arrives via the onTranscript callback.
+        if (sttSession.isConnected()) sttSession.sendAudio(pcm16k);
+        return;
+      }
+
+      // Fallback: energy-VAD utterance segmentation → file STT.
+      const ms = frameMs(pcm16k);
       if (rms >= energyThreshold) {
         speechBuffers.push(pcm16k);
         bufferedMs += ms;
@@ -305,6 +349,7 @@ export function createMsteamsStreamingCall(params: {
       closed = true;
       cancelPlayback();
       resetUtterance();
+      sttSession?.close();
       if (reason) session.close(reason);
     },
   };
