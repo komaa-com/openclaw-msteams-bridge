@@ -14,8 +14,11 @@ describe("isAllowlistedCaller", () => {
     expect(isAllowlistedCaller(aad, [aad.toLowerCase()])).toBe(true);
     expect(isAllowlistedCaller(aad, ["someone-else"])).toBe(false);
   });
-  it("matches phone numbers by digits only", () => {
-    expect(isAllowlistedCaller("+1-415-555-0100", ["(415) 555 0100"])).toBe(true);
+  it("matches phone numbers by digits only (exact digit sequence)", () => {
+    // Same digits, different formatting → match.
+    expect(isAllowlistedCaller("+1 (415) 555-0100", ["1-415-555-0100"])).toBe(true);
+    // Differing digits (country code present on one side only) → no fuzzy match.
+    expect(isAllowlistedCaller("+1-415-555-0100", ["(415) 555 0100"])).toBe(false);
   });
   it("rejects empty caller or empty allowlist", () => {
     expect(isAllowlistedCaller("", ["x"])).toBe(false);
