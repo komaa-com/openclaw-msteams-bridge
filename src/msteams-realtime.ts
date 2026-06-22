@@ -44,8 +44,9 @@ import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import type { VoiceCallConfig } from "./config.js";
 import type { CoreAgentDeps } from "./core-bridge.js";
 import { inferEmotion } from "./expression.js";
-import { consultMediaPaths, sendBridgeImage } from "./realtime-voice-compat.js";
+import { consultMediaPaths } from "./realtime-voice-compat.js";
 import { type GroupCallGateConfig, isAddressed } from "./group-call-gate.js";
+import { type ConsultImage, pushOrQueueBridgeImage } from "./vision-consult.js";
 import { buildMinutesDocx, type MinutesTranscriptEntry } from "./meeting-minutes-docx.js";
 import {
   MSTEAMS_PCM_SAMPLE_RATE_HZ,
@@ -473,6 +474,12 @@ export function createMsteamsRealtimeCall(params: {
   /** Phase 4 proactive vision: the last frame bytes pushed into the session (skip unchanged), + timer. */
   const lastPushedFrameData: { camera?: string; screenshare?: string } = {};
   let visionPushTimer: ReturnType<typeof setInterval> | undefined;
+  /**
+   * Ambient frames queued for the next agent consult when the realtime bridge has no `sendImage`
+   * (stock published openclaw). Drained into `runMsteamsConsult`'s `images` so the agent still sees
+   * shared video on stock — vision is no longer build-gated on the SDK member.
+   */
+  const pendingAmbientImages: ConsultImage[] = [];
   /** Phase 6b: last emotion cued to the worker, so we only send on change (early + self-correcting). */
   let lastSentExpression: string | undefined;
   let thinking = false;
@@ -610,6 +617,10 @@ export function createMsteamsRealtimeCall(params: {
     const thinkLevel =
       opts.voiceConfig.realtime.consultThinkingLevel ??
       opts.agentRuntime.resolveThinkingDefault({ cfg: opts.cfg, provider: agentProvider, model });
+    // Drain ambient frames queued because the bridge lacked sendImage, and merge with this call's own
+    // images, so the agent sees shared video even on stock openclaw (vision no longer build-gated).
+    const ambientImages = pendingAmbientImages.splice(0, pendingAmbientImages.length);
+    const mergedImages = [...(opts.images ?? []), ...ambientImages];
     return consultRealtimeVoiceAgent({
       cfg: opts.cfg,
       agentRuntime: opts.agentRuntime,
@@ -620,7 +631,7 @@ export function createMsteamsRealtimeCall(params: {
       lane: "voice",
       runIdPrefix: opts.runIdPrefix,
       args: opts.args,
-      ...(opts.images ? { images: opts.images } : {}),
+      ...(mergedImages.length ? { images: mergedImages } : {}),
       transcript: [...transcript],
       surface: opts.surface,
       userLabel: "Caller",
@@ -832,13 +843,18 @@ export function createMsteamsRealtimeCall(params: {
       logger?.debug?.(`MsteamsRealtime: ambient vision push (${label}) for ${callId}`);
       try {
         const owner = describeMsteamsVideoFrameOwner(frame);
-        // sendImage is a realtime-voice SDK member not yet in published openclaw typings — routed via
-        // the private compat helper; no-ops if the installed bridge doesn't implement it.
-        sendBridgeImage(realtime, {
-          dataBase64: frame.dataBase64,
-          mime: frame.mime,
-          text: owner ? `Live ${label} — ${owner}.` : `Live ${label} of the call.`,
-        });
+        // Live push via the bridge's sendImage when present (the `next` build); otherwise queue the
+        // frame as a consult image for the next agent turn so it still reaches the agent on stock
+        // published openclaw (no longer silently dropped).
+        pushOrQueueBridgeImage(
+          realtime,
+          {
+            dataBase64: frame.dataBase64,
+            mime: frame.mime,
+            text: owner ? `Live ${label} — ${owner}.` : `Live ${label} of the call.`,
+          },
+          pendingAmbientImages,
+        );
         // Latch only AFTER a successful send: latching first marked a failed push as "already
         // pushed", so the frame was lost (never retried by the backstop) while its budget hit
         // stayed spent — starving look_at_screen.

@@ -400,70 +400,59 @@ describe("createMsteamsRealtimeCall", () => {
     }
   });
 
-  // Vision push needs realtime-voice `sendImage`, absent in PUBLISHED openclaw (the real bridge
-  // session doesn't forward it) — re-enable when that SDK member ships. See realtime-voice-compat.ts.
-  it.skip("notifyInboundFrame pushes a changed frame to the model and dedupes an unchanged one", () => {
-    const ctx = createMockSession(); // recording active
-    const mock = createMockProvider();
-    let frameData = "AAA";
-    const call = createMsteamsRealtimeCall({
-      session: ctx.session,
-      deps: {
-        provider: mock.provider,
-        providerConfig: {},
-        getLatestFrame: (source) =>
-          source === "camera"
-            ? undefined
-            : {
-                source: "screenshare",
-                dataBase64: frameData,
-                mime: "image/jpeg",
-                width: 100,
-                height: 100,
-                ts: 0,
-              },
-      },
-    });
-
-    call.notifyInboundFrame();
-    expect(mock.sendImage).toHaveBeenCalledTimes(1);
-
-    // Same frame → deduped (no second push).
-    call.notifyInboundFrame();
-    expect(mock.sendImage).toHaveBeenCalledTimes(1);
-
-    // Scene change → pushed again.
-    frameData = "BBB";
-    call.notifyInboundFrame();
-    expect(mock.sendImage).toHaveBeenCalledTimes(2);
-  });
-
-  // Vision push needs realtime-voice `sendImage` (not in published openclaw) — re-enable when it ships.
-  it.skip("pushes camera and screen-share simultaneously when the caller shares both", () => {
+  // Live ambient push via bridge.sendImage (the `next` build) and the stock-openclaw consult-image
+  // fallback are unit-tested directly in vision-consult.test.ts (branch (a): sendImage called;
+  // branch (b): routed to the consult queue). Here we assert the realtime call's end-to-end fallback:
+  // on stock openclaw (the bridge has no sendImage) an ambient frame is queued and reaches the next
+  // agent consult's images, so the agent still sees shared video.
+  it("ambient vision: frame is queued (no bridge sendImage) and reaches the next consult", async () => {
+    consultSpy.mockClear();
+    consultSpy.mockResolvedValueOnce({ text: "It's the pricing slide." });
     const ctx = createMockSession();
     const mock = createMockProvider();
+    const screenFrame = {
+      source: "screenshare" as const,
+      dataBase64: "AMBIENT",
+      mime: "image/jpeg",
+      width: 1,
+      height: 1,
+      ts: 0,
+    };
     const call = createMsteamsRealtimeCall({
       session: ctx.session,
       deps: {
         provider: mock.provider,
         providerConfig: {},
-        getLatestFrame: (source) => ({
-          source: source === "camera" ? "camera" : "screenshare",
-          dataBase64: source === "camera" ? "CAM" : "SCREEN",
-          mime: "image/jpeg",
-          width: 100,
-          height: 100,
-          ts: 0,
-        }),
+        toolPolicy: "safe-read-only",
+        agentRuntime: { resolveThinkingDefault: () => "high" } as unknown as CoreAgentDeps,
+        voiceConfig: {
+          realtime: {},
+          agentId: "main",
+          responseTimeoutMs: 5000,
+        } as unknown as VoiceCallConfig,
+        cfg: {} as unknown as OpenClawConfig,
+        getLatestFrame: (s) => (s === "camera" ? undefined : screenFrame),
+        visionBudget: new VisionBudget(0), // unlimited
       },
     });
 
+    // The published bridge has no sendImage → the ambient push goes to the queue, NOT the provider.
     call.notifyInboundFrame();
-    // Both sources present and distinct → one push each (screen-share + camera).
-    expect(mock.sendImage).toHaveBeenCalledTimes(2);
-    // Unchanged on the next tick → deduped per source.
-    call.notifyInboundFrame();
-    expect(mock.sendImage).toHaveBeenCalledTimes(2);
+    expect(mock.sendImage).not.toHaveBeenCalled();
+
+    // Next agent turn (look_at_screen) drains the queued ambient frame into its consult images
+    // (alongside the look frame), so the agent still sees shared video on stock openclaw.
+    mock.getRequest().onToolCall?.({
+      itemId: "i1",
+      callId: "tc1",
+      name: "look_at_screen",
+      args: { question: "what's on screen?" },
+    });
+    await vi.waitFor(() => expect(consultSpy).toHaveBeenCalledTimes(1));
+    const images =
+      (consultSpy.mock.calls[0]?.[0] as { images?: Array<{ data: string }> })?.images ?? [];
+    // look frame + drained ambient frame (both the screen-share frame).
+    expect(images.filter((i) => i.data === "AMBIENT")).toHaveLength(2);
   });
 
   it("cues a 'thinking' expression while a waiting tool runs", () => {
@@ -1464,49 +1453,6 @@ describe("createMsteamsRealtimeCall", () => {
     expect(expressions().filter((e) => e.emotion === "surprised")).toHaveLength(1);
   });
 
-  // Vision push needs realtime-voice `sendImage` (not in published openclaw) — re-enable when it ships.
-  it.skip("ambient vision pushes the latest changed frame, deduped", () => {
-    vi.useFakeTimers();
-    try {
-      const ctx = createMockSession();
-      const mock = createMockProvider();
-      let frameData = "AAAA";
-      createMsteamsRealtimeCall({
-        session: ctx.session,
-        deps: {
-          provider: mock.provider,
-          providerConfig: {},
-          getLatestFrame: (source) =>
-            source === "camera"
-              ? undefined
-              : {
-                  source: "screenshare",
-                  dataBase64: frameData,
-                  mime: "image/jpeg",
-                  width: 1,
-                  height: 1,
-                  ts: 0,
-                },
-          visionBudget: new VisionBudget(0), // unlimited
-        },
-      });
-
-      vi.advanceTimersByTime(6000);
-      expect(mock.sendImage).toHaveBeenCalledTimes(1); // first frame pushed
-      vi.advanceTimersByTime(6000);
-      expect(mock.sendImage).toHaveBeenCalledTimes(1); // unchanged → skipped
-      frameData = "BBBB";
-      vi.advanceTimersByTime(6000);
-      expect(mock.sendImage).toHaveBeenCalledTimes(2); // changed → pushed
-      expect(mock.sendImage.mock.calls.at(-1)?.[0]).toMatchObject({
-        dataBase64: "BBBB",
-        mime: "image/jpeg",
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("show_to_caller displays an agent-produced image on the tile", async () => {
     consultSpy.mockClear();
     // A real 1×1 PNG on disk — the agent run "produces" it; the bridge reads + displays it.
@@ -1810,44 +1756,8 @@ describe("createMsteamsRealtimeCall", () => {
     );
   });
 
-  // Vision push needs realtime-voice `sendImage` (not in published openclaw) — re-enable when it ships.
-  it.skip("a failed ambient vision push stays retryable and refunds its budget hit (B12)", () => {
-    vi.useFakeTimers();
-    try {
-      const ctx = createMockSession();
-      const mock = createMockProvider();
-      // One slot per minute: a burned hit on the failed push would starve the retry below.
-      const budget = new VisionBudget(1);
-      mock.sendImage.mockImplementationOnce(() => {
-        throw new Error("bridge not ready");
-      });
-      createMsteamsRealtimeCall({
-        session: ctx.session,
-        deps: {
-          provider: mock.provider,
-          providerConfig: {},
-          getLatestFrame: (source) =>
-            source === "camera"
-              ? undefined
-              : {
-                  source: "screenshare",
-                  dataBase64: "AAAA",
-                  mime: "image/jpeg",
-                  width: 1,
-                  height: 1,
-                  ts: 0,
-                },
-          visionBudget: budget,
-        },
-      });
-
-      vi.advanceTimersByTime(6000); // first push throws
-      expect(mock.sendImage).toHaveBeenCalledTimes(1);
-      // Frame NOT latched as pushed + budget hit refunded → the backstop retries it.
-      vi.advanceTimersByTime(6000);
-      expect(mock.sendImage).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+  // The failed-push refund contract (a present sendImage that throws → budget refunded, frame
+  // retryable) is covered by the unchanged refund/latch logic in pushLatestFrameToModel plus the
+  // "propagates a throwing sendImage" unit test in vision-consult.test.ts. The throw path is only
+  // reachable when the bridge implements sendImage, which the published bridge does not.
 });
