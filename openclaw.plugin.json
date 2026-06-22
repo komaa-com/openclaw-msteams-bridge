@@ -76,7 +76,8 @@
     "secretInputs": {
       "paths": [
         { "path": "sharedSecret", "expected": "string" },
-        { "path": "realtime.providers.*.apiKey", "expected": "string" }
+        { "path": "realtime.providers.*.apiKey", "expected": "string" },
+        { "path": "stt.providers.*.apiKey", "expected": "string" }
       ]
     }
   }
