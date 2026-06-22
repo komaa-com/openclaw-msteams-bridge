@@ -57,6 +57,13 @@ describe("MsteamsVoiceRuntime", () => {
     expect(cfg.limits.maxConcurrentCalls).toBe(4);
     expect(cfg.voice.responseTimeoutMs).toBe(30000);
   });
+
+  it("maps the voice mode that selects realtime vs streaming", () => {
+    expect(resolvePluginConfig({ mode: "streaming" }).voice.mode).toBe("streaming");
+    expect(resolvePluginConfig({ mode: "realtime" }).voice.mode).toBe("realtime");
+    // Unset → runtime decides (realtime if a provider resolves, else streaming).
+    expect(resolvePluginConfig({}).voice.mode).toBeUndefined();
+  });
 });
 
 function apiWithOutbound() {
