@@ -2,5 +2,11 @@
 # ChildProcess/EventEmitter clash @types/ws's "@types/node: *" otherwise introduces).
 packages:
   - "."
+allowBuilds:
+  '@google/genai': true
+  esbuild: true
+  openclaw: true
+  protobufjs: true
+  tree-sitter-bash: true
 overrides:
   "@types/node": "^22"
