@@ -22,6 +22,8 @@ import {
 import type { MsteamsRealtimeCall } from "./msteams-realtime.js";
 import type { MsteamsTtsProvider } from "./msteams-tts.js";
 import { playTtsToCall, type TtsPlaybackTarget } from "./msteams-tts-playback.js";
+import { type GroupCallGateConfig, isAddressed } from "./group-call-gate.js";
+import type { ConsultImage } from "./vision-consult.js";
 
 /** Default energy VAD / echo-guard tuning. */
 const DEFAULT_VAD_ENERGY_THRESHOLD = 0.02;
@@ -34,12 +36,24 @@ const MAX_UTTERANCE_MS = 30_000;
 export interface MsteamsStreamingDeps {
   /** Transcribe one utterance (PCM 16 kHz, 16-bit mono LE) → text ("" if nothing recognized). */
   transcribe: (pcm16k: Buffer) => Promise<string>;
-  /** Run the agent for a caller question (with prior transcript) → speakable reply text. */
+  /** Run the agent for a caller question (with prior transcript + any shared frames) → reply text. */
   consult: (params: {
     question: string;
     transcript: RealtimeVoiceAgentConsultTranscriptEntry[];
+    images?: ConsultImage[];
   }) => Promise<{ text: string }>;
   ttsProvider: MsteamsTtsProvider;
+  /**
+   * Group-call gating: in a meeting (>= 2 humans) with a usable wake phrase, only answer a caller
+   * turn that addresses the bot (or is within the follow-up window). 1:1 calls are never gated.
+   */
+  groupCallGate?: GroupCallGateConfig;
+  /**
+   * Latest shared frame(s) as consult images, attached to each agent turn so the streaming agent has
+   * the same "look at what's shared" awareness as the realtime path. Runtime supplies (vision store +
+   * budget); omitted → audio-only.
+   */
+  getVisionImages?: () => ConsultImage[];
   /**
    * Optional opening line the agent speaks first (model speaks first). Phrased as an instruction
    * (e.g. "Greet the caller and ask how you can help") — run through `consult` to produce real words.
@@ -116,6 +130,24 @@ export function createMsteamsStreamingCall(params: {
   let greeted = false;
   let recordingActive = false;
   let currentSpeaker: string | undefined;
+  let humanCount = 1;
+  let lastAddressedAt: number | undefined;
+  // Group-call gate is active only in a meeting with a usable wake phrase (mirrors the realtime path).
+  const gateActive =
+    !!deps.groupCallGate &&
+    deps.groupCallGate.requireAddress &&
+    deps.groupCallGate.wakePhrases.some((p) => p.trim().length > 0);
+
+  /** In a meeting, is this caller turn for the bot (wake phrase, or within the follow-up window)? */
+  function addressed(text: string): boolean {
+    if (!gateActive || humanCount < 2) return true; // 1:1 (or no gate) is never gated
+    const gate = deps.groupCallGate!;
+    if (isAddressed(text, gate.wakePhrases)) {
+      lastAddressedAt = now();
+      return true;
+    }
+    return lastAddressedAt !== undefined && now() - lastAddressedAt <= gate.followUpWindowMs;
+  }
 
   // VAD accumulation.
   let speechBuffers: Buffer[] = [];
@@ -153,15 +185,29 @@ export function createMsteamsStreamingCall(params: {
   }
 
   /** Run one turn: caller question → agent → spoken reply. */
-  async function runTurn(question: string): Promise<void> {
+  async function runTurn(question: string, opts?: { gated?: boolean }): Promise<void> {
     if (closed || processing) return;
+    const attributed = currentSpeaker ? `${currentSpeaker}: ${question}` : question;
+    // Group-call gate: record the turn (for context / minutes) but don't answer unless addressed.
+    if (opts?.gated && !addressed(question)) {
+      transcript.push({ role: "user", text: attributed });
+      deps.appendTranscript?.({ role: "caller", text: attributed, at: now() });
+      log?.debug?.(
+        `[msteams-voice] streaming: caller turn not addressed to the bot — not answering (${session.callId})`,
+      );
+      return;
+    }
     processing = true;
     try {
-      const attributed = currentSpeaker ? `${currentSpeaker}: ${question}` : question;
       transcript.push({ role: "user", text: attributed });
       deps.appendTranscript?.({ role: "caller", text: attributed, at: now() });
 
-      const { text } = await deps.consult({ question, transcript: [...transcript] });
+      const images = deps.getVisionImages?.();
+      const { text } = await deps.consult({
+        question,
+        transcript: [...transcript],
+        ...(images && images.length ? { images } : {}),
+      });
       if (closed) return;
       const reply = text.trim();
       if (!reply) return;
@@ -188,7 +234,7 @@ export function createMsteamsStreamingCall(params: {
       log?.warn(`[msteams-voice] streaming STT failed for ${session.callId}: ${String(err)}`);
       return;
     }
-    if (text) await runTurn(text);
+    if (text) await runTurn(text, { gated: true });
   }
 
   function maybeGreet(): void {
@@ -231,12 +277,12 @@ export function createMsteamsStreamingCall(params: {
       }
     },
 
-    // Vision is the realtime path's feature; streaming is audio-only.
+    // Frames are pulled at turn time via deps.getVisionImages (attached to the consult), so there's
+    // nothing to push on each inbound frame here.
     notifyInboundFrame: () => {},
 
-    setHumanCount: (_count: number) => {
-      // Group-call gating for the streaming path is not yet applied (deterministic gate is a
-      // follow-up); the count is accepted but unused here.
+    setHumanCount: (count: number) => {
+      humanCount = count;
     },
 
     notifyDtmf: (digit: string) => {

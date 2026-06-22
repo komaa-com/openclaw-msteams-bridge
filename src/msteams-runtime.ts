@@ -22,6 +22,7 @@ import { isInboundCallAllowed } from "./allowlist.js";
 import { CallLifecycle, type SyncKeyedStore } from "./call-lifecycle.js";
 import type { CoreConfig } from "./core-bridge.js";
 import { resolveGroupCallGateConfig } from "./group-call-gate.js";
+import { collectLatestFrameImages } from "./vision-consult.js";
 import {
   MSTEAMS_PCM_SAMPLE_RATE_HZ,
   MsteamsMediaStream,
@@ -358,7 +359,7 @@ export class MsteamsVoiceRuntime {
           await fs.unlink(tmp).catch(() => {});
         }
       },
-      consult: async ({ question, transcript }) => {
+      consult: async ({ question, transcript, images }) => {
         const { provider, model } = resolveVoiceResponseModel({
           voiceConfig: this.cfg.voice,
           agentRuntime,
@@ -376,6 +377,7 @@ export class MsteamsVoiceRuntime {
           lane: "voice",
           runIdPrefix: `msteams-stream-${session.callId}`,
           args: { question },
+          ...(images && images.length ? { images } : {}),
           transcript,
           surface: "a Microsoft Teams call",
           userLabel: "Caller",
@@ -394,6 +396,13 @@ export class MsteamsVoiceRuntime {
       suppressInputDuringPlayback: this.cfg.voice.realtime.suppressInputDuringPlayback,
       echoBargeInRms: this.cfg.voice.realtime.echoBargeInRms,
       requireRecordingStatus: this.cfg.voice.msteams?.requireRecordingStatus,
+      groupCallGate: resolveGroupCallGateConfig(this.cfg.voice.msteams?.groupCall),
+      getVisionImages: () =>
+        collectLatestFrameImages({
+          getLatestFrame: (s) => this.vision.getLatest(session.callId, s),
+          visionBudget: this.visionBudget,
+          callId: session.callId,
+        }),
       appendTranscript: (e) => this.lifecycle.appendTranscript(session.callId, e),
       logger: this.log,
     };
