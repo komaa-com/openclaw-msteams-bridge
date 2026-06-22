@@ -21,6 +21,7 @@
       "inboundPolicy": { "type": "string", "enum": ["disabled", "allowlist", "pairing", "open"] },
       "allowFrom": { "type": "array", "items": { "type": "string" } },
       "inboundGreeting": { "type": "string" },
+      "mode": { "type": "string", "enum": ["realtime", "streaming"] },
       "sessionScope": { "type": "string", "enum": ["per-phone", "per-call", "per-thread"] },
       "maxConcurrentCalls": { "type": "integer", "minimum": 1 },
       "maxDurationSeconds": { "type": "integer", "minimum": 1 },

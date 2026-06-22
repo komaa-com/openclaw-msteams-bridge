@@ -46,6 +46,7 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       inboundPolicy: c.inboundPolicy,
       allowFrom: c.allowFrom,
       inboundGreeting: c.inboundGreeting,
+      mode: c.mode,
       realtime: {
         provider: r.provider,
         providers: r.providers,

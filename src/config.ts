@@ -21,6 +21,12 @@ export interface VoiceCallConfig {
   inboundPolicy?: "disabled" | "allowlist" | "pairing" | "open";
   allowFrom?: string[];
   inboundGreeting?: string;
+  /**
+   * Voice path: "realtime" speech-to-speech model (default when a realtime provider is configured)
+   * or "streaming" STT→agent→TTS (for non-realtime providers). Defaults to "realtime" if a realtime
+   * provider resolves, else "streaming".
+   */
+  mode?: "realtime" | "streaming";
   realtime: {
     provider?: string;
     providers?: Record<string, Record<string, unknown>>;

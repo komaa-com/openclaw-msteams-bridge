@@ -8,13 +8,22 @@
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
-import { resolveConfiguredRealtimeVoiceProvider } from "openclaw/plugin-sdk/realtime-voice";
+import {
+  consultRealtimeVoiceAgent,
+  resolveConfiguredRealtimeVoiceProvider,
+  resolveRealtimeVoiceAgentConsultToolsAllow,
+} from "openclaw/plugin-sdk/realtime-voice";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import { createHmac } from "node:crypto";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { isInboundCallAllowed } from "./allowlist.js";
 import { CallLifecycle, type SyncKeyedStore } from "./call-lifecycle.js";
+import type { CoreConfig } from "./core-bridge.js";
 import { resolveGroupCallGateConfig } from "./group-call-gate.js";
 import {
+  MSTEAMS_PCM_SAMPLE_RATE_HZ,
   MsteamsMediaStream,
   type MsteamsLogger,
   type MsteamsSession,
@@ -24,7 +33,10 @@ import {
   type MsteamsRealtimeCall,
   type MsteamsRealtimeDeps,
 } from "./msteams-realtime.js";
+import { createMsteamsStreamingCall, type MsteamsStreamingDeps } from "./msteams-streaming.js";
+import { createMsteamsTtsProvider, type MsteamsTtsProvider } from "./msteams-tts.js";
 import { MsteamsVisionStore } from "./msteams-vision-store.js";
+import { resolveVoiceResponseModel } from "./response-model.js";
 import { VisionBudget } from "./vision-budget.js";
 import type { ResolvedPluginConfig } from "./plugin-config.js";
 
@@ -41,6 +53,12 @@ export class MsteamsVoiceRuntime {
   private readonly calls = new Map<string, MsteamsRealtimeCall>();
   private readonly log: MsteamsLogger;
   private realtime?: { provider?: unknown; providerConfig?: unknown };
+  /** Selected voice path; finalized in start() once the realtime provider is resolved. */
+  private mode: "realtime" | "streaming" = "realtime";
+  /** Lazily-built TTS provider for the streaming path (api.runtime.tts). */
+  private ttsProvider?: MsteamsTtsProvider;
+  /** Monotonic suffix for streaming STT temp-file names. */
+  private sttSeq = 0;
   /** Calls we placed via the worker, awaiting their media WS session.start to attach. */
   private readonly pendingOutbound = new Map<
     string,
@@ -117,9 +135,12 @@ export class MsteamsVoiceRuntime {
       cfg: this.api.config as unknown as OpenClawConfig,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any) as { provider?: unknown; providerConfig?: unknown };
+    // "realtime" when a realtime provider resolved (or explicitly configured), else "streaming".
+    this.mode =
+      this.cfg.voice.mode ?? (this.realtime?.provider ? "realtime" : "streaming");
     this.lifecycle.start();
     await this.media.start();
-    this.log.info("[msteams-voice] started");
+    this.log.info(`[msteams-voice] started (mode=${this.mode})`);
   }
 
   async stop(): Promise<void> {
@@ -240,8 +261,8 @@ export class MsteamsVoiceRuntime {
   }
 
   private onSessionStart(session: MsteamsSession): void {
-    const provider = this.realtime?.provider;
-    if (!provider) {
+    // Realtime mode requires a resolved provider; streaming mode does not.
+    if (this.mode === "realtime" && !this.realtime?.provider) {
       this.log.error("[msteams-voice] no realtime voice provider resolved — rejecting call");
       session.close("realtime-unavailable");
       return;
@@ -256,10 +277,7 @@ export class MsteamsVoiceRuntime {
         pending.mode === "notify" && pending.message
           ? `Deliver this message to the person, then say goodbye and end the call: "${pending.message}"`
           : (pending.message ?? this.cfg.voice.inboundGreeting);
-      this.calls.set(
-        session.callId,
-        createMsteamsRealtimeCall({ session, deps: this.buildDeps(session, provider, greeting) }),
-      );
+      this.calls.set(session.callId, this.createCall(session, greeting));
       return;
     }
 
@@ -285,16 +303,100 @@ export class MsteamsVoiceRuntime {
       session.close("busy");
       return;
     }
-    // Inbound realtime is active as soon as the bridge connects; mark answered so the
+    // Inbound is active as soon as the bridge connects; mark answered so the
     // unanswered-call reaper doesn't kill it (maxDuration still applies).
     this.lifecycle.answer(session.callId);
-    this.calls.set(
-      session.callId,
-      createMsteamsRealtimeCall({
-        session,
-        deps: this.buildDeps(session, provider, this.cfg.voice.inboundGreeting),
-      }),
-    );
+    this.calls.set(session.callId, this.createCall(session, this.cfg.voice.inboundGreeting));
+  }
+
+  /** Build the call handle for the selected voice path (realtime speech-to-speech vs streaming). */
+  private createCall(session: MsteamsSession, greeting?: string): MsteamsRealtimeCall {
+    if (this.mode === "streaming") {
+      return createMsteamsStreamingCall({ session, deps: this.buildStreamingDeps(session, greeting) });
+    }
+    return createMsteamsRealtimeCall({
+      session,
+      deps: this.buildDeps(session, this.realtime?.provider, greeting),
+    });
+  }
+
+  private getTtsProvider(): MsteamsTtsProvider {
+    if (!this.ttsProvider) {
+      this.ttsProvider = createMsteamsTtsProvider({
+        coreConfig: this.api.config as unknown as CoreConfig,
+        ttsOverride: this.cfg.voice.tts,
+        runtime: this.api.runtime.tts,
+        logger: { warn: (m) => this.log.warn(m) },
+      });
+    }
+    return this.ttsProvider;
+  }
+
+  /** Consult session key, honoring sessionScope (mirrors the realtime path). */
+  private streamingSessionKey(session: MsteamsSession): string {
+    const scope = this.cfg.voice.sessionScope;
+    if (scope === "per-call") return `msteams:${session.callId}`;
+    if (scope === "per-thread") return `msteams:${session.threadId || session.callId}`;
+    return `msteams:${session.caller?.aadId || session.callId}`;
+  }
+
+  private buildStreamingDeps(session: MsteamsSession, greeting?: string): MsteamsStreamingDeps {
+    const cfg = this.api.config as unknown as OpenClawConfig;
+    const agentRuntime = this.api.runtime.agent;
+    return {
+      transcribe: async (pcm16k: Buffer): Promise<string> => {
+        const wav = pcmToWav(pcm16k, MSTEAMS_PCM_SAMPLE_RATE_HZ);
+        const tmp = path.join(os.tmpdir(), `msteams-voice-${session.callId}-${this.sttSeq++}.wav`);
+        await fs.writeFile(tmp, wav);
+        try {
+          const res = await this.api.runtime.mediaUnderstanding.transcribeAudioFile({
+            filePath: tmp,
+            cfg,
+          });
+          return res.text ?? "";
+        } finally {
+          await fs.unlink(tmp).catch(() => {});
+        }
+      },
+      consult: async ({ question, transcript }) => {
+        const { provider, model } = resolveVoiceResponseModel({
+          voiceConfig: this.cfg.voice,
+          agentRuntime,
+        });
+        const thinkLevel =
+          this.cfg.voice.realtime.consultThinkingLevel ??
+          agentRuntime.resolveThinkingDefault({ cfg, provider, model });
+        const result = await consultRealtimeVoiceAgent({
+          cfg,
+          agentRuntime,
+          logger: { warn: (m) => this.log.warn(m) },
+          agentId: this.cfg.voice.agentId ?? "main",
+          sessionKey: this.streamingSessionKey(session),
+          messageProvider: "voice",
+          lane: "voice",
+          runIdPrefix: `msteams-stream-${session.callId}`,
+          args: { question },
+          transcript,
+          surface: "a Microsoft Teams call",
+          userLabel: "Caller",
+          assistantLabel: "Agent",
+          questionSourceLabel: "caller",
+          provider,
+          model,
+          thinkLevel,
+          fastMode: this.cfg.voice.realtime.consultFastMode,
+          toolsAllow: resolveRealtimeVoiceAgentConsultToolsAllow(this.cfg.voice.realtime.toolPolicy),
+        });
+        return { text: result.text };
+      },
+      ttsProvider: this.getTtsProvider(),
+      greetingInstruction: greeting,
+      suppressInputDuringPlayback: this.cfg.voice.realtime.suppressInputDuringPlayback,
+      echoBargeInRms: this.cfg.voice.realtime.echoBargeInRms,
+      requireRecordingStatus: this.cfg.voice.msteams?.requireRecordingStatus,
+      appendTranscript: (e) => this.lifecycle.appendTranscript(session.callId, e),
+      logger: this.log,
+    };
   }
 
   private buildDeps(
@@ -335,4 +437,27 @@ export class MsteamsVoiceRuntime {
     this.calls.delete(info.callId);
     this.lifecycle.end(info.callId, "hangup-user");
   }
+}
+
+/** Wrap raw PCM (16-bit mono LE) in a minimal WAV container so file-based STT can read it. */
+function pcmToWav(pcm: Buffer, sampleRate: number): Buffer {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcm.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
 }
