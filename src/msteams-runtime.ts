@@ -9,6 +9,7 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { resolveConfiguredRealtimeVoiceProvider } from "openclaw/plugin-sdk/realtime-voice";
+import { isInboundCallAllowed } from "./allowlist.js";
 import { CallLifecycle, type SyncKeyedStore } from "./call-lifecycle.js";
 import { resolveGroupCallGateConfig } from "./group-call-gate.js";
 import {
@@ -122,12 +123,20 @@ export class MsteamsVoiceRuntime {
       session.close("realtime-unavailable");
       return;
     }
+    const from = session.caller?.aadId ?? "";
+    if (!isInboundCallAllowed(this.cfg.voice.inboundPolicy, this.cfg.voice.allowFrom, from)) {
+      this.log.warn(
+        `[msteams-voice] inbound call rejected by policy "${this.cfg.voice.inboundPolicy ?? "disabled"}"`,
+      );
+      session.close("not-allowed");
+      return;
+    }
     try {
       this.lifecycle.initiate({
         callId: session.callId,
         providerCallId: session.callId,
         direction: "inbound",
-        from: session.caller?.aadId ?? "",
+        from,
         to: "",
       });
     } catch (err) {
