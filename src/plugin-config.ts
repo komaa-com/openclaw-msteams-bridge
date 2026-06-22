@@ -67,7 +67,16 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
           fallbackToConsult: false,
         }) as MsteamsVoiceConfig["realtime"]["fastContext"],
       },
-      msteams: c.msteams,
+      // Manifest exposes these flat (own plugin namespace); build the nested `msteams` object the
+      // CVI bridge reads (config.msteams.*). A top-level `msteams` key would be rejected by the
+      // manifest's additionalProperties:false.
+      msteams: {
+        requireRecordingStatus: c.requireRecordingStatus,
+        groupCall: c.groupCall,
+        maxVisionPerMinute: c.maxVisionPerMinute,
+        meetingRecap: c.meetingRecap,
+        bilingual: c.bilingual,
+      },
       tts: c.tts,
     },
   };
