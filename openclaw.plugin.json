@@ -49,6 +49,14 @@
       "maxVisionPerMinute": { "type": "integer", "minimum": 0 },
       "meetingRecap": { "type": "boolean" },
       "bilingual": { "type": "boolean" },
+      "stt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "provider": { "type": "string" },
+          "providers": { "type": "object", "additionalProperties": { "type": "object", "additionalProperties": true } }
+        }
+      },
       "realtime": {
         "type": "object",
         "additionalProperties": false,

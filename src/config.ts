@@ -49,6 +49,15 @@ export interface VoiceCallConfig {
     tools?: RealtimeVoiceTool[];
     fastContext: RealtimeVoiceFastContextConfig;
   };
+  /**
+   * Streaming-mode STT provider selection. Auto-selects from the host's configured realtime
+   * transcription providers when `provider` is omitted; if none resolve, the streaming path falls
+   * back to file-based STT (`api.runtime.mediaUnderstanding.transcribeAudioFile`).
+   */
+  stt?: {
+    provider?: string;
+    providers?: Record<string, Record<string, unknown>>;
+  };
   msteams?: {
     requireRecordingStatus?: boolean;
     groupCall?: {
