@@ -6,7 +6,8 @@
 //  - record persistence via api.runtime.state.openSyncKeyedStore (NOT a vendored store)
 //  - getStatus, stale-call reaping, max-concurrency, event dedupe
 //
-// 🚧 SCAFFOLD: method bodies are stubs with TODOs. ~400–600 LOC when filled in.
+// Decoupled from openclaw by design: the store/log/clock come in via LifecycleRuntime, so this is
+// unit-testable with a fake store + clock, and index.ts adapts api.runtime.state to it.
 
 import {
   TERMINAL_STATES,
@@ -15,34 +16,51 @@ import {
   type CallState,
 } from "./types.js";
 
-// Minimal shapes of the api.runtime bits we use (kept local so this file documents its own surface;
-// swap for the real openclaw types when wiring index.ts).
+/** Minimal shape of the keyed store we use (adapted from api.runtime.state.openSyncKeyedStore). */
 export interface SyncKeyedStore<T> {
   get(key: string): T | undefined;
   set(key: string, value: T): void;
   delete(key: string): void;
   keys(): string[];
 }
+
 export interface LifecycleRuntime {
   openSyncKeyedStore<T>(name: string): SyncKeyedStore<T>;
   log: { info: (m: string) => void; warn: (m: string) => void; error: (m: string) => void };
   now: () => number;
+  /** Optional timer hooks (overridable in tests). Default to global set/clearInterval. */
+  setInterval?: (fn: () => void, ms: number) => ReturnType<typeof setInterval>;
+  clearInterval?: (handle: ReturnType<typeof setInterval>) => void;
 }
 
 export interface CallLifecycleOptions {
   maxConcurrentCalls: number;
+  /** End an answered call once it exceeds this. */
   maxDurationMs: number;
+  /** End a call that never answered after this. 0 disables the unanswered reaper. */
   staleCallReaperMs: number;
 }
 
+/** Cap retained transcript entries per call so a long meeting can't grow a record unbounded. */
+const MAX_TRANSCRIPT_ENTRIES = 200;
+const REAPER_CHECK_INTERVAL_MS = 15_000;
+const STORE_NAME = "msteams-voice/calls";
+
 const ALLOWED_TRANSITIONS: Record<CallState, CallState[]> = {
-  initiated: ["ringing", "answered", "failed", "completed"],
-  ringing: ["answered", "failed", "completed"],
+  initiated: ["ringing", "answered", "active", "failed", "completed"],
+  ringing: ["answered", "active", "failed", "completed"],
   answered: ["active", "completed", "failed"],
   active: ["completed", "failed"],
   completed: [],
   failed: [],
 };
+
+export class MaxConcurrentCallsError extends Error {
+  constructor(limit: number) {
+    super(`msteams-voice: max concurrent calls reached (${limit})`);
+    this.name = "MaxConcurrentCallsError";
+  }
+}
 
 export class CallLifecycle {
   private readonly calls = new Map<string, CallRecord>();
@@ -54,22 +72,37 @@ export class CallLifecycle {
     private readonly rt: LifecycleRuntime,
     private readonly opts: CallLifecycleOptions,
   ) {
-    this.store = rt.openSyncKeyedStore<CallRecord>("msteams-voice/calls");
-    // TODO: rehydrate non-terminal records from the store on startup if desired.
+    this.store = rt.openSyncKeyedStore<CallRecord>(STORE_NAME);
+    this.rehydrate();
   }
 
-  /** Start the stale-call reaper. */
+  /** Load non-terminal records persisted before a restart back into the active registry. */
+  private rehydrate(): void {
+    for (const key of this.store.keys()) {
+      const rec = this.store.get(key);
+      if (!rec || TERMINAL_STATES.has(rec.state)) continue;
+      this.calls.set(rec.callId, rec);
+      this.byProviderId.set(rec.providerCallId, rec.callId);
+    }
+  }
+
+  /** Start the stale-call reaper (no-op if neither timeout is configured). */
   start(): void {
-    // TODO: setInterval(() => this.reapStale(), CHECK_INTERVAL); store handle in this.reaper.
+    if (this.reaper) return;
+    if (this.opts.staleCallReaperMs <= 0 && this.opts.maxDurationMs <= 0) return;
+    const set = this.rt.setInterval ?? ((fn, ms) => setInterval(fn, ms));
+    this.reaper = set(() => this.reapStale(), REAPER_CHECK_INTERVAL_MS);
+    // Don't keep the process alive just for the reaper.
+    (this.reaper as { unref?: () => void })?.unref?.();
   }
 
   stop(): void {
-    if (this.reaper) clearInterval(this.reaper);
+    if (this.reaper) (this.rt.clearInterval ?? clearInterval)(this.reaper);
     this.reaper = undefined;
   }
 
-  /** Register a placed/received call. Returns the new CallRecord. */
-  initiate(_params: {
+  /** Register a placed/received call. Throws MaxConcurrentCallsError if over the limit. */
+  initiate(params: {
     callId: string;
     providerCallId: string;
     direction: CallRecord["direction"];
@@ -77,21 +110,50 @@ export class CallLifecycle {
     to: string;
     message?: string;
   }): CallRecord {
-    // TODO: enforce maxConcurrentCalls; create CallRecord(state:"initiated"); register in maps;
-    //       persist via this.persist(record).
-    throw new Error("CallLifecycle.initiate: not implemented (scaffold)");
+    if (this.calls.has(params.callId)) {
+      return this.calls.get(params.callId)!;
+    }
+    if (this.calls.size >= this.opts.maxConcurrentCalls) {
+      throw new MaxConcurrentCallsError(this.opts.maxConcurrentCalls);
+    }
+    const rec: CallRecord = {
+      callId: params.callId,
+      providerCallId: params.providerCallId,
+      direction: params.direction,
+      state: "initiated",
+      from: params.from,
+      to: params.to,
+      startedAt: this.rt.now(),
+      transcript: [],
+      processedEventIds: [],
+      message: params.message,
+    };
+    this.calls.set(rec.callId, rec);
+    this.byProviderId.set(rec.providerCallId, rec.callId);
+    this.persist(rec);
+    return rec;
   }
 
-  /** Mark a call answered (callee picked up / recording active). */
-  answer(_callId: string): void {
-    // TODO: transition -> "answered" (then "active"), set answeredAt, persist.
-    throw new Error("CallLifecycle.answer: not implemented (scaffold)");
+  /** Mark a call answered (callee picked up / Teams recording active). */
+  answer(callId: string): void {
+    const rec = this.calls.get(callId);
+    if (!rec || TERMINAL_STATES.has(rec.state)) return;
+    if (rec.answeredAt === undefined) rec.answeredAt = this.rt.now();
+    this.transition(rec, "answered");
+    this.transition(rec, "active");
+    this.persist(rec);
   }
 
-  /** End a call (caller hangup, agent hangup, timeout, error). Idempotent. */
-  end(_callId: string, _reason: CallEndReason): void {
-    // TODO: transition -> terminal, set endedAt/endReason, persist, then drop from in-memory maps.
-    throw new Error("CallLifecycle.end: not implemented (scaffold)");
+  /** End a call. Idempotent — a second call after a terminal state is a no-op. */
+  end(callId: string, reason: CallEndReason): void {
+    const rec = this.calls.get(callId) ?? this.store.get(callId);
+    if (!rec || TERMINAL_STATES.has(rec.state)) return;
+    this.transition(rec, reason === "error" ? "failed" : "completed");
+    rec.endedAt = this.rt.now();
+    rec.endReason = reason;
+    this.persist(rec);
+    this.calls.delete(rec.callId);
+    this.byProviderId.delete(rec.providerCallId);
   }
 
   getStatus(callId: string): { state: CallState; isTerminal: boolean } | undefined {
@@ -100,34 +162,71 @@ export class CallLifecycle {
     return { state: rec.state, isTerminal: TERMINAL_STATES.has(rec.state) };
   }
 
+  getRecord(callId: string): CallRecord | undefined {
+    return this.calls.get(callId) ?? this.store.get(callId);
+  }
+
   resolveByProviderId(providerCallId: string): CallRecord | undefined {
     const id = this.byProviderId.get(providerCallId);
     return id ? this.calls.get(id) : undefined;
   }
 
+  activeCount(): number {
+    return this.calls.size;
+  }
+
   /** Returns true if this event id is new (and records it); false if already processed (dedupe). */
-  admitEvent(_callId: string, _eventId: string): boolean {
-    // TODO: check/append record.processedEventIds; persist.
-    throw new Error("CallLifecycle.admitEvent: not implemented (scaffold)");
+  admitEvent(callId: string, eventId: string): boolean {
+    const rec = this.calls.get(callId);
+    if (!rec) return false;
+    if (rec.processedEventIds.includes(eventId)) return false;
+    rec.processedEventIds.push(eventId);
+    this.persist(rec);
+    return true;
   }
 
-  appendTranscript(_callId: string, _entry: CallRecord["transcript"][number]): void {
-    // TODO: push + persist (chunk if oversized).
-    throw new Error("CallLifecycle.appendTranscript: not implemented (scaffold)");
+  appendTranscript(callId: string, entry: CallRecord["transcript"][number]): void {
+    const rec = this.calls.get(callId);
+    if (!rec) return;
+    rec.transcript.push(entry);
+    if (rec.transcript.length > MAX_TRANSCRIPT_ENTRIES) {
+      rec.transcript.splice(0, rec.transcript.length - MAX_TRANSCRIPT_ENTRIES);
+    }
+    this.persist(rec);
   }
 
-  /** End calls that never answered within staleCallReaperMs / exceeded maxDurationMs. */
+  /** End calls that never answered (staleCallReaperMs) or exceeded maxDurationMs. */
   reapStale(): void {
-    // TODO: iterate this.calls; end() stale/over-duration ones.
+    const now = this.rt.now();
+    for (const rec of [...this.calls.values()]) {
+      if (TERMINAL_STATES.has(rec.state)) continue;
+      const unanswered =
+        rec.answeredAt === undefined &&
+        this.opts.staleCallReaperMs > 0 &&
+        now - rec.startedAt > this.opts.staleCallReaperMs;
+      const overDuration =
+        rec.answeredAt !== undefined &&
+        this.opts.maxDurationMs > 0 &&
+        now - rec.answeredAt > this.opts.maxDurationMs;
+      if (unanswered) {
+        this.rt.log.info(`msteams-voice: reaping unanswered call ${rec.callId}`);
+        this.end(rec.callId, "no-answer");
+      } else if (overDuration) {
+        this.rt.log.info(`msteams-voice: reaping over-duration call ${rec.callId}`);
+        this.end(rec.callId, "timeout");
+      }
+    }
   }
 
   // --- internals ---
-  private transition(rec: CallRecord, next: CallState): void {
+  private transition(rec: CallRecord, next: CallState): boolean {
+    if (rec.state === next) return true;
     if (!ALLOWED_TRANSITIONS[rec.state].includes(next)) {
       this.rt.log.warn(`msteams-voice: illegal transition ${rec.state} -> ${next} (${rec.callId})`);
-      return;
+      return false;
     }
     rec.state = next;
+    return true;
   }
 
   private persist(rec: CallRecord): void {
