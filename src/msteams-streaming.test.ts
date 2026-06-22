@@ -140,4 +140,67 @@ describe("createMsteamsStreamingCall", () => {
     call.pushAudio(SILENT());
     await vi.waitFor(() => expect(transcribe).toHaveBeenCalledTimes(1));
   });
+
+  it("group call: ignores caller turns that don't address the bot, answers when addressed", async () => {
+    const session = fakeSession();
+    let utterance = "what time is it";
+    const transcribe = vi.fn(async () => utterance);
+    const consult = vi.fn(async () => ({ text: "ok" }));
+    const call = createMsteamsStreamingCall({
+      session,
+      deps: baseDeps({
+        transcribe,
+        consult,
+        groupCallGate: { requireAddress: true, wakePhrases: ["assistant"], followUpWindowMs: 8000 },
+      }),
+    });
+    call.setHumanCount(2); // a meeting (>= 2 humans) → gated
+
+    // Unaddressed utterance: transcribed, but the bot does not answer.
+    call.pushAudio(LOUD());
+    call.pushAudio(LOUD());
+    call.pushAudio(SILENT());
+    call.pushAudio(SILENT());
+    await vi.waitFor(() => expect(transcribe).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(consult).not.toHaveBeenCalled();
+
+    // Addressed utterance (wake phrase): answered.
+    utterance = "assistant what time is it";
+    call.pushAudio(LOUD());
+    call.pushAudio(LOUD());
+    call.pushAudio(SILENT());
+    call.pushAudio(SILENT());
+    await vi.waitFor(() => expect(consult).toHaveBeenCalledTimes(1));
+  });
+
+  it("attaches shared-frame images to the agent consult", async () => {
+    const session = fakeSession();
+    const consult = vi.fn(async () => ({ text: "I see a chart." }));
+    const getVisionImages = vi.fn(() => [
+      { type: "image" as const, data: "IMG", mimeType: "image/jpeg" },
+    ]);
+    const call = createMsteamsStreamingCall({
+      session,
+      deps: baseDeps({ consult, getVisionImages }),
+    });
+    call.pushAudio(LOUD());
+    call.pushAudio(LOUD());
+    call.pushAudio(SILENT());
+    call.pushAudio(SILENT());
+    await vi.waitFor(() => expect(consult).toHaveBeenCalledTimes(1));
+    expect(getVisionImages).toHaveBeenCalled();
+    expect(consult.mock.calls[0]![0].images).toEqual([
+      { type: "image", data: "IMG", mimeType: "image/jpeg" },
+    ]);
+  });
+
+  it("notifyDtmf surfaces the keypress to the agent as a turn", async () => {
+    const session = fakeSession();
+    const consult = vi.fn(async () => ({ text: "You pressed 5." }));
+    const call = createMsteamsStreamingCall({ session, deps: baseDeps({ consult }) });
+    call.notifyDtmf("5");
+    await vi.waitFor(() => expect(consult).toHaveBeenCalledTimes(1));
+    expect(consult.mock.calls[0]![0].question).toContain("5");
+  });
 });
