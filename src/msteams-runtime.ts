@@ -116,6 +116,16 @@ export class MsteamsVoiceRuntime {
     await this.media.stop();
   }
 
+  /**
+   * Query the current status of a call (state + whether it has reached a terminal state).
+   * Returns undefined for an unknown call id. Note: OpenClaw exposes no provider-status registration
+   * hook for non-channel plugins, so this is surfaced as a runtime method (callable by an embedding
+   * host or a future admin/tool surface) rather than a registered VoiceCallProvider.getCallStatus.
+   */
+  getCallStatus(callId: string): ReturnType<CallLifecycle["getStatus"]> {
+    return this.lifecycle.getStatus(callId);
+  }
+
   private onSessionStart(session: MsteamsSession): void {
     const provider = this.realtime?.provider;
     if (!provider) {
