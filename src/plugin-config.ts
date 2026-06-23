@@ -58,7 +58,6 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
         suppressInputDuringPlayback: r.suppressInputDuringPlayback,
         echoSuppressionWindowMs: r.echoSuppressionWindowMs,
         echoBargeInRms: r.echoBargeInRms,
-        tools: r.tools,
         // Default fast-context off; shape comes from the SDK type.
         fastContext: (r.fastContext ?? {
           enabled: false,

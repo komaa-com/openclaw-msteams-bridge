@@ -479,7 +479,6 @@ export class MsteamsVoiceRuntime {
       inboundPolicy: this.cfg.voice.inboundPolicy,
       allowFrom: this.cfg.voice.allowFrom,
       requireRecordingStatus: this.cfg.voice.msteams?.requireRecordingStatus,
-      tools: this.cfg.voice.realtime.tools,
       toolPolicy: this.cfg.voice.realtime.toolPolicy,
       suppressInputDuringPlayback: this.cfg.voice.realtime.suppressInputDuringPlayback,
       echoSuppressionWindowMs: this.cfg.voice.realtime.echoSuppressionWindowMs,
