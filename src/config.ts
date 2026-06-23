@@ -5,7 +5,6 @@
 import type {
   RealtimeVoiceAgentConsultToolPolicy,
   RealtimeVoiceFastContextConfig,
-  RealtimeVoiceTool,
 } from "openclaw/plugin-sdk/realtime-voice";
 
 /** Host TTS config (messages.tts) — opaque to this plugin; merged + passed to the TTS runtime. */
@@ -46,7 +45,6 @@ export interface VoiceCallConfig {
     suppressInputDuringPlayback?: boolean;
     echoSuppressionWindowMs?: number;
     echoBargeInRms?: number;
-    tools?: RealtimeVoiceTool[];
     fastContext: RealtimeVoiceFastContextConfig;
   };
   /**

@@ -39,8 +39,6 @@ export interface CallRecord {
   endedAt?: number;
   endReason?: CallEndReason;
   transcript: TranscriptEntry[];
-  /** Event ids already applied, for replay/dedupe. */
-  processedEventIds: string[];
   /** Optional notify message delivered on answer (outbound call-backs). */
   message?: string;
 }

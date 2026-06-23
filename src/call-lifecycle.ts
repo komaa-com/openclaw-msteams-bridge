@@ -1,10 +1,10 @@
 // Call-lifecycle coordinator — the ONLY substantial hand-written glue (DESIGN.md).
 //
 // Replaces the subset of voice-call's CallManager a Teams-only realtime plugin needs:
-//  - in-memory active-call registry + callId <-> providerCallId map
+//  - in-memory active-call registry
 //  - state machine + transitions (initiate/answer/end)
 //  - record persistence via api.runtime.state.openSyncKeyedStore (NOT a vendored store)
-//  - getStatus, stale-call reaping, max-concurrency, event dedupe
+//  - getStatus, stale-call reaping, max-concurrency
 //
 // Decoupled from openclaw by design: the store/log/clock come in via LifecycleRuntime, so this is
 // unit-testable with a fake store + clock, and index.ts adapts api.runtime.state to it.
@@ -64,7 +64,6 @@ export class MaxConcurrentCallsError extends Error {
 
 export class CallLifecycle {
   private readonly calls = new Map<string, CallRecord>();
-  private readonly byProviderId = new Map<string, string>();
   private readonly store: SyncKeyedStore<CallRecord>;
   private reaper?: ReturnType<typeof setInterval>;
 
@@ -82,7 +81,6 @@ export class CallLifecycle {
       const rec = this.store.get(key);
       if (!rec || TERMINAL_STATES.has(rec.state)) continue;
       this.calls.set(rec.callId, rec);
-      this.byProviderId.set(rec.providerCallId, rec.callId);
     }
   }
 
@@ -125,11 +123,9 @@ export class CallLifecycle {
       to: params.to,
       startedAt: this.rt.now(),
       transcript: [],
-      processedEventIds: [],
       message: params.message,
     };
     this.calls.set(rec.callId, rec);
-    this.byProviderId.set(rec.providerCallId, rec.callId);
     this.persist(rec);
     return rec;
   }
@@ -153,7 +149,6 @@ export class CallLifecycle {
     rec.endReason = reason;
     this.persist(rec);
     this.calls.delete(rec.callId);
-    this.byProviderId.delete(rec.providerCallId);
   }
 
   getStatus(callId: string): { state: CallState; isTerminal: boolean } | undefined {
@@ -166,23 +161,8 @@ export class CallLifecycle {
     return this.calls.get(callId) ?? this.store.get(callId);
   }
 
-  resolveByProviderId(providerCallId: string): CallRecord | undefined {
-    const id = this.byProviderId.get(providerCallId);
-    return id ? this.calls.get(id) : undefined;
-  }
-
   activeCount(): number {
     return this.calls.size;
-  }
-
-  /** Returns true if this event id is new (and records it); false if already processed (dedupe). */
-  admitEvent(callId: string, eventId: string): boolean {
-    const rec = this.calls.get(callId);
-    if (!rec) return false;
-    if (rec.processedEventIds.includes(eventId)) return false;
-    rec.processedEventIds.push(eventId);
-    this.persist(rec);
-    return true;
   }
 
   appendTranscript(callId: string, entry: CallRecord["transcript"][number]): void {
@@ -219,14 +199,13 @@ export class CallLifecycle {
   }
 
   // --- internals ---
-  private transition(rec: CallRecord, next: CallState): boolean {
-    if (rec.state === next) return true;
+  private transition(rec: CallRecord, next: CallState): void {
+    if (rec.state === next) return;
     if (!ALLOWED_TRANSITIONS[rec.state].includes(next)) {
       this.rt.log.warn(`msteams-voice: illegal transition ${rec.state} -> ${next} (${rec.callId})`);
-      return false;
+      return;
     }
     rec.state = next;
-    return true;
   }
 
   private persist(rec: CallRecord): void {

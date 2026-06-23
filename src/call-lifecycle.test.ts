@@ -39,12 +39,11 @@ function harness(opts?: Partial<ConstructorParameters<typeof CallLifecycle>[1]>,
 const init = { callId: "c1", providerCallId: "p1", direction: "inbound" as const, from: "a", to: "b" };
 
 describe("CallLifecycle", () => {
-  it("initiate registers + persists; getStatus/resolveByProviderId/activeCount work", () => {
+  it("initiate registers + persists; getStatus/activeCount work", () => {
     const { lc, store } = harness();
     const rec = lc.initiate(init);
     expect(rec.state).toBe("initiated");
     expect(lc.getStatus("c1")).toEqual({ state: "initiated", isTerminal: false });
-    expect(lc.resolveByProviderId("p1")?.callId).toBe("c1");
     expect(lc.activeCount()).toBe(1);
     expect(store.get("c1")?.state).toBe("initiated");
   });
@@ -79,7 +78,6 @@ describe("CallLifecycle", () => {
     lc.end("c1", "hangup-user");
     expect(lc.getStatus("c1")).toEqual({ state: "completed", isTerminal: true });
     expect(lc.activeCount()).toBe(0);
-    expect(lc.resolveByProviderId("p1")).toBeUndefined();
     lc.end("c1", "error"); // no-op
     expect(lc.getRecord("c1")?.endReason).toBe("hangup-user");
   });
@@ -89,14 +87,6 @@ describe("CallLifecycle", () => {
     lc.initiate(init);
     lc.end("c1", "error");
     expect(lc.getStatus("c1")?.state).toBe("failed");
-  });
-
-  it("admitEvent dedupes by event id", () => {
-    const { lc } = harness();
-    lc.initiate(init);
-    expect(lc.admitEvent("c1", "e1")).toBe(true);
-    expect(lc.admitEvent("c1", "e1")).toBe(false);
-    expect(lc.admitEvent("c1", "e2")).toBe(true);
   });
 
   it("appendTranscript records + caps growth", () => {
@@ -129,15 +119,15 @@ describe("CallLifecycle", () => {
     const seed: CallRecord[] = [
       {
         callId: "c1", providerCallId: "p1", direction: "inbound", state: "active",
-        from: "a", to: "b", startedAt: 1, answeredAt: 2, transcript: [], processedEventIds: [],
+        from: "a", to: "b", startedAt: 1, answeredAt: 2, transcript: [],
       },
       {
         callId: "c2", providerCallId: "p2", direction: "inbound", state: "completed",
-        from: "a", to: "b", startedAt: 1, transcript: [], processedEventIds: [],
+        from: "a", to: "b", startedAt: 1, transcript: [],
       },
     ];
     const { lc } = harness({}, seed);
     expect(lc.activeCount()).toBe(1); // only the non-terminal one
-    expect(lc.resolveByProviderId("p1")?.callId).toBe("c1");
+    expect(lc.getStatus("c1")?.state).toBe("active");
   });
 });
