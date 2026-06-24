@@ -1,6 +1,11 @@
 {
-  "name": "@alaamh/msteams-voice",
+  "name": "@komaa/msteams-voice",
   "version": "0.1.0",
+  "author": "alaamh <alaamh@outlook.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/komaa-com/openclaw-msteams-voice"
+  },
   "description": "Self-contained Microsoft Teams CVI realtime-voice plugin for OpenClaw. Builds on the public realtime-voice SDK + api.runtime — no voice-call fork, no vendored CallManager. Single openclaw plugins install.",
   "type": "module",
   "exports": {
@@ -27,7 +32,7 @@
   "openclaw": {
     "extensions": ["./src/index.ts"],
     "install": {
-      "npmSpec": "@alaamh/msteams-voice",
+      "npmSpec": "@komaa/msteams-voice",
       "defaultChoice": "npm"
     }
   },

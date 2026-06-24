@@ -1,4 +1,4 @@
-# @alaamh/msteams-voice
+# @komaa/msteams-voice
 
 **Self-contained Microsoft Teams voice agent (CVI) for OpenClaw.**
 
@@ -10,7 +10,7 @@ It is **one plugin** depending only on the **published `openclaw` plugin-sdk** +
 `@alaamh/voice-call` fork, no vendored `CallManager`/config. Install like any third-party plugin:
 
 ```
-openclaw plugins install clawhub:@alaamh/msteams-voice
+openclaw plugins install clawhub:@komaa/msteams-voice
 cd extensions/msteams-voice && pnpm install && pnpm build
 ```
 
