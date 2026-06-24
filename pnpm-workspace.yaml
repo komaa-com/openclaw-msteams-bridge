@@ -8,5 +8,7 @@ allowBuilds:
   openclaw: true
   protobufjs: true
   tree-sitter-bash: true
+minimumReleaseAgeExclude:
+  - openclaw@2026.6.10
 overrides:
   "@types/node": "^22"
