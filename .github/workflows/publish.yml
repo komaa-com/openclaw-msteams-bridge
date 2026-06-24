@@ -1,0 +1,50 @@
+name: Publish to npm
+
+# Publishes @komaa/msteams-voice when you push a version tag (e.g. `v0.1.1`) or publish a GitHub Release.
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write # enables npm provenance (supply-chain attestation); needs a public repo
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Safety: on a tag push, the tag must equal the package.json version (e.g. tag v0.1.1 == "0.1.1").
+      - name: Tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          PKG="v$(node -p "require('./package.json').version")"
+          if [ "$PKG" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - name: Test
+        run: pnpm test
+
+      # publishConfig.access=public is set; prepublishOnly runs the typecheck. --provenance attests the build.
+      - name: Publish
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
