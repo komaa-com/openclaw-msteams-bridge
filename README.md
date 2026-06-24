@@ -1,41 +1,65 @@
 # @komaa/msteams-voice
 
-**Self-contained Microsoft Teams voice agent (CVI) for OpenClaw.**
+[![npm](https://img.shields.io/npm/v/@komaa/msteams-voice.svg)](https://www.npmjs.com/package/@komaa/msteams-voice)
+[![docs](https://img.shields.io/badge/docs-komaa.com-2563eb.svg)](https://docs.komaa.com/)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-An AI assistant that joins Microsoft Teams calls as a real participant — **realtime speech-to-speech**
-*or* a **streaming STT→agent→TTS** pipeline — with continuous vision, "speak-only-when-addressed"
-gating, outbound call-backs with voicemail, avatar lip-sync, and meeting recap.
+**A self-contained Microsoft Teams voice agent (CVI) for [OpenClaw](https://openclaw.ai).** An AI
+assistant that joins Teams calls as a real participant — **realtime speech-to-speech** *or* a
+**streaming STT → agent → TTS** pipeline — with continuous vision, "speak-only-when-addressed" gating,
+outbound call-backs with voicemail, avatar lip-sync, and meeting recap.
 
-It is **one plugin** depending only on the **published `openclaw` plugin-sdk** + `api.runtime` — no
-`@alaamh/voice-call` fork, no vendored `CallManager`/config. Install like any third-party plugin:
+> 📖 **Full documentation: [docs.komaa.com](https://docs.komaa.com/)** — setup walkthroughs, the Teams
+> worker, configuration reference, and troubleshooting. This README is the quick start.
 
-```
+It's **one plugin** depending only on the published `openclaw` plugin-sdk + `api.runtime` — no fork, no
+vendored runtime.
+
+## Features
+
+- 🎙️ **Realtime speech-to-speech** (e.g. OpenAI Realtime) **or** streaming **STT → agent → TTS** (any provider)
+- 👁️ **Continuous vision** — the agent can "look at" screen-share / camera frames, with a per-minute budget
+- 🙋 **Group-call gating** — only answers when addressed by a wake phrase (silent otherwise)
+- 📞 **Outbound call-backs + voicemail** — place a call, deliver a message, or open a conversation
+- 📝 **Meeting recap** — a `.docx` of minutes with per-speaker attribution
+- 🌐 **Bilingual** (Arabic / English) · ⌨️ **DTMF** · 🔇 **barge-in / echo guard** · 🔐 **HMAC-signed media bridge + caller allowlist**
+
+## Requirements
+
+- An **OpenClaw** install (host ≥ `2026.6.9`).
+- A **Microsoft Teams worker** (Azure Bot) that bridges the call audio to this plugin's media WebSocket
+  — see [docs.komaa.com](https://docs.komaa.com/).
+- For **realtime** mode: a realtime voice provider + key. For **streaming** mode: your
+  openclaw-configured STT/TTS/agent (no realtime key needed).
+
+## Install
+
+```bash
 openclaw plugins install clawhub:@komaa/msteams-voice
 cd extensions/msteams-voice && pnpm install && pnpm build
 ```
-
-> The original two-package fork approach is kept at `alaamh/openclaw-voice-call` as a fallback.
 
 ## Two modes
 
 | | `realtime` | `streaming` |
 |---|---|---|
-| How it talks | speech-to-speech realtime model (e.g. OpenAI Realtime) | your openclaw-configured **STT → agent/model → TTS** |
-| Needs a realtime provider | **yes** (`realtime.provider` + key) | **no** — uses openclaw's transcription + TTS + agent |
+| How it talks | speech-to-speech realtime model | your openclaw **STT → agent/model → TTS** |
+| Needs a realtime provider | **yes** (`realtime.provider` + key) | **no** |
 | Latency | lowest | higher (per-turn) |
 | Vision | continuous push (live) | attached to each agent turn |
-| Use it when | you have a realtime voice model | you want any STT/TTS/model, or lower cost |
+| Use it when | you have a realtime voice model | any STT/TTS/model, or lower cost |
 
-**Mode selection:** set `mode` to `"realtime"` or `"streaming"`. If omitted, the runtime auto-selects:
-**realtime** when a realtime provider resolves, otherwise **streaming**. Both modes honor the inbound
+**Mode selection:** set `mode` to `"realtime"` or `"streaming"`. If omitted, the runtime auto-selects
+**realtime** when a realtime provider resolves, else **streaming**. Both modes honor the inbound
 allowlist, outbound call-backs, recording gate, and `sessionScope` agent memory.
 
 ## Configuration
 
 Config lives under `plugins.entries."msteams-voice".config` in your OpenClaw config. `sharedSecret`
-**must match** the AzureBot/Teams worker that connects to this plugin's media WebSocket.
+**must match** the Teams worker that connects to this plugin's media WebSocket.
 
 ### Realtime mode (speech-to-speech)
+
 ```jsonc
 {
   "plugins": { "entries": { "msteams-voice": { "config": {
@@ -68,6 +92,7 @@ Config lives under `plugins.entries."msteams-voice".config` in your OpenClaw con
 ```
 
 ### Streaming mode (STT → agent → TTS, no realtime model)
+
 ```jsonc
 {
   "plugins": { "entries": { "msteams-voice": { "config": {
@@ -91,15 +116,16 @@ Config lives under `plugins.entries."msteams-voice".config` in your OpenClaw con
   } } } }
 }
 ```
-In **streaming** mode the **TTS and agent/model come from your openclaw configuration**. STT uses a
-live transcription **session**: selected by `stt.provider`/`stt.providers` when set, otherwise your
+
+In **streaming** mode, **TTS and the agent/model come from your openclaw configuration**. STT uses a
+live transcription session — selected by `stt.provider`/`stt.providers` if set, else your
 openclaw-configured transcription provider; if none resolves it falls back to VAD-segmented file
-transcription (`api.runtime.mediaUnderstanding.transcribeAudioFile`) — no regression. No realtime
-provider or key is needed. The `realtime.*` block is ignored except the echo-guard knobs
-(`suppressInputDuringPlayback`, `echoSuppressionWindowMs`, `echoBargeInRms`), which apply to playback
-in both modes. Group-call gating, DTMF, and vision work in streaming mode too.
+transcription. No realtime provider/key needed. The `realtime.*` block is ignored except the
+echo-guard knobs (`suppressInputDuringPlayback`, `echoSuppressionWindowMs`, `echoBargeInRms`), which
+apply in both modes. Group-call gating, DTMF, and vision work in streaming mode too.
 
 ### Outbound call-backs (optional, either mode)
+
 ```jsonc
 "outbound": {
   "enabled": true,
@@ -109,12 +135,13 @@ in both modes. Group-call gating, DTMF, and vision work in streaming mode too.
   "defaultMode": "notify"        // "notify" delivers a message then ends; "conversation" opens a turn
 }
 ```
+
 `placeCall(userObjectId, { message, mode })` is implemented on the runtime (no-answer/declined →
-voicemail/no-answer) and the `outbound` block above enables it, **but it is not yet exposed as an
-agent tool or HTTP endpoint** — triggering it currently requires a host call into the runtime. A
-built-in trigger (agent tool / endpoint) is a small follow-up.
+voicemail/no-answer); the `outbound` block enables it. Triggering it currently requires a host call
+into the runtime — a built-in agent tool / endpoint is a small follow-up.
 
 ### Key reference
+
 | Key | Applies | Meaning |
 |---|---|---|
 | `enabled` | both | master on/off |
@@ -125,19 +152,30 @@ built-in trigger (agent tool / endpoint) is a small follow-up.
 | `inboundPolicy` | both | `disabled` \| `allowlist` \| `pairing` \| `open` — **enforced** on inbound |
 | `allowFrom` | both | allowlisted caller ids (Teams aadId or phone digits) |
 | `inboundGreeting` | both | opening line |
-| `sessionScope` | both | `per-phone` \| `per-call` \| `per-thread` agent memory scope |
+| `sessionScope` | both | `per-phone` \| `per-call` \| `per-thread` agent-memory scope |
 | `maxConcurrentCalls` / `maxDurationSeconds` / `staleCallReaperSeconds` | both | capacity + reaper |
 | `groupCall.{requireAddress,wakePhrases,followUpWindowMs}` | both | speak-only-when-addressed gating |
 | `maxVisionPerMinute` | both | vision spend cap |
 | `meetingRecap` / `bilingual` | both | post-call minutes / Arabic-English |
-| `realtime.{provider,providers,instructions,toolPolicy,suppressInputDuringPlayback,echoSuppressionWindowMs,echoBargeInRms}` | realtime (echo knobs: both) | realtime voice provider + behavior; provider key is a secret input |
+| `realtime.{provider,providers,instructions,toolPolicy,…}` | realtime (echo knobs: both) | realtime voice provider + behavior; provider key is a secret input |
 | `stt.{provider,providers}` | streaming | live transcription provider (else openclaw STT / file fallback); provider key is a secret input |
-| `outbound.{enabled,workerBaseUrl,tenantId,answerTimeoutMs,defaultMode}` | both | outbound call-backs / voicemail (see trigger note above) |
+| `outbound.{enabled,workerBaseUrl,tenantId,answerTimeoutMs,defaultMode}` | both | outbound call-backs / voicemail |
 
-## Architecture (why it's small)
-The hard parts come from OpenClaw (see [DESIGN.md](DESIGN.md)):
-- **Realtime audio bridge** → `openclaw/plugin-sdk/realtime-voice` (`createRealtimeVoiceBridgeSession`,
-  `consultRealtimeVoiceAgent`, `resolveConfiguredRealtimeVoiceProvider`).
+## Architecture
+
+The hard parts come from OpenClaw — this plugin is intentionally small:
+
+- **Realtime audio bridge** → `openclaw/plugin-sdk/realtime-voice` (`createRealtimeVoiceBridgeSession`, `consultRealtimeVoiceAgent`, `resolveConfiguredRealtimeVoiceProvider`).
 - **Agent / TTS / STT / media / state / config / logging** → `api.runtime`.
-- **We own** only `src/call-lifecycle.ts` (~500 LOC) + thin adapters + the Teams CVI logic.
-- Entry registers a host-managed service (`api.registerService({ id, start, stop })`).
+- **Owned code:** `src/call-lifecycle.ts` (~500 LOC) + thin adapters + the Teams CVI logic.
+- The entry registers a host-managed service (`api.registerService({ id, start, stop })`).
+
+## Links
+
+- 📖 **Docs:** [docs.komaa.com](https://docs.komaa.com/)
+- 💻 **Source:** [github.com/komaa-com/openclaw-msteams-voice](https://github.com/komaa-com/openclaw-msteams-voice)
+- 📦 **npm:** [@komaa/msteams-voice](https://www.npmjs.com/package/@komaa/msteams-voice)
+
+---
+
+<p align="center"><sub>Built by <a href="https://komaa.com">Komaa.com</a> · MIT licensed</sub></p>
