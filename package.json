@@ -7,16 +7,33 @@
     "url": "https://github.com/komaa-com/openclaw-msteams-voice"
   },
   "homepage": "https://docs.komaa.com",
-  "bugs": { "url": "https://github.com/komaa-com/openclaw-msteams-voice/issues" },
+  "bugs": {
+    "url": "https://github.com/komaa-com/openclaw-msteams-voice/issues"
+  },
   "license": "MIT",
-  "keywords": ["openclaw", "openclaw-plugin", "microsoft-teams", "voice", "cvi", "realtime", "komaa"],
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "microsoft-teams",
+    "voice",
+    "cvi",
+    "realtime",
+    "komaa"
+  ],
   "description": "Self-contained Microsoft Teams CVI realtime-voice plugin for OpenClaw. Builds on the public realtime-voice SDK + api.runtime — no voice-call fork, no vendored CallManager. Single openclaw plugins install.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
-  "files": ["src/**/*.ts", "!src/**/*.test.ts", "openclaw.plugin.json", "tsconfig.json"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "openclaw.plugin.json",
+    "tsconfig.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "docx": "^9.0.0",
     "jszip": "^3.10.1",
@@ -27,16 +44,20 @@
     "openclaw": ">=2026.6.9"
   },
   "peerDependenciesMeta": {
-    "openclaw": { "optional": true }
+    "openclaw": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/ws": "^8.5.12",
-    "openclaw": "2026.6.9",
+    "openclaw": "2026.6.10",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },
   "openclaw": {
-    "extensions": ["./src/index.ts"],
+    "extensions": [
+      "./src/index.ts"
+    ],
     "install": {
       "npmSpec": "@komaa/msteams-voice",
       "defaultChoice": "npm"
