@@ -1,2 +1,0 @@
-# Tests are not needed by consumers (the plugin is built + run, not tested, on install).
-*.test.ts

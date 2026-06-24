@@ -15,7 +15,7 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "files": ["src", "openclaw.plugin.json", "tsconfig.json"],
+  "files": ["src/**/*.ts", "!src/**/*.test.ts", "openclaw.plugin.json", "tsconfig.json"],
   "publishConfig": { "access": "public" },
   "dependencies": {
     "docx": "^9.0.0",
