@@ -15,6 +15,26 @@ gating, outbound call-backs with voicemail, avatar lip-sync, and meeting recap.
 It is one plugin, depending only on the published `openclaw` plugin-sdk + `api.runtime`. No fork, no
 vendored runtime, no trusted-plugin privileges required.
 
+## Getting started
+
+This plugin adds **voice and video (CVI)** on top of OpenClaw's Microsoft Teams **chat** channel, so
+set those up first:
+
+1. **Install OpenClaw** using the official docs at
+   [docs.openclaw.ai](https://docs.openclaw.ai).
+2. **Add Microsoft Teams as a channel** (bot app + credentials) following the
+   [OpenClaw Teams channel docs](https://docs.openclaw.ai/channels/msteams).
+3. **Subscribe to StandIn** ([standin.komaa.com](https://standin.komaa.com), free tier), the hosted
+   media bridge that joins the call and connects to this plugin.
+4. **Add this plugin.** The one-line installer detects your OpenClaw install and walks you through the
+   config (mode, shared secret, provider key), then prints the next steps:
+
+   ```bash
+   curl -fsSL https://standin.komaa.com/install.sh | bash
+   ```
+
+   Prefer to do it by hand? See [Install](#install) and [Configuration](#configuration) below.
+
 ## Features
 
 - **Two dialogue modes** - realtime speech-to-speech (OpenAI / Azure) or streaming STT to agent to TTS
