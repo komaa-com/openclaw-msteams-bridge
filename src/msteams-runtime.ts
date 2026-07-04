@@ -2,8 +2,8 @@
 // CallManager for the standalone plugin. Owns the Teams media WebSocket, drives CallLifecycle, and
 // bridges each call to the realtime voice model via createMsteamsRealtimeCall.
 //
-// Scope: REALTIME INBOUND speech-to-speech path. Deferred (notes): outbound call-backs (worker
-// place-call), the streaming STT→agent→TTS path, and getCallStatus as a VoiceCallProvider — none are
+// Scope: realtime speech-to-speech (inbound + outbound call-backs via worker place-call) and the
+// streaming STT→agent→TTS path. Still out of scope: getCallStatus as a VoiceCallProvider — not
 // needed for a Teams realtime assistant and would re-introduce the heavier provider surface.
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";

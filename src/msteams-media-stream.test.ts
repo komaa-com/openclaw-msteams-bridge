@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { MsteamsMediaStream, type MsteamsSession } from "./msteams-media-stream.js";
 
@@ -20,6 +20,7 @@ async function startServer(opts: {
   maxConnections?: number;
   maxConnectionsPerIp?: number;
   preStartTimeoutMs?: number;
+  hmacWindowMs?: number;
   onSessionStart?: (s: MsteamsSession) => void;
   onSessionEnd?: (info: { callId: string; reason: string }) => void;
   onAudioFrame?: (info: {
@@ -38,6 +39,7 @@ async function startServer(opts: {
     mime: string;
     dataBase64: string;
   }) => void;
+  onDtmf?: (info: { callId: string; digit: string }) => void;
 }): Promise<MsteamsMediaStream> {
   const server = new MsteamsMediaStream({
     port: opts.port,
@@ -46,11 +48,13 @@ async function startServer(opts: {
     maxConnections: opts.maxConnections,
     maxConnectionsPerIp: opts.maxConnectionsPerIp,
     preStartTimeoutMs: opts.preStartTimeoutMs,
+    hmacWindowMs: opts.hmacWindowMs,
     onSessionStart: opts.onSessionStart,
     onSessionEnd: opts.onSessionEnd,
     onAudioFrame: opts.onAudioFrame,
     onRecordingStatus: opts.onRecordingStatus,
     onVideoFrame: opts.onVideoFrame,
+    onDtmf: opts.onDtmf,
   });
   await server.start();
   return server;
@@ -222,6 +226,51 @@ describe("MsteamsMediaStream", () => {
       ws3.once("error", reject);
     });
     ws3.close();
+  });
+
+  it("still rejects a replay at exactly ts + hmacWindowMs (prune must not race the timestamp check)", async () => {
+    // At now === ts + windowMs the timestamp check still accepts the handshake
+    // (Math.abs(now - ts) > windowMs is false), so the replay record — whose expiry
+    // is exactly ts + windowMs — must survive the prune at that same instant. A
+    // `<=` prune would delete it one message too early and let a captured handshake
+    // replay through. Only Date is faked; sockets and timers stay real.
+    const windowMs = 5000;
+    const t0 = Date.now();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(t0);
+      const port = randomPort();
+      server = await startServer({ port, hmacWindowMs: windowMs });
+
+      const callId = "call-replay-boundary";
+      const headers = {
+        "x-openclawteamsbridge-timestamp": String(t0),
+        "x-openclawteamsbridge-signature": signHmac(SECRET, t0, callId),
+      };
+
+      const ws1 = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, { headers });
+      await new Promise<void>((resolve, reject) => {
+        ws1.once("open", () => resolve());
+        ws1.once("error", reject);
+      });
+      ws1.close();
+      await waitFor(() => server?.sessionCount === 0);
+
+      // Jump to the exact edge of the HMAC window and replay the SAME tuple.
+      vi.setSystemTime(t0 + windowMs);
+      const ws2 = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, { headers });
+      const outcome = await new Promise<"unexpected-response" | "error" | "open">((resolve) => {
+        ws2.once("unexpected-response", (_req, res) => {
+          expect(res.statusCode).toBe(401);
+          resolve("unexpected-response");
+        });
+        ws2.once("error", () => resolve("error"));
+        ws2.once("open", () => resolve("open"));
+      });
+      expect(outcome).not.toBe("open");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rejects upgrade with a bad HMAC signature", async () => {
@@ -719,6 +768,47 @@ describe("MsteamsMediaStream", () => {
     ws.send(JSON.stringify({ type: "recording.status", status: "active" }));
     await waitFor(() => statuses.length > 0);
     expect(statuses).toEqual(["active"]);
+
+    ws.close();
+  });
+
+  it("accepts only valid DTMF digits (0-9, *, #) and drops anything else", async () => {
+    const port = randomPort();
+    const digits: string[] = [];
+    server = await startServer({
+      port,
+      onDtmf: (info) => {
+        digits.push(info.digit);
+      },
+    });
+
+    const callId = "call-dtmf";
+    const ws = openAuthed(port, callId);
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+    });
+    ws.send(
+      JSON.stringify({
+        type: "session.start",
+        callId,
+        threadId: "thread-dtmf",
+        caller: { aadId: "aad-1" },
+      }),
+    );
+
+    // Invalid digits first: wrong character, multi-char, empty. None may reach onDtmf.
+    for (const digit of ["a", "12", "", "+"]) {
+      ws.send(JSON.stringify({ type: "dtmf", digit }));
+    }
+    // Then the full valid alphabet.
+    const valid = ["0", "5", "9", "*", "#"];
+    for (const digit of valid) {
+      ws.send(JSON.stringify({ type: "dtmf", digit }));
+    }
+
+    await waitFor(() => digits.length >= valid.length);
+    expect(digits).toEqual(valid);
 
     ws.close();
   });

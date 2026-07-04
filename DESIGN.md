@@ -15,7 +15,7 @@ no `@alaamh/voice-call` fork, no vendored `CallManager`. Validated by two spikes
 | STT (file) + streaming transcription provider | `api.runtime.mediaUnderstanding.transcribeAudioFile` + `RealtimeTranscriptionProviderPlugin` | types-core.ts:323 |
 | Media utils | `api.runtime.media.*` | types-core.ts:303-310 |
 | Config (own manifest config) | `api.pluginConfig` + `api.runtime.config.*` | types-core.ts:182-198 |
-| **State / persistence** (call records) | `api.runtime.state.openSyncKeyedStore` | types-core.ts:376 |
+| **State** (call records) | In-process `Map` behind the `SyncKeyedStore` interface — `api.runtime.state.openSyncKeyedStore` turned out to be gated to trusted (bundled/official) plugins, and call records are ephemeral anyway | msteams-runtime.ts (lifecycle store) |
 | Logging | `api.runtime.logging.getChildLogger` | types-core.ts:369 |
 
 > Note: `voice-call`'s own `telephony-tts.ts` already just calls `runtime.textToSpeechTelephony` — so
@@ -28,12 +28,15 @@ A Teams **call-lifecycle** coordinator (`src/call-lifecycle.ts`, ~400–600 LOC)
 
 - Call **state machine** (initiated → ringing → answered → active → terminal)
 - **Active-call registry** (`callId` ↔ `providerCallId` map) + event **dedupe**
-- **Record persistence** via `api.runtime.state.openSyncKeyedStore` (reuse the Zod `CallRecord` shape)
+- **Record store**: in-memory `Map` behind the `SyncKeyedStore` interface (reuse the Zod `CallRecord`
+  shape) — `openSyncKeyedStore` is trusted-plugin-only, so a third-party install can't use it
 - **Lifecycle**: `initiate / answer / end / getStatus / reapStale`
 - Per-call **timers** (max duration, idle) + **max-concurrency**
 
-We DON'T need (so we don't write): multi-carrier (Twilio/Telnyx/Plivo) webhook normalization,
-the webhook media plane, DTMF/TTS playback routing, or crash-restore — none apply to Teams realtime.
+Since shipped on top of this: outbound call-backs (worker place-call), the streaming
+STT→agent→TTS path (`msteams-streaming.ts`), DTMF, and TTS playback routing — originally deferred,
+now implemented. We still DON'T need (so we don't write): multi-carrier (Twilio/Telnyx/Plivo)
+webhook normalization, the webhook media plane, or crash-restore — none apply to Teams realtime.
 
 ## Cost comparison
 - Fork the whole voice-call extension: ~21k LOC carried.
