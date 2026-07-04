@@ -3,11 +3,11 @@
 // Replaces the subset of voice-call's CallManager a Teams-only realtime plugin needs:
 //  - in-memory active-call registry
 //  - state machine + transitions (initiate/answer/end)
-//  - record persistence via api.runtime.state.openSyncKeyedStore (NOT a vendored store)
+//  - a keyed record store (in-memory; call state is ephemeral — a gateway restart drops live calls)
 //  - getStatus, stale-call reaping, max-concurrency
 //
 // Decoupled from openclaw by design: the store/log/clock come in via LifecycleRuntime, so this is
-// unit-testable with a fake store + clock, and index.ts adapts api.runtime.state to it.
+// unit-testable with a fake store + clock, and the runtime supplies an in-memory Map-backed store.
 
 import {
   TERMINAL_STATES,
@@ -16,7 +16,7 @@ import {
   type CallState,
 } from "./types.js";
 
-/** Minimal shape of the keyed store we use (adapted from api.runtime.state.openSyncKeyedStore). */
+/** Minimal shape of the keyed store we use (backed by an in-memory Map at runtime). */
 export interface SyncKeyedStore<T> {
   get(key: string): T | undefined;
   set(key: string, value: T): void;
