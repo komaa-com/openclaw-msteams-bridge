@@ -21,113 +21,13 @@ import http from "node:http";
 import type { Duplex } from "node:stream";
 import { safeEqualSecret } from "openclaw/plugin-sdk/security-runtime";
 import { type RawData, WebSocket, WebSocketServer } from "ws";
-import { z } from "zod";
+import { type InboundMessage, InboundMessageSchema, type MsteamsRecordingStatus } from "./protocol.gen.js";
 
-/**
- * The Teams bridge wire format is PCM 16 kHz, 16-bit, mono in both directions. Single source of
- * truth for the sample rate shared by the provider, realtime bridge, and TTS adapter.
- */
-export const MSTEAMS_PCM_SAMPLE_RATE_HZ = 16_000;
-
-const RecordingStatusSchema = z.enum(["active", "inactive", "unknown"]);
-
-const SessionStartSchema = z.object({
-  type: z.literal("session.start"),
-  callId: z.string().min(1),
-  threadId: z.string().min(1),
-  caller: z.object({
-    aadId: z.string().nullable().optional(),
-    displayName: z.string().nullable().optional(),
-    tenantId: z.string().nullable().optional(),
-  }),
-  /**
-   * Microsoft Teams recording status at answer time. The worker must call Graph
-   * `updateRecordingStatus` before media-derived data may be persisted; it
-   * reports the resulting state here (and via `recording.status` if it changes).
-   */
-  recordingStatus: RecordingStatusSchema.optional(),
-  /**
-   * "inbound" (caller dialed the bot) or "outbound" (the bot placed this call via
-   * the worker's /api/calls). OpenClaw correlates outbound calls by callId regardless,
-   * but this makes the media-plane self-describing. Defaults to inbound when absent.
-   */
-  direction: z.enum(["inbound", "outbound"]).optional(),
-});
-
-const SessionEndSchema = z.object({
-  type: z.literal("session.end"),
-  reason: z.string(),
-});
-
-const RecordingStatusMessageSchema = z.object({
-  type: z.literal("recording.status"),
-  status: RecordingStatusSchema,
-});
-
-const AudioFrameSchema = z.object({
-  type: z.literal("audio.frame"),
-  seq: z.number().int().nonnegative(),
-  timestampMs: z.number().int().nonnegative(),
-  payloadBase64: z.string(),
-  // Active speaker's display name when the worker runs unmixed meeting audio (additive) —
-  // real per-person transcript attribution for meeting minutes.
-  speakerName: z.string().optional(),
-});
-
-const PingSchema = z.object({
-  type: z.literal("ping"),
-  ts: z.number().int().nonnegative(),
-});
-
-/**
- * A sampled inbound video frame (caller camera or screen-share) the worker forwards so the agent
- * can "see" what the caller shows it. Sparse (a frame every few seconds), JPEG, already downscaled
- * worker-side. Much larger than audio — see the inbound payload cap.
- */
-const VideoFrameSchema = z.object({
-  type: z.literal("video.frame"),
-  source: z.enum(["camera", "screenshare"]),
-  ts: z.number().int().nonnegative(),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-  mime: z.string().min(1),
-  dataBase64: z.string().min(1),
-  // Who this frame belongs to (group calls): the subscribed speaker for "camera", the sharer for
-  // "screenshare". Best-effort — absent for anonymous/guest participants or older workers.
-  participantId: z.string().min(1).optional(),
-  participantName: z.string().min(1).optional(),
-});
-
-/**
- * Worker → OpenClaw. The human participant count on the call (excludes the bot), sent at join and
- * whenever the roster changes. Lets OpenClaw tell a 1:1 call (count <= 1) from a group/meeting call
- * (count >= 2) so it can apply the "speak only when addressed" gate in groups.
- */
-const ParticipantsSchema = z.object({
-  type: z.literal("participants"),
-  count: z.number().int().nonnegative(),
-});
-
-/** Worker → OpenClaw: a DTMF key the caller pressed ("0"-"9", "*", "#"). See #21. */
-const DtmfSchema = z.object({
-  type: z.literal("dtmf"),
-  digit: z.string().regex(/^[0-9*#]$/),
-});
-
-const InboundMessageSchema = z.discriminatedUnion("type", [
-  SessionStartSchema,
-  SessionEndSchema,
-  RecordingStatusMessageSchema,
-  AudioFrameSchema,
-  VideoFrameSchema,
-  ParticipantsSchema,
-  DtmfSchema,
-  PingSchema,
-]);
-
-export type MsteamsRecordingStatus = z.infer<typeof RecordingStatusSchema>;
-
-type InboundMessage = z.infer<typeof InboundMessageSchema>;
+// The wire protocol (message schemas + shared constants) is generated from the
+// OpenClawBridge repo's protocol/schema.yaml — see src/protocol.gen.ts. This file
+// keeps only the transport: HMAC/replay/connection guards and message routing.
+export { MSTEAMS_PCM_SAMPLE_RATE_HZ } from "./protocol.gen.js";
+export type { MsteamsRecordingStatus } from "./protocol.gen.js";
 
 export interface MsteamsLogger {
   info(message: string): void;
