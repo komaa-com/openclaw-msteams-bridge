@@ -111,7 +111,7 @@ const ParticipantsSchema = z.object({
 /** Worker → OpenClaw: a DTMF key the caller pressed ("0"-"9", "*", "#"). See #21. */
 const DtmfSchema = z.object({
   type: z.literal("dtmf"),
-  digit: z.string().min(1).max(1),
+  digit: z.string().regex(/^[0-9*#]$/),
 });
 
 const InboundMessageSchema = z.discriminatedUnion("type", [
@@ -395,7 +395,9 @@ export class MsteamsMediaStream {
     // the timestamp window.
     const now = Date.now();
     for (const [key, expiry] of this.seenUpgrades) {
-      if (expiry <= now) {
+      // Strict <: at exactly ts + windowMs the timestamp check above still accepts the handshake
+      // (Math.abs(now - ts) > windowMs is false), so the replay record must survive that instant.
+      if (expiry < now) {
         this.seenUpgrades.delete(key);
       }
     }
