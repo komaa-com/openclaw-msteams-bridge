@@ -30,7 +30,11 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       port: Number(c.port ?? 9442),
       bindAddress: c.bindAddress,
       path: String(c.path ?? "/voice/msteams/stream"),
-      sharedSecret: String(c.sharedSecret ?? ""),
+      // Only accept a STRING secret. The manifest allows an object (secret-input reference) form; if the host
+      // ever passes an UNRESOLVED object (e.g. an env descriptor whose var is unset), String({}) would yield the
+      // literal "[object Object]" — a non-empty, guessable secret that the fail-closed check in index.ts would
+      // accept. Coerce a non-string to "" so it fails CLOSED (server refuses to start) instead.
+      sharedSecret: typeof c.sharedSecret === "string" ? c.sharedSecret : "",
     },
     outbound: c.outbound,
     limits: {
