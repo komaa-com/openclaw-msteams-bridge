@@ -96,20 +96,21 @@ export class MsteamsVoiceRuntime {
 
     this.lifecycle = new CallLifecycle(
       {
-        // Adapt api.runtime.state's sync keyed store (namespace/lookup/register/delete/entries) to
-        // our minimal get/set/delete/keys surface. (plugin-state-store.types.ts)
-        openSyncKeyedStore: <T>(name: string): SyncKeyedStore<T> => {
-          const s = api.runtime.state.openSyncKeyedStore<T>({
-            namespace: name,
-            maxEntries: 2000,
-          });
+        // In-memory keyed store for call records. api.runtime.state.openSyncKeyedStore is gated to
+        // trusted (bundled/official) plugins, which a third-party npm/ClawHub install is not. Call
+        // records are ephemeral — a gateway restart drops live media calls anyway — so an in-process
+        // Map is sufficient and keeps the plugin installable as an untrusted plugin.
+        openSyncKeyedStore: <T>(_name: string): SyncKeyedStore<T> => {
+          const m = new Map<string, T>();
           return {
-            get: (k) => s.lookup(k),
-            set: (k, v) => s.register(k, v),
-            delete: (k) => {
-              s.delete(k);
+            get: (k) => m.get(k),
+            set: (k, v) => {
+              m.set(k, v);
             },
-            keys: () => s.entries().map((e) => e.key),
+            delete: (k) => {
+              m.delete(k);
+            },
+            keys: () => [...m.keys()],
           };
         },
         log: this.log,
