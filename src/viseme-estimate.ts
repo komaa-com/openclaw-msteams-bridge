@@ -8,7 +8,10 @@
  * blends them over the RMS openness, so even rough timing reads as "the mouth changes shape per sound".
  */
 
-export type VisemeMark = { tMs: number; visemeId: number };
+import type { SpeechMark } from "./protocol.gen.js";
+
+/** One viseme mark on the `speech.marks` wire message (see protocol.gen.ts). */
+export type VisemeMark = SpeechMark;
 
 /**
  * Coarse grapheme → Azure viseme id (the Microsoft viseme set, 0–21: 0 = silence, the rest are mouth
