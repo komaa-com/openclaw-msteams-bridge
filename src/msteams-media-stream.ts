@@ -514,6 +514,8 @@ export class MsteamsMediaStream {
       return;
     }
 
+    // Pre-GA (openclaw): one case handler throwing must not crash the per-call WS message pump.
+    try {
     switch (parsed.type) {
       case "session.start": {
         // The callId is authenticated via HMAC in the URL path; a session.start
@@ -598,6 +600,11 @@ export class MsteamsMediaStream {
         this.sendTo(callId, { type: "pong", ts: parsed.ts });
         break;
       }
+    }
+    } catch (err) {
+      this.config.logger?.warn(
+        `MsteamsMediaStream: error handling ${parsed.type} for ${callId}: ${(err as Error).message}`,
+      );
     }
   }
 
