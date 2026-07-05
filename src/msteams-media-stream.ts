@@ -408,7 +408,21 @@ export class MsteamsMediaStream {
 
     let parsed: InboundMessage;
     try {
-      parsed = InboundMessageSchema.parse(JSON.parse(text));
+      const raw = JSON.parse(text) as Record<string, unknown> | null;
+      // The hosted bridge sends direction:"join" for meeting joins; the protocol enum only
+      // has inbound|outbound and receivers default to inbound when absent - normalize
+      // unknown values instead of rejecting the whole session.start.
+      if (
+        raw !== null &&
+        typeof raw === "object" &&
+        raw.type === "session.start" &&
+        raw.direction !== undefined &&
+        raw.direction !== "inbound" &&
+        raw.direction !== "outbound"
+      ) {
+        raw.direction = "inbound";
+      }
+      parsed = InboundMessageSchema.parse(raw);
     } catch (err) {
       this.config.logger?.warn(
         `MsteamsMediaStream: invalid message from ${callId}: ${(err as Error).message}`,
