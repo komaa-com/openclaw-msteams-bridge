@@ -139,6 +139,47 @@ describe("MsteamsMediaStream", () => {
     ws.close();
   });
 
+  it('normalizes unknown session.start direction (e.g. "join" from meeting joins) to inbound', async () => {
+    // The hosted bridge sends direction:"join" when the bot joins a meeting; the protocol
+    // enum only has inbound|outbound. Rejecting the message killed the whole session.
+    const port = randomPort();
+    let receivedSession: MsteamsSession | undefined;
+    server = await startServer({
+      port,
+      onSessionStart: (s) => {
+        receivedSession = s;
+      },
+    });
+
+    const callId = "call-join";
+    const ts = Date.now();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
+      headers: {
+        "x-openclawteamsbridge-timestamp": String(ts),
+        "x-openclawteamsbridge-signature": signHmac(SECRET, ts, callId),
+      },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+    });
+
+    ws.send(
+      JSON.stringify({
+        type: "session.start",
+        callId,
+        threadId: "thread-meet",
+        direction: "join",
+        caller: { aadId: "aad-2" },
+      }),
+    );
+
+    await waitFor(() => receivedSession !== undefined);
+    expect(receivedSession?.direction).toBe("inbound");
+
+    ws.close();
+  });
+
   it("session.send signals delivery: true while open, false once the socket has closed", async () => {
     // streamPcmFrames relies on this to abort playback when a caller hangs up mid-frame, instead of
     // advancing seq/timestamps and reporting audio as delivered on a dead socket.
