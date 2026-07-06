@@ -60,6 +60,14 @@
     "install": {
       "npmSpec": "@komaa/msteams-voice",
       "defaultChoice": "npm"
+    },
+    "compat": {
+      "pluginApi": ">=2026.6.10",
+      "minGatewayVersion": "2026.6.10"
+    },
+    "build": {
+      "openclawVersion": "2026.6.10",
+      "pluginSdkVersion": "2026.6.10"
     }
   },
   "scripts": {
