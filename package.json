@@ -1,6 +1,6 @@
 {
   "name": "@komaa/msteams-voice",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "author": "alaamh <alaamh@outlook.com>",
   "repository": {
     "type": "git",
@@ -68,6 +68,17 @@
     "build": {
       "openclawVersion": "2026.6.10",
       "pluginSdkVersion": "2026.6.10"
+    },
+    "channel": {
+      "id": "msteams-voice",
+      "label": "Microsoft Teams Voice"
+    },
+    "channelEnvVars": {
+      "msteams-voice": [
+        "MSTEAMS_APP_ID",
+        "MSTEAMS_APP_PASSWORD",
+        "MSTEAMS_TENANT_ID"
+      ]
     }
   },
   "scripts": {
