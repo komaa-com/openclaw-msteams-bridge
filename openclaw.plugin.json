@@ -6,68 +6,192 @@
     "onStartup": true
   },
   "channelEnvVars": {
-    "msteams-voice": ["MSTEAMS_APP_ID", "MSTEAMS_APP_PASSWORD", "MSTEAMS_TENANT_ID"]
+    "msteams-voice": [
+      "MSTEAMS_APP_ID",
+      "MSTEAMS_APP_PASSWORD",
+      "MSTEAMS_TENANT_ID"
+    ]
   },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
-      "enabled": { "type": "boolean" },
-      "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-      "bindAddress": { "type": "string" },
-      "path": { "type": "string" },
-      "sharedSecret": { "type": ["string", "object"] },
-      "requireRecordingStatus": { "type": "boolean" },
-      "inboundPolicy": { "type": "string", "enum": ["disabled", "allowlist", "pairing", "open"] },
-      "allowFrom": { "type": "array", "items": { "type": "string" } },
-      "inboundGreeting": { "type": "string" },
-      "mode": { "type": "string", "enum": ["realtime", "streaming"] },
-      "sessionScope": { "type": "string", "enum": ["per-phone", "per-call", "per-thread"] },
-      "maxConcurrentCalls": { "type": "integer", "minimum": 1 },
-      "maxDurationSeconds": { "type": "integer", "minimum": 1 },
-      "staleCallReaperSeconds": { "type": "integer", "minimum": 0 },
+      "enabled": {
+        "type": "boolean"
+      },
+      "port": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65535
+      },
+      "bindAddress": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "sharedSecret": {
+        "type": [
+          "string",
+          "object"
+        ]
+      },
+      "requireRecordingStatus": {
+        "type": "boolean"
+      },
+      "inboundPolicy": {
+        "type": "string",
+        "enum": [
+          "disabled",
+          "allowlist",
+          "pairing",
+          "open"
+        ]
+      },
+      "allowFrom": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "inboundGreeting": {
+        "type": "string"
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "realtime",
+          "streaming"
+        ]
+      },
+      "sessionScope": {
+        "type": "string",
+        "enum": [
+          "per-phone",
+          "per-call",
+          "per-thread"
+        ]
+      },
+      "maxConcurrentCalls": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "maxDurationSeconds": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "staleCallReaperSeconds": {
+        "type": "integer",
+        "minimum": 0
+      },
       "outbound": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "enabled": { "type": "boolean" },
-          "workerBaseUrl": { "type": "string" },
-          "tenantId": { "type": "string" },
-          "answerTimeoutMs": { "type": "integer", "minimum": 1 },
-          "defaultMode": { "type": "string", "enum": ["notify", "conversation"] }
+          "enabled": {
+            "type": "boolean"
+          },
+          "workerBaseUrl": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "answerTimeoutMs": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "defaultMode": {
+            "type": "string",
+            "enum": [
+              "notify",
+              "conversation"
+            ]
+          }
         }
       },
       "groupCall": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "requireAddress": { "type": "boolean" },
-          "wakePhrases": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-          "followUpWindowMs": { "type": "integer", "minimum": 0 }
+          "requireAddress": {
+            "type": "boolean"
+          },
+          "wakePhrases": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "followUpWindowMs": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       },
-      "maxVisionPerMinute": { "type": "integer", "minimum": 0 },
-      "meetingRecap": { "type": "boolean" },
-      "bilingual": { "type": "boolean" },
+      "maxVisionPerMinute": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "meetingRecap": {
+        "type": "boolean"
+      },
+      "bilingual": {
+        "type": "boolean"
+      },
       "stt": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "provider": { "type": "string" },
-          "providers": { "type": "object", "additionalProperties": { "type": "object", "additionalProperties": true } }
+          "provider": {
+            "type": "string"
+          },
+          "providers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
         }
       },
       "realtime": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "provider": { "type": "string" },
-          "providers": { "type": "object", "additionalProperties": { "type": "object", "additionalProperties": true } },
-          "instructions": { "type": "string" },
-          "toolPolicy": { "type": "string", "enum": ["safe-read-only", "owner", "none"] },
-          "suppressInputDuringPlayback": { "type": "boolean" },
-          "echoSuppressionWindowMs": { "type": "integer", "minimum": 0 },
-          "echoBargeInRms": { "type": "number", "minimum": 0 }
+          "provider": {
+            "type": "string"
+          },
+          "providers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "toolPolicy": {
+            "type": "string",
+            "enum": [
+              "safe-read-only",
+              "owner",
+              "none"
+            ]
+          },
+          "suppressInputDuringPlayback": {
+            "type": "boolean"
+          },
+          "echoSuppressionWindowMs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "echoBargeInRms": {
+            "type": "number",
+            "minimum": 0
+          }
         }
       }
     }
@@ -75,10 +199,35 @@
   "configContracts": {
     "secretInputs": {
       "paths": [
-        { "path": "sharedSecret", "expected": "string" },
-        { "path": "realtime.providers.*.apiKey", "expected": "string" },
-        { "path": "stt.providers.*.apiKey", "expected": "string" }
+        {
+          "path": "sharedSecret",
+          "expected": "string"
+        },
+        {
+          "path": "realtime.providers.*.apiKey",
+          "expected": "string"
+        },
+        {
+          "path": "stt.providers.*.apiKey",
+          "expected": "string"
+        }
       ]
     }
+  },
+  "setup": {
+    "providers": [
+      {
+        "id": "msteams-voice",
+        "authMethods": [
+          "app-registration"
+        ],
+        "envVars": [
+          "MSTEAMS_APP_ID",
+          "MSTEAMS_APP_PASSWORD",
+          "MSTEAMS_TENANT_ID"
+        ]
+      }
+    ],
+    "requiresRuntime": true
   }
 }
