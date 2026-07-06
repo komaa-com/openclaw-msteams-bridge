@@ -5,13 +5,6 @@
   "activation": {
     "onStartup": true
   },
-  "channelEnvVars": {
-    "msteams-voice": [
-      "MSTEAMS_APP_ID",
-      "MSTEAMS_APP_PASSWORD",
-      "MSTEAMS_TENANT_ID"
-    ]
-  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
