@@ -213,21 +213,5 @@
         }
       ]
     }
-  },
-  "setup": {
-    "providers": [
-      {
-        "id": "msteams-voice",
-        "authMethods": [
-          "app-registration"
-        ],
-        "envVars": [
-          "MSTEAMS_APP_ID",
-          "MSTEAMS_APP_PASSWORD",
-          "MSTEAMS_TENANT_ID"
-        ]
-      }
-    ],
-    "requiresRuntime": true
   }
 }
