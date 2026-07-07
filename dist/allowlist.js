@@ -50,3 +50,23 @@ export function isInboundCallAllowed(inboundPolicy, allowFrom, from) {
             return false;
     }
 }
+/**
+ * Actionable log line for a caller rejected by the inbound policy.
+ *
+ * Honesty note: this plugin enforces "pairing" as a plain allowlist - it issues
+ * no pairing codes, expirations, or approval prompts for calls - so the fix for
+ * a rejected caller is the same as under "allowlist": put them in `allowFrom`
+ * (or use the gateway host's own pairing flow, where one exists, to do so).
+ */
+export function describeInboundRejection(inboundPolicy, from) {
+    const policy = inboundPolicy ?? "disabled";
+    const caller = from?.trim() ? `caller "${from.trim()}"` : "caller with no caller id";
+    if (policy === "disabled" || policy === "open") {
+        // "open" never rejects; kept for exhaustiveness if callers reuse this.
+        return `inbound call rejected by policy "${policy}": inbound calling is ${policy === "disabled" ? "disabled - set inboundPolicy to \"allowlist\" and add callers to allowFrom to accept calls" : "open"} (${caller})`;
+    }
+    const pairingHint = policy === "pairing"
+        ? ' Note: "pairing" currently enforces a plain allowlist (this plugin issues no pairing codes or approvals for calls) - add the caller\'s AAD object id to allowFrom, or approve them via your gateway\'s pairing flow if your host supports one.'
+        : " Add the caller's AAD object id (or phone number) to allowFrom to accept them.";
+    return `inbound call rejected by policy "${policy}": ${caller} is not in allowFrom.${pairingHint}`;
+}
