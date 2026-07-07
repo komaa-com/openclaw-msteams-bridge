@@ -51,8 +51,9 @@ set those up first:
    [docs.openclaw.ai](https://docs.openclaw.ai).
 2. **Add Microsoft Teams as a channel** (bot app + credentials) following the
    [OpenClaw Teams channel docs](https://docs.openclaw.ai/channels/msteams).
-3. **Subscribe to StandIn** ([standin.komaa.com](https://standin.komaa.com), free tier), the hosted
-   media bridge that joins the call and connects to this plugin.
+3. **Use the StandIn sandbox** ([standin.komaa.com/sandbox](https://standin.komaa.com/sandbox), free,
+   no Teams bot needed), the hosted media bridge that joins the call and connects to this plugin. Add
+   your own Teams bot later at [standin.komaa.com](https://standin.komaa.com) for inbound calls.
 4. **Add this plugin.** The one-line installer detects your OpenClaw install and walks you through the
    config (mode, shared secret, provider key), then prints the next steps:
 
@@ -65,8 +66,9 @@ set those up first:
 ## Requirements
 
 - An **OpenClaw** install (host `>= 2026.6.9`).
-- A **StandIn** subscription ([standin.komaa.com](https://standin.komaa.com), free tier), the hosted
-  media bridge that joins the Teams call and connects to this plugin's WebSocket.
+- **StandIn** to bridge the call: start free in the [sandbox](https://standin.komaa.com/sandbox) (no
+  Teams bot), or add your own bot at [standin.komaa.com](https://standin.komaa.com) for inbound calls.
+  It is the hosted media bridge that joins the Teams call and connects to this plugin's WebSocket.
 - For **realtime** mode: a realtime voice provider + key (OpenAI or Azure OpenAI). For **streaming**
   mode: your OpenClaw-configured STT / TTS / agent (no realtime key needed).
 
