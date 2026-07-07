@@ -1,7 +1,8 @@
 {
   "id": "msteams-voice",
   "name": "Microsoft Teams Voice (CVI)",
-  "description": "Self-contained Microsoft Teams realtime voice agent — joins Teams calls as a participant (speech-to-speech), continuous vision, wake-phrase gating, outbound call-backs, avatar lip-sync, meeting recap. Builds on the OpenClaw realtime-voice SDK + api.runtime; independent of the voice-call extension.",
+  "version": "0.1.10",
+  "description": "Turn a Microsoft Teams call into a real two-way video conversation: the agent sees your camera and screen-share, talks in real time (speech-to-speech or streaming STT to agent to TTS), and appears as a lip-synced avatar. Vision, meeting recap, outbound call-backs, wake-phrase etiquette, HMAC-secured media bridge.",
   "activation": {
     "onStartup": true
   },

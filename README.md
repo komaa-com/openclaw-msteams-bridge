@@ -4,16 +4,43 @@
 [![docs](https://img.shields.io/badge/docs-komaa.com-2563eb.svg)](https://docs.komaa.com/)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-A self-contained Microsoft Teams voice agent (CVI) for [OpenClaw](https://openclaw.ai). An AI
-assistant that joins Teams calls as a real participant, in **realtime speech-to-speech** or a
-**streaming STT to agent to TTS** pipeline, with continuous vision, speak-only-when-addressed
-gating, outbound call-backs with voicemail, avatar lip-sync, and meeting recap.
+A Microsoft Teams voice and video agent (CVI) for [OpenClaw](https://openclaw.ai). It turns an
+ordinary Teams call into a true two-way video conversation: the agent sees what you show it, talks
+back in real time, and appears in the call as an animated, lip-synced avatar.
 
 > Full documentation: **[docs.komaa.com](https://docs.komaa.com/)** (setup, StandIn bridge,
 > configuration reference, troubleshooting). This README is the quick start.
 
 It is one plugin, depending only on the published `openclaw` plugin-sdk + `api.runtime`. No fork, no
 vendored runtime, no trusted-plugin privileges required.
+
+## Three pillars
+
+| Pillar | The agent... | In the call |
+|---|---|---|
+| **Perception** | sees you | Reads inbound camera and screen-share (VBSS) frames. It can `look_at_screen` on demand, auto-attaches a keyframe each turn in streaming mode, and keeps a continuous ambient view in realtime mode. In meetings, frames are attributed to the participant who sent them, and vision spend is capped per call. |
+| **Dialogue** | talks with you | Holds a natural spoken conversation, either realtime speech-to-speech or a streaming STT to agent to TTS pipeline. It supports barge-in and deterministic verbal interrupts, a "speak only when addressed" gate for group calls, DTMF/IVR entry, bilingual English and Arabic, and greeting attendees by name from the roster. |
+| **Rendering** | is seen by you | Appears as a lip-synced avatar tile. The plugin emits expression cues (happy, sad, surprised), viseme lip-sync driven by speech marks, and `show_to_caller` image overlays; the hosted StandIn bridge draws them into the video the caller sees. |
+
+## Capabilities
+
+- **Two dialogue modes** - realtime speech-to-speech (OpenAI or Azure OpenAI), or a streaming
+  STT to agent to TTS pipeline that works with any provider.
+- **Vision** - reads camera and screen-share frames, keeps a continuous ambient view, retains a
+  retroactive keyframe history, and stays inside a per-call budget cap.
+- **Group and meeting etiquette** - stays silent until addressed by a wake phrase, then answers
+  through a short follow-up window; 1:1 calls always answer; every frame and utterance is attributed
+  to the right speaker.
+- **Outbound call-backs** - places a call, speaks the result, and hangs up, with a voicemail
+  fallback when no one answers.
+- **Meeting recap and minutes** - end-of-call summary of key points, decisions, and action items,
+  plus an on-demand `.docx` of minutes with per-person attribution.
+- **Avatar driver cues** - expression changes, viseme lip-sync, and picture-in-picture image
+  sharing, rendered by the StandIn bridge.
+- **Chat governance** - an "Ask about this" message action, voice-message transcription, an
+  audit-log mirror, and outbound DLP redaction.
+- **Secure transport** - a replay-proof HMAC handshake, a caller allowlist that is closed by
+  default, and a recording-status gate that holds media until recording is active.
 
 ## Getting started
 
@@ -34,16 +61,6 @@ set those up first:
    ```
 
    Prefer to do it by hand? See [Install](#install) and [Configuration](#configuration) below.
-
-## Features
-
-- **Two dialogue modes** - realtime speech-to-speech (OpenAI / Azure) or streaming STT to agent to TTS
-- **Continuous vision** - the agent can look at screen-share / camera frames, budget-capped
-- **Group-call gating** - answers only when addressed by a wake phrase
-- **Outbound call-backs + voicemail** - place a call, deliver a message, or open a conversation
-- **Meeting recap** - a `.docx` of minutes with per-speaker attribution
-- **Bilingual** (Arabic / English), **DTMF**, **barge-in / echo guard**
-- **Secure transport** - HMAC-signed media bridge + caller allowlist
 
 ## Requirements
 
