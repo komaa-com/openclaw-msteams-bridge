@@ -65,7 +65,7 @@ set those up first:
 
 ## Requirements
 
-- An **OpenClaw** install (host `>= 2026.6.9`).
+- An **OpenClaw** install (host `>= 2026.6.10`).
 - **StandIn** to bridge the call: start free in the [sandbox](https://standin.komaa.com/sandbox) (no
   Teams bot), or add your own bot at [standin.komaa.com](https://standin.komaa.com) for inbound calls.
   It is the hosted media bridge that joins the Teams call and connects to this plugin's WebSocket.
@@ -86,6 +86,10 @@ Or install the plugin manually, then restart the gateway:
 openclaw plugins install npm:@komaa/msteams-voice
 openclaw gateway restart
 ```
+
+Also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/msteams-voice`
+(OpenClaw falls back to npm automatically if the ClawHub fetch fails). The package ships prebuilt
+(v0.1.10+): no build step either way.
 
 ## Two modes
 
