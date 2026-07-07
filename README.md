@@ -196,7 +196,7 @@ Full reference at [docs.komaa.com](https://docs.komaa.com/openclaw/configuration
 | `path` | WebSocket path (default `/voice/msteams/stream`) |
 | `sharedSecret` | HMAC secret; must match StandIn |
 | `requireRecordingStatus` | engage only once recording is active |
-| `inboundPolicy` | `disabled`, `allowlist`, `pairing`, `open` |
+| `inboundPolicy` | `disabled`, `allowlist`, `pairing`, `open`. `pairing` currently behaves exactly like `allowlist` (the plugin issues no pairing codes or approvals for calls; callers must be in `allowFrom`) |
 | `allowFrom` | allowlisted caller ids |
 | `inboundGreeting` | opening line |
 | `sessionScope` | `per-phone`, `per-call`, `per-thread` |
