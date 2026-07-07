@@ -1,5 +1,8 @@
 node_modules/
-dist/
+# dist/ is committed on purpose: ClawHub publishes this package as source-linked
+# (it packs from the git tree). There is no build-on-install step, so the built
+# entrypoint (./dist/index.js declared in openclaw.extensions) must be present in
+# the source tarball. npm still rebuilds dist/ via prepublishOnly.
 *.tsbuildinfo
 .env
 .DS_Store

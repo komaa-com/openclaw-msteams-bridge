@@ -1,6 +1,6 @@
 {
   "name": "@komaa/msteams-voice",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "author": "alaamh <alaamh@outlook.com>",
   "repository": {
     "type": "git",
@@ -20,7 +20,7 @@
     "realtime",
     "komaa"
   ],
-  "description": "Self-contained Microsoft Teams CVI realtime-voice plugin for OpenClaw. Builds on the public realtime-voice SDK + api.runtime — no voice-call fork, no vendored CallManager. Single openclaw plugins install.",
+  "description": "Turn a Microsoft Teams call into a real two-way video conversation: the agent sees your camera and screen-share, talks in real time (speech-to-speech or streaming STT to agent to TTS), and appears as a lip-synced avatar. Vision, meeting recap, outbound call-backs, wake-phrase etiquette, HMAC-secured media bridge.",
   "type": "module",
   "main": "./dist/index.js",
   "exports": {
