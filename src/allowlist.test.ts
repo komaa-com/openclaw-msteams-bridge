@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isAllowlistedCaller, isInboundCallAllowed, normalizePhoneNumber } from "./allowlist.js";
+import {
+  describeInboundRejection,
+  isAllowlistedCaller,
+  isInboundCallAllowed,
+  normalizePhoneNumber,
+} from "./allowlist.js";
 
 describe("normalizePhoneNumber", () => {
   it("strips non-digits", () => {
@@ -39,5 +44,27 @@ describe("isInboundCallAllowed", () => {
   it("'disabled' or unset rejects (defensive)", () => {
     expect(isInboundCallAllowed("disabled", ["caller-1"], "caller-1")).toBe(false);
     expect(isInboundCallAllowed(undefined, ["caller-1"], "caller-1")).toBe(false);
+  });
+});
+
+describe("describeInboundRejection", () => {
+  it("names the rejected caller and the policy", () => {
+    const msg = describeInboundRejection("allowlist", "aad-123");
+    expect(msg).toContain('policy "allowlist"');
+    expect(msg).toContain('caller "aad-123"');
+    expect(msg).toContain("allowFrom");
+  });
+  it("is honest about 'pairing' being a plain allowlist and says how to fix it", () => {
+    const msg = describeInboundRejection("pairing", "aad-123");
+    expect(msg).toContain('policy "pairing"');
+    expect(msg).toContain('caller "aad-123"');
+    expect(msg).toContain("no pairing codes");
+    expect(msg).toContain("add the caller's AAD object id to allowFrom");
+    expect(msg).toContain("gateway's pairing flow");
+  });
+  it("handles a missing caller id and an unset policy", () => {
+    const msg = describeInboundRejection(undefined, "");
+    expect(msg).toContain('policy "disabled"');
+    expect(msg).toContain("no caller id");
   });
 });

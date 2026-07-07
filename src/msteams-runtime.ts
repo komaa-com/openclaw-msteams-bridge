@@ -25,7 +25,7 @@ import { createHmac } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { isInboundCallAllowed } from "./allowlist.js";
+import { describeInboundRejection, isInboundCallAllowed } from "./allowlist.js";
 import { CallLifecycle, type SyncKeyedStore } from "./call-lifecycle.js";
 import type { CoreConfig } from "./core-bridge.js";
 import { resolveGroupCallGateConfig } from "./group-call-gate.js";
@@ -300,7 +300,7 @@ export class MsteamsVoiceRuntime {
     const from = session.caller?.aadId ?? "";
     if (!isInboundCallAllowed(this.cfg.voice.inboundPolicy, this.cfg.voice.allowFrom, from)) {
       this.log.warn(
-        `[msteams-voice] inbound call rejected by policy "${this.cfg.voice.inboundPolicy ?? "disabled"}"`,
+        `[msteams-voice] ${describeInboundRejection(this.cfg.voice.inboundPolicy, from)}`,
       );
       session.close("not-allowed");
       return;
