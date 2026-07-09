@@ -48,6 +48,13 @@ const MAX_INBOUND_PAYLOAD_BYTES = 2 * 1024 * 1024;
 const DEFAULT_MAX_CONNECTIONS = 64;
 const DEFAULT_MAX_CONNECTIONS_PER_IP = 8;
 const DEFAULT_PRE_START_TIMEOUT_MS = 10_000;
+/**
+ * Backpressure bound on a single call's OUTBOUND send buffer. Audio egress (sendTo) is
+ * fire-and-forget; if the worker stalls, ws.bufferedAmount grows unbounded and leaks memory. When
+ * the buffer is already this deep we drop the frame (return false) instead of queuing more — audio
+ * is real-time, so a dropped stale frame beats ever-growing latency debt.
+ */
+const MAX_OUTBOUND_BUFFER_BYTES = 1 * 1024 * 1024;
 export class MsteamsMediaStream {
     config;
     hmacWindowMs;
@@ -150,11 +157,15 @@ export class MsteamsMediaStream {
             this.rejectUpgrade(socket, 401, "Unauthorized");
             return;
         }
+        // Normalize the incoming signature the same way Hermes's hmac_auth.verify_upgrade does
+        // (.strip().lower()) so a worker that hex-encodes upper-case or pads whitespace still
+        // authenticates. `expected` is already lower-case hex; the compare stays constant-time.
+        const sig = signature.trim().toLowerCase();
         const expected = crypto
             .createHmac("sha256", this.config.sharedSecret)
             .update(`${ts}.${callId}`)
             .digest("hex");
-        if (!safeEqualSecret(signature, expected)) {
+        if (!safeEqualSecret(sig, expected)) {
             this.config.logger?.warn(`MsteamsMediaStream: rejecting upgrade for ${callId} — bad signature`);
             this.rejectUpgrade(socket, 401, "Unauthorized");
             return;
@@ -173,7 +184,7 @@ export class MsteamsMediaStream {
                 this.seenUpgrades.delete(key);
             }
         }
-        const replayKey = `${callId}.${ts}.${signature}`;
+        const replayKey = `${callId}.${ts}.${sig}`;
         if (this.seenUpgrades.has(replayKey)) {
             this.config.logger?.warn(`MsteamsMediaStream: rejecting upgrade for ${callId} — replayed handshake`);
             this.rejectUpgrade(socket, 401, "Unauthorized");
@@ -380,6 +391,11 @@ export class MsteamsMediaStream {
     sendTo(callId, message) {
         const ws = this.sessions.get(callId);
         if (ws && ws.readyState === WebSocket.OPEN) {
+            // Backpressure: a slow/stalled worker must not let the outbound buffer grow without bound.
+            if (ws.bufferedAmount > MAX_OUTBOUND_BUFFER_BYTES) {
+                this.config.logger?.warn(`MsteamsMediaStream: dropping frame for ${callId} — send buffer backpressure (${ws.bufferedAmount} bytes)`);
+                return false;
+            }
             ws.send(JSON.stringify(message));
             return true;
         }
