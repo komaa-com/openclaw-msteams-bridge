@@ -1,0 +1,53 @@
+name: CI (dist sync + tests)
+
+# The package ships PREBUILT: dist/ is committed and npm/ClawHub installs run it as-is, so a dist/
+# that drifts from src/ ships stale code to every user. This gate fails any PR or main push where a
+# fresh build does not reproduce the committed dist/ byte-for-byte, and runs the unit tests.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dist-sync:
+    runs-on: [self-hosted, linux] # org runner: pcfcgrtaiqt02 (hosted runners are billing-blocked)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: dist/ must be byte-identical to the fresh build
+        run: |
+          if ! git diff --exit-code -- dist; then
+            echo "::error::dist/ is out of sync with src/ - run 'pnpm build' and commit the result."
+            exit 1
+          fi
+          # Catch files the build produces that were never committed (diff alone misses untracked).
+          untracked="$(git status --porcelain dist | grep '^??' || true)"
+          if [ -n "$untracked" ]; then
+            echo "::error::build produced uncommitted dist files:"
+            echo "$untracked"
+            exit 1
+          fi
