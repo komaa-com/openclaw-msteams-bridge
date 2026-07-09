@@ -115,6 +115,31 @@ describe("CallLifecycle", () => {
     expect(lc.getRecord("c1")?.endReason).toBe("timeout");
   });
 
+  it("reapStale signals onReap so the owner can tear down an over-duration call (H7)", () => {
+    const reaped: Array<[string, string]> = [];
+    const { lc, advance } = harness({
+      maxDurationMs: 1000,
+      onReap: (callId, reason) => reaped.push([callId, reason]),
+    });
+    lc.initiate(init);
+    lc.answer("c1");
+    advance(1500); // now - answeredAt > maxDurationMs → over-duration
+    lc.reapStale();
+    expect(reaped).toEqual([["c1", "timeout"]]);
+  });
+
+  it("reapStale signals onReap for an unanswered reap too (H7)", () => {
+    const reaped: Array<[string, string]> = [];
+    const { lc, advance } = harness({
+      staleCallReaperMs: 1000,
+      onReap: (callId, reason) => reaped.push([callId, reason]),
+    });
+    lc.initiate(init);
+    advance(1500);
+    lc.reapStale();
+    expect(reaped).toEqual([["c1", "no-answer"]]);
+  });
+
   it("rehydrates non-terminal records from the store on construction", () => {
     const seed: CallRecord[] = [
       {

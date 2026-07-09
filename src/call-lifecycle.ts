@@ -39,6 +39,14 @@ export interface CallLifecycleOptions {
   maxDurationMs: number;
   /** End a call that never answered after this. 0 disables the unanswered reaper. */
   staleCallReaperMs: number;
+  /**
+   * Invoked after the reaper ends a call (unanswered or over-duration) so the owner can run the SAME
+   * teardown as a user hangup — close the media/realtime bridge, not just forget the record. Without
+   * it a reaped call's sockets stay open (a zombie streaming media + provider socket) while
+   * activeCount() drops and the concurrency gate reopens, bypassing maxConcurrentCalls and leaking
+   * resources. The reason is the terminal end reason ("no-answer" | "timeout").
+   */
+  onReap?: (callId: string, reason: CallEndReason) => void;
 }
 
 /** Cap retained transcript entries per call so a long meeting can't grow a record unbounded. */
@@ -191,9 +199,13 @@ export class CallLifecycle {
       if (unanswered) {
         this.rt.log.info(`msteams-voice: reaping unanswered call ${rec.callId}`);
         this.end(rec.callId, "no-answer");
+        // Signal the owner to tear down the live bridge too (see onReap): end() alone forgets the
+        // record but leaves the media/realtime sockets open.
+        this.opts.onReap?.(rec.callId, "no-answer");
       } else if (overDuration) {
         this.rt.log.info(`msteams-voice: reaping over-duration call ${rec.callId}`);
         this.end(rec.callId, "timeout");
+        this.opts.onReap?.(rec.callId, "timeout");
       }
     }
   }

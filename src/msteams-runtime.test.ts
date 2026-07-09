@@ -105,3 +105,59 @@ describe("MsteamsVoiceRuntime.placeCall (outbound)", () => {
     await expect(rt.placeCall("user:x")).rejects.toThrow(/outbound calling is disabled/);
   });
 });
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fakeVideoFrame(callId: string): any {
+  return {
+    callId,
+    source: "camera",
+    dataBase64: "AAAA",
+    mime: "image/jpeg",
+    width: 2,
+    height: 2,
+    ts: 1,
+  };
+}
+
+describe("MsteamsVoiceRuntime teardown (H7 reaper + vision leak)", () => {
+  function runtimeWithLiveCall() {
+    const api = fakeApi();
+    const cfg = resolvePluginConfig(api.pluginConfig);
+    cfg.limits.maxDurationMs = 1000; // enable the over-duration reaper
+    const rt = new MsteamsVoiceRuntime(api, cfg);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inner = rt as any;
+    const lifecycle = inner.lifecycle;
+    const calls: Map<string, { close: (r?: string) => void }> = inner.calls;
+    const vision = inner.vision;
+    const closedReasons: Array<string | undefined> = [];
+
+    lifecycle.initiate({ callId: "c1", providerCallId: "c1", direction: "inbound", from: "a", to: "" });
+    lifecycle.answer("c1");
+    calls.set("c1", { close: (r?: string) => closedReasons.push(r) });
+    vision.store(fakeVideoFrame("c1"));
+    expect(vision.getLatest("c1")).toBeDefined();
+    return { rt, inner, lifecycle, calls, vision, closedReasons };
+  }
+
+  it("reaping an over-duration call closes its bridge + frees frames (no zombie / no gate bypass)", () => {
+    const { lifecycle, calls, vision, closedReasons } = runtimeWithLiveCall();
+    lifecycle.getRecord("c1").answeredAt = 0; // force past maxDurationMs
+    lifecycle.reapStale();
+
+    expect(closedReasons.length).toBe(1); // the media/realtime bridge was torn down
+    expect(closedReasons[0]).toBe("timeout"); // reason passed → Teams worker session closed too
+    expect(calls.has("c1")).toBe(false); // dropped from the active registry
+    expect(vision.getLatest("c1")).toBeUndefined(); // per-call frames released (leak fixed)
+    expect(lifecycle.activeCount()).toBe(0); // gate accounting stays consistent
+  });
+
+  it("a caller hangup also releases the call's retained vision frames (leak fix)", () => {
+    const { inner, calls, vision, closedReasons } = runtimeWithLiveCall();
+    inner.onSessionEnd({ callId: "c1", reason: "hangup" });
+
+    expect(closedReasons).toEqual([undefined]); // caller hangup: session already closing → no reason
+    expect(calls.has("c1")).toBe(false);
+    expect(vision.getLatest("c1")).toBeUndefined();
+  });
+});
