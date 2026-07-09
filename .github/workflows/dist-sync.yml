@@ -13,7 +13,9 @@ permissions:
 
 jobs:
   dist-sync:
-    runs-on: [self-hosted, linux] # org runner: pcfcgrtaiqt02 (hosted runners are billing-blocked)
+    # Hosted, NOT self-hosted: this repo is public (npm provenance), so hosted minutes are free and
+    # fork PRs must never execute on org VMs. The org runner group excludes public repos by default.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
