@@ -25,7 +25,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not publish.yml's 20: the vitest dep chain (undici) needs it, and 22 matches dev.
+          node-version: 22
           cache: pnpm
 
       - name: Install (frozen)
