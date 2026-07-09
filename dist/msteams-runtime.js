@@ -118,6 +118,19 @@ export class MsteamsVoiceRuntime {
         // "realtime" when a realtime provider resolved (or explicitly configured), else "streaming".
         this.mode =
             this.cfg.voice.mode ?? (this.realtime?.provider ? "realtime" : "streaming");
+        // Fail-LOUD at startup (mirror Hermes cli.py's fail-fast): if the operator explicitly set
+        // mode:"realtime" but no provider resolved, start() would otherwise log a healthy
+        // "started (mode=realtime)" and then reject EVERY inbound call with "realtime-unavailable" (the
+        // #1 silent-first-call class). Name the configured provider so the missing key is obvious.
+        if (this.mode === "realtime" && !this.realtime?.provider) {
+            const providerId = this.cfg.voice.realtime.provider;
+            this.log.warn(`[msteams-voice] mode is "realtime" but no realtime voice provider resolved` +
+                (providerId
+                    ? ` (configured provider "${providerId}" has no usable credentials)`
+                    : ` (no realtime provider configured)`) +
+                `. Every inbound call will be rejected with "realtime-unavailable". Set the provider's API` +
+                ` key, or set mode:"streaming".`);
+        }
         if (this.mode === "streaming")
             this.resolveTranscriptionProvider();
         this.lifecycle.start();
@@ -212,6 +225,10 @@ export class MsteamsVoiceRuntime {
         this.pendingOutbound.delete(callId);
         this.clearOutboundTimer(callId);
         this.log.warn(`[msteams-voice] outbound call ${callId} not answered within timeout; finalizing (no-answer/voicemail)`);
+        // NOTE: the call may still be RINGING on the Teams worker side. Cancelling it needs a
+        // cancel-by-callId endpoint on the OpenClawBridge worker, which does not exist yet (known
+        // bridge-side gap). Until it does, we can only finalize locally; a late answer is denied in
+        // onSessionStart (below) instead of being mis-routed to the inbound path.
         this.lifecycle.end(callId, "no-answer");
     }
     clearOutboundTimer(callId) {
@@ -246,6 +263,18 @@ export class MsteamsVoiceRuntime {
                 ? `Deliver this message to the person, then say goodbye and end the call: "${pending.message}"`
                 : (pending.message ?? this.cfg.voice.inboundGreeting);
             this.calls.set(session.callId, this.createCall(session, greeting));
+            return;
+        }
+        // A late answer to an outbound call whose answer-timeout already fired: the pending entry is
+        // gone and the lifecycle record is a terminal outbound. Without this guard it falls through to
+        // the inbound branch and is evaluated against inbound policy using the CALLEE's id — the wrong
+        // reject/greeting. Deny the late media attach instead of mis-routing it.
+        const prior = this.lifecycle.getStatus(session.callId);
+        if (prior?.isTerminal) {
+            const rec = this.lifecycle.getRecord(session.callId);
+            this.log.warn(`[msteams-voice] ignoring late media attach for ${session.callId} — call already finalized` +
+                ` (${rec?.endReason ?? "ended"}); closing`);
+            session.close(rec?.direction === "outbound" ? "answer-timeout" : "already-ended");
             return;
         }
         // Inbound: enforce caller policy before accepting.

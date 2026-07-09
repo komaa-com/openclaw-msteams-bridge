@@ -813,6 +813,46 @@ describe("MsteamsMediaStream", () => {
     ws.close();
   });
 
+  it("authenticates a signature that is upper-case hex (HMAC normalization, matches Hermes)", async () => {
+    // Hermes verify_upgrade does .strip().lower() on the signature; a worker that hex-encodes upper-
+    // case must still authenticate. Previously the raw header was compared and this failed.
+    const port = randomPort();
+    let started = false;
+    server = await startServer({ port, onSessionStart: () => (started = true) });
+
+    const callId = "call-upper-sig";
+    const ts = Date.now();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
+      headers: {
+        "x-openclawteamsbridge-timestamp": String(ts),
+        "x-openclawteamsbridge-signature": signHmac(SECRET, ts, callId).toUpperCase(),
+      },
+    });
+    const outcome = await new Promise<"open" | "error" | "unexpected-response">((resolve) => {
+      ws.once("open", () => resolve("open"));
+      ws.once("error", () => resolve("error"));
+      ws.once("unexpected-response", () => resolve("unexpected-response"));
+    });
+    expect(outcome).toBe("open"); // upper-case hex now authenticates
+    ws.close();
+  });
+
+  it("drops an outbound frame when the send buffer is backed up (egress backpressure)", () => {
+    // sendTo is fire-and-forget; a stalled worker must not let ws.bufferedAmount grow unbounded.
+    const media = new MsteamsMediaStream({ port: 0, path: PATH, sharedSecret: SECRET });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inner = media as any;
+    const fakeWs = { readyState: WebSocket.OPEN, bufferedAmount: 0, send: vi.fn() };
+    inner.sessions.set("c1", fakeWs);
+
+    expect(inner.sendTo("c1", { type: "audio.frame" })).toBe(true);
+    expect(fakeWs.send).toHaveBeenCalledTimes(1);
+
+    fakeWs.bufferedAmount = 2 * 1024 * 1024; // over the 1 MB cap
+    expect(inner.sendTo("c1", { type: "audio.frame" })).toBe(false); // dropped
+    expect(fakeWs.send).toHaveBeenCalledTimes(1); // not sent again
+  });
+
   it("accepts only valid DTMF digits (0-9, *, #) and drops anything else", async () => {
     const port = randomPort();
     const digits: string[] = [];

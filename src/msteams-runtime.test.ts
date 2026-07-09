@@ -7,6 +7,14 @@ import { resolvePluginConfig } from "./plugin-config.js";
 vi.mock("openclaw/plugin-sdk/ssrf-runtime", () => ({ fetchWithSsrFGuard: vi.fn() }));
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 
+// No realtime provider resolves (no credentials) — lets us exercise the mode:"realtime" startup
+// warning deterministically without depending on ambient provider env vars.
+vi.mock("openclaw/plugin-sdk/realtime-voice", () => ({
+  resolveConfiguredRealtimeVoiceProvider: vi.fn(() => ({})),
+  consultRealtimeVoiceAgent: vi.fn(),
+  resolveRealtimeVoiceAgentConsultToolsAllow: vi.fn(() => []),
+}));
+
 function fakeApi() {
   const store = new Map<string, unknown>();
   const syncKeyedStore = {
@@ -159,5 +167,58 @@ describe("MsteamsVoiceRuntime teardown (H7 reaper + vision leak)", () => {
     expect(closedReasons).toEqual([undefined]); // caller hangup: session already closing → no reason
     expect(calls.has("c1")).toBe(false);
     expect(vision.getLatest("c1")).toBeUndefined();
+  });
+});
+
+describe("MsteamsVoiceRuntime.start (realtime provider warning)", () => {
+  it("warns loudly when mode:'realtime' is set but no provider resolves", async () => {
+    const api = fakeApi();
+    const logger = api.runtime.logging.getChildLogger();
+    api.pluginConfig.mode = "realtime";
+    api.pluginConfig.realtime = { provider: "openai" }; // no credentials → does not resolve
+    api.pluginConfig.port = 0; // OS-assigned; avoids collisions
+    const rt = new MsteamsVoiceRuntime(api, resolvePluginConfig(api.pluginConfig));
+    await rt.start();
+    try {
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('mode is "realtime" but no realtime voice provider resolved'),
+      );
+    } finally {
+      await rt.stop();
+    }
+  });
+});
+
+describe("MsteamsVoiceRuntime.onSessionStart (late outbound answer)", () => {
+  it("denies a late media attach for an outbound call whose answer-timeout already fired", () => {
+    const api = apiWithOutbound();
+    const rt = new MsteamsVoiceRuntime(api, resolvePluginConfig(api.pluginConfig));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inner = rt as any;
+    inner.mode = "streaming"; // skip the realtime-provider guard so we reach the late-answer branch
+
+    inner.lifecycle.initiate({
+      callId: "wc-1",
+      providerCallId: "wc-1",
+      direction: "outbound",
+      from: "",
+      to: "user:callee",
+      message: "hi",
+    });
+    inner.pendingOutbound.set("wc-1", { to: "user:callee", message: "hi", mode: "notify" });
+    inner.finalizeUnansweredOutbound("wc-1"); // answer window elapsed → pending gone, record terminal
+
+    const closed: string[] = [];
+    const session = {
+      callId: "wc-1",
+      threadId: "t",
+      caller: { aadId: "callee" },
+      send: () => true,
+      close: (r: string) => closed.push(r),
+    };
+    inner.onSessionStart(session);
+
+    expect(closed).toEqual(["answer-timeout"]); // denied, not mis-routed to inbound
+    expect(inner.calls.has("wc-1")).toBe(false); // no call handle was created
   });
 });
