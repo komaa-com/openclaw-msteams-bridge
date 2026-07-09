@@ -344,6 +344,12 @@ export function createMsteamsStreamingCall(params: {
       if (active) maybeGreet();
     },
 
+    say: (text: string) => {
+      // H4: speak the worker-provided line (e.g. a goodbye before a limit cutoff) through the existing
+      // TTS path. `speak` already no-ops when closed or when the text is blank.
+      void speak(text);
+    },
+
     close: (reason?: string) => {
       if (closed) return;
       closed = true;

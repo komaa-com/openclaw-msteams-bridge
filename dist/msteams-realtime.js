@@ -1303,6 +1303,17 @@ export function createMsteamsRealtimeCall(params) {
                 }
             }
         },
+        say: (text) => {
+            if (closed || !text || !text.trim())
+                return;
+            // Mirror the deferred-greeting path: inject the instruction and trigger a spoken response.
+            try {
+                realtime.triggerGreeting(text);
+            }
+            catch (err) {
+                logger?.warn(`MsteamsRealtime: assistant.say failed for ${callId} — ${err instanceof Error ? err.message : String(err)}`);
+            }
+        },
         close: (reason) => {
             closeCall(reason);
         },

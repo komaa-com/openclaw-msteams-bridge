@@ -107,6 +107,11 @@ export interface MsteamsMediaStreamConfig {
   onParticipants?: (info: { callId: string; count: number }) => void;
   /** A DTMF key the caller pressed ("0"-"9", "*", "#"). See #21. */
   onDtmf?: (info: { callId: string; digit: string }) => void;
+  /**
+   * H4: the worker asks the agent to speak `text` in its own realtime voice (e.g. a brief goodbye
+   * right before a limit-cutoff teardown, instead of a bare mid-sentence hangup).
+   */
+  onAssistantSay?: (info: { callId: string; text: string }) => void;
 }
 
 const DEFAULT_HMAC_WINDOW_MS = 60_000;
@@ -522,6 +527,10 @@ export class MsteamsMediaStream {
       }
       case "dtmf": {
         this.config.onDtmf?.({ callId, digit: parsed.digit });
+        break;
+      }
+      case "assistant.say": {
+        this.config.onAssistantSay?.({ callId, text: parsed.text });
         break;
       }
       case "ping": {
