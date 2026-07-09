@@ -84,6 +84,11 @@ export class MsteamsVoiceRuntime {
             maxConcurrentCalls: cfg.limits.maxConcurrentCalls,
             maxDurationMs: cfg.limits.maxDurationMs,
             staleCallReaperMs: cfg.limits.staleCallReaperMs,
+            // The reaper only ends the lifecycle record; run the SAME runtime teardown as a user hangup so
+            // the reaped call's media + realtime sockets actually close (H7: no zombie, no maxConcurrentCalls
+            // bypass). Pass the reason so the Teams worker session is closed too (the call is still live,
+            // unlike a caller-driven hangup where the session is already closing).
+            onReap: (callId, reason) => this.disposeCall(callId, reason),
         });
         this.media = new MsteamsMediaStream({
             port: cfg.media.port,
@@ -427,11 +432,26 @@ export class MsteamsVoiceRuntime {
         };
     }
     onSessionEnd(info) {
-        this.pendingOutbound.delete(info.callId);
-        this.clearOutboundTimer(info.callId);
-        this.calls.get(info.callId)?.close();
-        this.calls.delete(info.callId);
+        // Caller-driven hangup: the Teams worker session is already closing, so tear down locally
+        // (close() with no reason) and end the lifecycle record.
+        this.disposeCall(info.callId);
         this.lifecycle.end(info.callId, "hangup-user");
+    }
+    /**
+     * Drop every per-call resource: the media/realtime bridge, the outbound bookkeeping, and the
+     * retained vision frames. Shared by a caller hangup ({@link onSessionEnd}) and the reaper's onReap
+     * hook so a reaped call is torn down exactly like a hangup instead of leaking a zombie socket.
+     * `closeReason` is forwarded to the bridge's close(): pass a reason (reaper) to ALSO close the
+     * Teams worker session; omit it (caller hangup) when the session is already closing.
+     */
+    disposeCall(callId, closeReason) {
+        this.pendingOutbound.delete(callId);
+        this.clearOutboundTimer(callId);
+        this.calls.get(callId)?.close(closeReason);
+        this.calls.delete(callId);
+        // Release the per-call vision frames (latest + keyframe history, ~1-2 MB/call). These were never
+        // released outside tests, leaking for the process lifetime on every completed call.
+        this.vision.release(callId);
     }
 }
 /** Wrap raw PCM (16-bit mono LE) in a minimal WAV container so file-based STT can read it. */
