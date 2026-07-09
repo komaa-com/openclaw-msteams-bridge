@@ -222,3 +222,39 @@ describe("MsteamsVoiceRuntime.onSessionStart (late outbound answer)", () => {
     expect(inner.calls.has("wc-1")).toBe(false); // no call handle was created
   });
 });
+
+describe("MsteamsVoiceRuntime.finalizeUnansweredOutbound (H7a cancel-by-callId)", () => {
+  it("sends a signed DELETE /api/calls/{callId} to cancel the still-ringing outbound", () => {
+    vi.mocked(fetchWithSsrFGuard).mockClear();
+    vi.mocked(fetchWithSsrFGuard).mockResolvedValue({
+      response: { ok: true, text: async () => "" },
+      release: async () => {},
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    const api = apiWithOutbound();
+    const rt = new MsteamsVoiceRuntime(api, resolvePluginConfig(api.pluginConfig));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inner = rt as any;
+    inner.mode = "streaming";
+    inner.lifecycle.initiate({
+      callId: "wc-42",
+      providerCallId: "wc-42",
+      direction: "outbound",
+      from: "",
+      to: "user:callee",
+      message: "hi",
+    });
+    inner.pendingOutbound.set("wc-42", { to: "user:callee", message: "hi", mode: "notify" });
+
+    inner.finalizeUnansweredOutbound("wc-42");
+
+    // Best-effort cancel is fired synchronously (up to its first await) when finalizing.
+    expect(vi.mocked(fetchWithSsrFGuard)).toHaveBeenCalledTimes(1);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const arg = vi.mocked(fetchWithSsrFGuard).mock.calls[0][0] as any;
+    expect(arg.init.method).toBe("DELETE");
+    expect(String(arg.url)).toContain("/api/calls/wc-42");
+    expect(arg.init.headers["x-openclawteamsbridge-signature"]).toMatch(/^[0-9a-f]{64}$/);
+    expect(arg.init.headers["x-openclawteamsbridge-timestamp"]).toMatch(/^\d+$/);
+  });
+});

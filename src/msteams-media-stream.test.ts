@@ -40,6 +40,7 @@ async function startServer(opts: {
     dataBase64: string;
   }) => void;
   onDtmf?: (info: { callId: string; digit: string }) => void;
+  onAssistantSay?: (info: { callId: string; text: string }) => void;
 }): Promise<MsteamsMediaStream> {
   const server = new MsteamsMediaStream({
     port: opts.port,
@@ -55,6 +56,7 @@ async function startServer(opts: {
     onRecordingStatus: opts.onRecordingStatus,
     onVideoFrame: opts.onVideoFrame,
     onDtmf: opts.onDtmf,
+    onAssistantSay: opts.onAssistantSay,
   });
   await server.start();
   return server;
@@ -423,6 +425,39 @@ describe("MsteamsMediaStream", () => {
     expect(received[0]?.callId).toBe(callId);
     expect(received[0]?.seq).toBe(42);
     expect(received[0]?.payload.equals(rawAudio)).toBe(true);
+
+    ws.close();
+  });
+
+  it("decodes assistant.say and emits via onAssistantSay (H4)", async () => {
+    const port = randomPort();
+    const said: Array<{ callId: string; text: string }> = [];
+    server = await startServer({
+      port,
+      onAssistantSay: (info) => {
+        said.push({ callId: info.callId, text: info.text });
+      },
+    });
+
+    const callId = "call-say";
+    const ts = Date.now();
+    const sig = signHmac(SECRET, ts, callId);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
+      headers: {
+        "x-openclawteamsbridge-timestamp": String(ts),
+        "x-openclawteamsbridge-signature": sig,
+      },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+    });
+
+    ws.send(JSON.stringify({ type: "assistant.say", text: "Goodbye for now." }));
+
+    await waitFor(() => said.length > 0);
+    expect(said[0]?.callId).toBe(callId);
+    expect(said[0]?.text).toBe("Goodbye for now.");
 
     ws.close();
   });
