@@ -375,6 +375,10 @@ export class MsteamsMediaStream {
                     this.config.onDtmf?.({ callId, digit: parsed.digit });
                     break;
                 }
+                case "assistant.say": {
+                    this.config.onAssistantSay?.({ callId, text: parsed.text });
+                    break;
+                }
                 case "ping": {
                     this.sendTo(callId, { type: "pong", ts: parsed.ts });
                     break;
