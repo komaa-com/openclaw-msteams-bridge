@@ -332,6 +332,26 @@ describe("createMsteamsRealtimeCall", () => {
     expect(String(mock.sendUserMessage.mock.calls[0]?.[0] ?? "")).toContain('"2"');
   });
 
+  it("say() speaks the given text in the agent's own realtime voice (H4)", () => {
+    const ctx = createMockSession("active");
+    const mock = createMockProvider();
+    const call = createMsteamsRealtimeCall({
+      session: ctx.session,
+      deps: { provider: mock.provider, providerConfig: {} },
+    });
+
+    const goodbye = "Your time for now is up. Talk to you again soon. Goodbye.";
+    call.say(goodbye);
+
+    // assistant.say injects the text and triggers a spoken response (triggerGreeting).
+    expect(mock.triggerGreeting).toHaveBeenCalledTimes(1);
+    expect(mock.triggerGreeting.mock.calls[0]?.[0]).toBe(goodbye);
+
+    // A blank line is ignored (no extra spoken response).
+    call.say("   ");
+    expect(mock.triggerGreeting).toHaveBeenCalledTimes(1);
+  });
+
   it("echo guard tracks the playout clock, not last-send time (burst-generated audio)", () => {
     vi.useFakeTimers();
     try {

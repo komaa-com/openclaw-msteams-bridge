@@ -202,6 +202,22 @@ export const PingSchema = z.object({
 });
 
 /**
+ * Worker -> plugin (H4). Ask the agent to speak the given text in its OWN realtime voice before the
+ * worker tears the call down - e.g. a brief goodbye when a time/minute limit (free trial, daily
+ * budget, or the paid max-minutes governor) cuts the call off, instead of a bare mid-sentence
+ * hangup. The plugin injects the text into the realtime session and triggers a spoken response; in
+ * streaming/TTS mode it speaks via the existing TTS path, else it no-ops. Additive/best-effort: an
+ * older plugin ignores it.
+ */
+export const AssistantSaySchema = z.object({
+  type: z.literal("assistant.say"),
+  /**
+   * The exact utterance the agent should speak (a short goodbye).
+   */
+  text: z.string().min(1),
+});
+
+/**
  * Every message the worker can send, discriminated on 'type'.
  */
 export const InboundMessageSchema = z.discriminatedUnion("type", [
@@ -213,6 +229,7 @@ export const InboundMessageSchema = z.discriminatedUnion("type", [
   ParticipantsSchema,
   DtmfSchema,
   PingSchema,
+  AssistantSaySchema,
 ]);
 
 export type InboundMessage = z.infer<typeof InboundMessageSchema>;

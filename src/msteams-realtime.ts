@@ -401,6 +401,12 @@ export interface MsteamsRealtimeCall {
   /** Update Teams recording status (gates the consult tool + background task). */
   setRecordingActive(active: boolean): void;
   /**
+   * H4: speak `text` in the agent's own realtime voice now (e.g. a brief goodbye the worker sends
+   * right before a limit-cutoff teardown). Injects the text as an instruction and triggers a spoken
+   * response. Best-effort — a no-op once the session is closed.
+   */
+  say(text: string): void;
+  /**
    * Tear down the realtime session. Pass a `reason` for a manager-driven hangup (idle timeout, notify
    * auto-hangup, explicit endCall) to ALSO close the Teams worker session so the call actually ends;
    * omit it for a caller-driven `session.end` (the session is already closing).
@@ -1619,6 +1625,17 @@ export function createMsteamsRealtimeCall(params: {
             `MsteamsRealtime: deferred greeting failed for ${callId} — ${err instanceof Error ? err.message : String(err)}`,
           );
         }
+      }
+    },
+    say: (text: string) => {
+      if (closed || !text || !text.trim()) return;
+      // Mirror the deferred-greeting path: inject the instruction and trigger a spoken response.
+      try {
+        realtime.triggerGreeting(text);
+      } catch (err) {
+        logger?.warn(
+          `MsteamsRealtime: assistant.say failed for ${callId} — ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
     close: (reason?: string) => {

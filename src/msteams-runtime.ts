@@ -144,6 +144,8 @@ export class MsteamsVoiceRuntime {
       onRecordingStatus: (i) => this.calls.get(i.callId)?.setRecordingActive(i.status === "active"),
       onDtmf: (i) => this.calls.get(i.callId)?.notifyDtmf(i.digit),
       onParticipants: (i) => this.calls.get(i.callId)?.setHumanCount(i.count),
+      // H4: the worker asks the agent to speak a line (e.g. a goodbye) in its own realtime voice.
+      onAssistantSay: (i) => this.calls.get(i.callId)?.say(i.text),
     });
   }
 
@@ -276,11 +278,58 @@ export class MsteamsVoiceRuntime {
     this.log.warn(
       `[msteams-voice] outbound call ${callId} not answered within timeout; finalizing (no-answer/voicemail)`,
     );
-    // NOTE: the call may still be RINGING on the Teams worker side. Cancelling it needs a
-    // cancel-by-callId endpoint on the OpenClawBridge worker, which does not exist yet (known
-    // bridge-side gap). Until it does, we can only finalize locally; a late answer is denied in
-    // onSessionStart (below) instead of being mis-routed to the inbound path.
+    // H7a: the call may still be RINGING on the Teams worker side, and an unanswered outbound never
+    // got a threadId (so DELETE /Calls?threadId can't reach it). Best-effort cancel it by callId via
+    // the worker's cancel-by-callId endpoint so the callee stops ringing. Fire-and-forget: a late
+    // answer is still denied in onSessionStart, and a cancel failure must never break finalization.
+    void this.cancelRingingOutbound(callId);
     this.lifecycle.end(callId, "no-answer");
+  }
+
+  /**
+   * H7a: cancel a ringing/active outbound call by its worker callId (DELETE /api/calls/{callId}),
+   * signed exactly like {@link placeCall} (HMAC-SHA256 over `${timestampMs}.${callId}`). Best-effort:
+   * logs and swallows every failure (never throws) — the outbound is already being finalized locally.
+   */
+  private async cancelRingingOutbound(callId: string): Promise<void> {
+    const ob = this.cfg.outbound;
+    const workerBaseUrl = ob?.workerBaseUrl;
+    const sharedSecret = this.cfg.media.sharedSecret;
+    if (!workerBaseUrl || !sharedSecret) return; // outbound cancel not configured — nothing to do
+    try {
+      const timestampMs = Date.now();
+      const signature = createHmac("sha256", sharedSecret)
+        .update(`${timestampMs}.${callId}`)
+        .digest("hex");
+      const url = `${workerBaseUrl.replace(/\/+$/, "")}/api/calls/${encodeURIComponent(callId)}`;
+      const { response, release } = await fetchWithSsrFGuard({
+        url,
+        init: {
+          method: "DELETE",
+          headers: {
+            "x-openclawteamsbridge-timestamp": String(timestampMs),
+            "x-openclawteamsbridge-signature": signature,
+          },
+        },
+        // Same trust posture as placeCall: operator-configured worker, often on loopback.
+        policy: { allowedHostnames: [new URL(url).hostname], allowPrivateNetwork: true },
+      });
+      try {
+        if (!response.ok) {
+          this.log.warn(
+            `[msteams-voice] cancel-by-callId ${callId} returned ${response.status}`,
+          );
+        } else {
+          this.log.info(`[msteams-voice] cancelled ringing outbound ${callId}`);
+        }
+      } finally {
+        await release();
+      }
+    } catch (err) {
+      this.log.warn(
+        `[msteams-voice] cancel-by-callId ${callId} failed: ${(err as Error).message}`,
+      );
+    }
   }
 
   private clearOutboundTimer(callId: string): void {
