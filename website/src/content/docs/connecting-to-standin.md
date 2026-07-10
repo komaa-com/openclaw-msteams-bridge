@@ -26,7 +26,14 @@ What you configure to make this work:
 | `sharedSecret` | The HMAC secret. It **must match** the value StandIn uses, or the handshake is rejected. |
 
 Every connection is authenticated with a replay-proof HMAC handshake - see the [Wire Protocol](/openclaw-msteams-voice/wire-protocol/).
-This is the same regardless of which tier you use; only the identity and limits differ.
+This is the same regardless of which tier you use; only the identity and limits differ. For the
+bigger picture of what runs where, see [Architecture](/openclaw-msteams-voice/architecture/).
+
+:::note[Keep the secret a secret]
+The shared secret authenticates every media connection **and** signs outbound place-call requests.
+Store it as an OpenClaw secret reference rather than a literal string in production, and rotate it
+on the StandIn side and in the plugin config together.
+:::
 
 ## The three tiers
 
@@ -56,9 +63,11 @@ always get a shared secret and StandIn dials in.
 - **Use it for:** real, always-on deployments.
 - **Start:** [standin.komaa.com](https://standin.komaa.com).
 
-> For account, dashboard, and bot-pairing specifics (creating the Azure Bot, entering credentials,
-> retrieving the secret), follow the StandIn docs at [docs.komaa.com](https://docs.komaa.com). Those
-> steps live on the StandIn side; this plugin only needs the resulting `sharedSecret`.
+:::note
+For account, dashboard, and bot-pairing specifics (creating the Azure Bot, entering credentials,
+retrieving the secret), follow the StandIn docs at [docs.komaa.com](https://docs.komaa.com). Those
+steps live on the StandIn side; this plugin only needs the resulting `sharedSecret`.
+:::
 
 ## Pairing your own Teams bot
 
@@ -77,15 +86,26 @@ Pairing in the StandIn dashboard links that bot identity to a shared secret; put
 
 ## Restricting who can reach the agent
 
-Inbound calls are gated by policy - closed by default:
+Inbound calls are gated by policy, and the gate is **closed until you open it**: with
+`inboundPolicy` unset (or `disabled`), every inbound call is rejected.
 
-- `inboundPolicy`: `disabled` | `allowlist` | `pairing` | `open`.
-- `allowFrom`: the list of allowed caller AAD object ids.
+- `inboundPolicy`: `disabled` | `allowlist` | `pairing` | `open`. Unset = deny all.
+- `allowFrom`: the allowed callers, matched by AAD object id (case-insensitive) or phone number
+  (digits only).
 
-> Note: `pairing` currently behaves exactly like `allowlist` - the plugin issues no per-call pairing
-> codes; callers must be present in `allowFrom`.
+The usual progression: `open` for your first sandbox call, then `allowlist` + `allowFrom` for
+everything after.
 
-See [Configuration Reference](/openclaw-msteams-voice/configuration-reference/) for details.
+:::note
+`pairing` currently behaves exactly like `allowlist` - the plugin issues no per-call pairing
+codes; callers must be present in `allowFrom`.
+:::
+
+:::caution
+`open` accepts **any** caller who reaches your bot. Use it for sandbox testing only.
+:::
+
+See the [Configuration Reference](/openclaw-msteams-voice/configuration-reference/) for details.
 
 ## Cutoff and the spoken goodbye
 
