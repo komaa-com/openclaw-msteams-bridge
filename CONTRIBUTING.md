@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving `@komaa/msteams-voice`. This guide covers local setup, the
+Thanks for your interest in improving `@komaa/msteams-bridge`. This guide covers local setup, the
 conventions we follow, and how releases work.
 
 ## Prerequisites
@@ -12,8 +12,8 @@ conventions we follow, and how releases work.
 ## Local setup
 
 ```bash
-git clone https://github.com/komaa-com/openclaw-msteams-voice
-cd openclaw-msteams-voice
+git clone https://github.com/komaa-com/openclaw-msteams-bridge
+cd openclaw-msteams-bridge
 npm ci
 npm run build       # tsc -> dist/
 npm run typecheck   # type-only pass
@@ -28,7 +28,7 @@ hand-edit `dist/` (it is regenerated).
 ## Working on it
 
 - Point a local OpenClaw gateway at your working copy and connect it to the StandIn sandbox to
-  exercise a real call. See [Getting Started](https://komaa-com.github.io/openclaw-msteams-voice/getting-started/).
+  exercise a real call. See [Getting Started](https://komaa-com.github.io/openclaw-msteams-bridge/getting-started/).
 - Keep the config surface in sync across `src/config.ts`, `src/plugin-config.ts`, and the
   `configSchema` in `openclaw.plugin.json` - these three must agree, and the schema is
   `additionalProperties: false`, so a new option must be added to the schema or it is rejected.

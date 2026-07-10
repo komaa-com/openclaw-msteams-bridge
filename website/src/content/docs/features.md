@@ -85,7 +85,7 @@ Exposed to the realtime voice agent, governed by `realtime.toolPolicy`
 
 Place a call, speak a result (`notify`) or hold a conversation (`conversation`), and hang up - with
 a no-answer/voicemail fallback and cancel-ringing so the callee's phone stops ringing when the
-plugin gives up. See [Outbound Calls](/openclaw-msteams-voice/outbound-calls/).
+plugin gives up. See [Outbound Calls](/openclaw-msteams-bridge/outbound-calls/).
 
 ## Sessions
 
@@ -95,7 +95,7 @@ plugin gives up. See [Outbound Calls](/openclaw-msteams-voice/outbound-calls/).
 ## Reliability and security
 
 - **Replay-proof HMAC handshake** on every connection - constant-time compare, 60 s window,
-  single-use tuples. See [Wire Protocol](/openclaw-msteams-voice/wire-protocol/).
+  single-use tuples. See [Wire Protocol](/openclaw-msteams-bridge/wire-protocol/).
 - **Fail-closed secret** - no shared secret (or a malformed one) means the server refuses to accept
   any handshake at all.
 - **Inbound policy, closed by default** - `inboundPolicy` + `allowFrom`; with the policy unset

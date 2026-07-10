@@ -3,7 +3,7 @@ title: "Microsoft Teams Bridge for OpenClaw"
 description: "Microsoft Teams voice and video (CVI) for an OpenClaw agent, connected through the StandIn media bridge."
 ---
 
-Welcome! **`@komaa/msteams-voice`** (npm: [`@komaa/msteams-voice`](https://www.npmjs.com/package/@komaa/msteams-voice),
+Welcome! **`@komaa/msteams-bridge`** (npm: [`@komaa/msteams-bridge`](https://www.npmjs.com/package/@komaa/msteams-bridge),
 OpenClaw channel id `msteams-voice`) adds **Microsoft Teams voice and video** to an
 [OpenClaw](https://openclaw.ai) agent.
 
@@ -37,7 +37,7 @@ in the call as an animated, lip-synced avatar.
 ## How the pieces fit
 
 ```
- Teams call <->  StandIn media bridge  --HMAC WebSocket-->  @komaa/msteams-voice (in the OpenClaw gateway)
+ Teams call <->  StandIn media bridge  --HMAC WebSocket-->  @komaa/msteams-bridge (in the OpenClaw gateway)
    (hosted)       joins the meeting             the local WS server + the call brain
                                                         |
                                                   your OpenClaw agent (real work, tools)
@@ -50,25 +50,25 @@ hold. You never operate any Teams media yourself - that is StandIn's job.
 
 ## Where to go next
 
-- **[Getting Started](/openclaw-msteams-voice/getting-started/)** - install, connect to the sandbox, first call.
-- **[Connecting to StandIn](/openclaw-msteams-voice/connecting-to-standin/)** - the connection model, the three
+- **[Getting Started](/openclaw-msteams-bridge/getting-started/)** - install, connect to the sandbox, first call.
+- **[Connecting to StandIn](/openclaw-msteams-bridge/connecting-to-standin/)** - the connection model, the three
   tiers (sandbox / free / subscription), and the shared secret.
-- **[Architecture](/openclaw-msteams-voice/architecture/)** - the system design: what runs where, the call
+- **[Architecture](/openclaw-msteams-bridge/architecture/)** - the system design: what runs where, the call
   lifecycle, the two dialogue pipelines, the module map, and the trust model.
-- **[Configuration Reference](/openclaw-msteams-voice/configuration-reference/)** - every config key, type, and
+- **[Configuration Reference](/openclaw-msteams-bridge/configuration-reference/)** - every config key, type, and
   default.
-- **[Realtime & Streaming Modes](/openclaw-msteams-voice/realtime-and-streaming-modes/)** - realtime vs streaming;
+- **[Realtime & Streaming Modes](/openclaw-msteams-bridge/realtime-and-streaming-modes/)** - realtime vs streaming;
   OpenAI vs Azure; echo and barge-in tuning.
-- **[Wire Protocol](/openclaw-msteams-voice/wire-protocol/)** - the WebSocket contract, HMAC, and message tables.
-- **[Features](/openclaw-msteams-voice/features/)** - the full capability tour.
-- **[Outbound Calls](/openclaw-msteams-voice/outbound-calls/)** - placing calls and call-backs.
-- **[Troubleshooting](/openclaw-msteams-voice/troubleshooting/)** - common problems and fixes.
-- **[Contributing](/openclaw-msteams-voice/contributing/)** - help improve the plugin.
+- **[Wire Protocol](/openclaw-msteams-bridge/wire-protocol/)** - the WebSocket contract, HMAC, and message tables.
+- **[Features](/openclaw-msteams-bridge/features/)** - the full capability tour.
+- **[Outbound Calls](/openclaw-msteams-bridge/outbound-calls/)** - placing calls and call-backs.
+- **[Troubleshooting](/openclaw-msteams-bridge/troubleshooting/)** - common problems and fixes.
+- **[Contributing](/openclaw-msteams-bridge/contributing/)** - help improve the plugin.
 
 ## Links
 
-- Source: [github.com/komaa-com/openclaw-msteams-voice](https://github.com/komaa-com/openclaw-msteams-voice)
-- npm: [@komaa/msteams-voice](https://www.npmjs.com/package/@komaa/msteams-voice)
+- Source: [github.com/komaa-com/openclaw-msteams-bridge](https://github.com/komaa-com/openclaw-msteams-bridge)
+- npm: [@komaa/msteams-bridge](https://www.npmjs.com/package/@komaa/msteams-bridge)
 
 > Full hosted-service docs: [docs.komaa.com](https://docs.komaa.com) - StandIn account &
 > dashboard: [standin.komaa.com](https://standin.komaa.com).

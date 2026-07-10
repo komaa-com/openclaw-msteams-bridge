@@ -11,7 +11,7 @@ This walks you from nothing to a working Teams voice call with your OpenClaw age
 - **Microsoft Teams set up as an OpenClaw channel** (the chat channel). This plugin adds voice/video
   on top of it. See the [OpenClaw Teams channel docs](https://docs.openclaw.ai/channels/msteams).
 - **A StandIn connection.** The [sandbox](https://standin.komaa.com/sandbox) is free and needs no
-  Teams bot of your own - perfect for a first call. See [Connecting to StandIn](/openclaw-msteams-voice/connecting-to-standin/).
+  Teams bot of your own - perfect for a first call. See [Connecting to StandIn](/openclaw-msteams-bridge/connecting-to-standin/).
 - **For realtime mode**, a realtime voice provider key (OpenAI or Azure OpenAI). For streaming mode,
   your OpenClaw-configured STT/TTS/agent is enough.
 
@@ -27,11 +27,11 @@ curl -fsSL https://standin.komaa.com/install.sh | bash
 Prefer to do it by hand?
 
 ```bash
-openclaw plugins install npm:@komaa/msteams-voice
+openclaw plugins install npm:@komaa/msteams-bridge
 openclaw gateway restart
 ```
 
-It is also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/msteams-voice`
+It is also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/msteams-bridge`
 (OpenClaw falls back to npm automatically). The package ships prebuilt (v0.1.10+) - no build step
 either way.
 
@@ -86,11 +86,11 @@ Config lives under `plugins.entries."msteams-voice".config`. A minimal realtime 
 :::caution[Lock down after the first call]
 `inboundPolicy: "open"` accepts any caller. Once the sandbox call works, switch to
 `"inboundPolicy": "allowlist"` and put the allowed callers' AAD object ids in `allowFrom`.
-See [Connecting to StandIn](/openclaw-msteams-voice/connecting-to-standin/#restricting-who-can-reach-the-agent).
+See [Connecting to StandIn](/openclaw-msteams-bridge/connecting-to-standin/#restricting-who-can-reach-the-agent).
 :::
 
-See the full [Configuration Reference](/openclaw-msteams-voice/configuration-reference/) for every option, and
-[Realtime & Streaming Modes](/openclaw-msteams-voice/realtime-and-streaming-modes/) for provider setup.
+See the full [Configuration Reference](/openclaw-msteams-bridge/configuration-reference/) for every option, and
+[Realtime & Streaming Modes](/openclaw-msteams-bridge/realtime-and-streaming-modes/) for provider setup.
 
 ## 4. Restart and call
 
@@ -105,7 +105,7 @@ your camera or share your screen - it can see you too.
 
 ## Next steps
 
-- Add **your own Teams bot** for real inbound calls: [Connecting to StandIn](/openclaw-msteams-voice/connecting-to-standin/).
-- Lock down who can call you: `inboundPolicy` + `allowFrom` in the [Configuration Reference](/openclaw-msteams-voice/configuration-reference/).
-- Turn on **meeting recap**, **vision budget**, **group-call etiquette**: [Features](/openclaw-msteams-voice/features/).
-- Something not working? [Troubleshooting](/openclaw-msteams-voice/troubleshooting/).
+- Add **your own Teams bot** for real inbound calls: [Connecting to StandIn](/openclaw-msteams-bridge/connecting-to-standin/).
+- Lock down who can call you: `inboundPolicy` + `allowFrom` in the [Configuration Reference](/openclaw-msteams-bridge/configuration-reference/).
+- Turn on **meeting recap**, **vision budget**, **group-call etiquette**: [Features](/openclaw-msteams-bridge/features/).
+- Something not working? [Troubleshooting](/openclaw-msteams-bridge/troubleshooting/).
