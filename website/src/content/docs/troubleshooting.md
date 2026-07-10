@@ -31,7 +31,7 @@ ever appears in the gateway log.
 log.
 
 - Confirm the plugin is installed: `openclaw plugins list` should show `msteams-voice`.
-  Reinstall with `openclaw plugins install npm:@komaa/msteams-voice` if not.
+  Reinstall with `openclaw plugins install npm:@komaa/msteams-bridge` if not.
 - Confirm `enabled` is not set to `false` under `plugins.entries."msteams-voice".config`.
 - Restart the gateway after any install or config change: `openclaw gateway restart`.
 
@@ -97,7 +97,7 @@ That is the **StandIn tier cutoff**, not a bug. The **sandbox** and **free** tie
 (about 5 minutes/day); a **subscription** may have a max-minutes governor. StandIn sends an
 `assistant.say` goodbye that the agent speaks, then the call ends gracefully. For longer calls,
 move to a subscription tier - see
-[Connecting to StandIn](/openclaw-msteams-voice/connecting-to-standin/).
+[Connecting to StandIn](/openclaw-msteams-bridge/connecting-to-standin/).
 
 ## Outbound never connects
 
@@ -116,7 +116,7 @@ teardown reasons. Watch it live while you place a test call.
 
 ## Still stuck?
 
-Open an issue on [GitHub](https://github.com/komaa-com/openclaw-msteams-voice/issues) with the mode
+Open an issue on [GitHub](https://github.com/komaa-com/openclaw-msteams-bridge/issues) with the mode
 you used (`realtime`/`streaming`), the gateway log around the failed call, and your
 (secret-redacted) config. Hosted-service questions (account, pairing, dashboard) belong at
 [docs.komaa.com](https://docs.komaa.com).
