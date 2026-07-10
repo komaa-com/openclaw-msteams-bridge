@@ -1,4 +1,4 @@
-# @komaa/msteams-voice
+# Microsoft Teams Bridge for OpenClaw
 
 [![CI](https://github.com/komaa-com/openclaw-msteams-voice/actions/workflows/dist-sync.yml/badge.svg)](https://github.com/komaa-com/openclaw-msteams-voice/actions/workflows/dist-sync.yml)
 [![npm version](https://img.shields.io/npm/v/@komaa/msteams-voice.svg)](https://www.npmjs.com/package/@komaa/msteams-voice)
@@ -8,7 +8,8 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg)](https://www.typescriptlang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-A Microsoft Teams voice and video agent (CVI) for [OpenClaw](https://openclaw.ai). It turns an
+**`@komaa/msteams-voice`** is a Microsoft Teams voice and video agent (CVI) for
+[OpenClaw](https://openclaw.ai). It turns an
 ordinary Teams call into a true two-way video conversation: the agent sees what you show it, talks
 back in real time, and appears in the call as an animated, lip-synced avatar.
 

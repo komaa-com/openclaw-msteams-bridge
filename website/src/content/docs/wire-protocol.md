@@ -5,7 +5,7 @@ description: "The WebSocket contract with the StandIn media bridge: HMAC handsha
 
 This is the contract the **StandIn media bridge** speaks with the plugin over the WebSocket. It is
 useful if you are debugging a connection, writing tests, or building a compatible integration. It
-describes only the client-facing wire - nothing about how the bridge produces Teams media.
+describes only the client-facing wire - nothing about how the StandIn media bridge produces Teams media.
 
 The design goal is **forward compatibility**: messages are camelCase JSON, additive, and tolerant -
 unknown fields are ignored and unknown message types degrade gracefully, so older and newer peers
@@ -102,7 +102,7 @@ Opens the call. Must be the first message, within the pre-start timeout.
 | `threadId` | string (required) | Teams chat/thread id. |
 | `caller` | object | `aadId`, `displayName`, `tenantId` - best-effort. Drives the allowlist check and greeting. |
 | `recordingStatus` | string | `active` \| `inactive` \| `unknown`. |
-| `direction` | string | `inbound` \| `outbound` (outbound = a call the plugin placed). Any other value the bridge sends (for example a meeting join) is normalized to `inbound`. |
+| `direction` | string | `inbound` \| `outbound` (outbound = a call the plugin placed). Any other value the StandIn media bridge sends (for example a meeting join) is normalized to `inbound`. |
 
 ### `session.end`
 
@@ -199,7 +199,7 @@ Agent audio to play into the call. Same shape as inbound `audio.frame` (`seq`, `
 { "type": "assistant.cancel", "turnId": 7 }
 ```
 
-Barge-in: tell the bridge to flush playback for `turnId` so the caller's interruption takes effect
+Barge-in: tell the StandIn media bridge to flush playback for `turnId` so the caller's interruption takes effect
 immediately.
 
 ### `expression`
@@ -252,7 +252,7 @@ Keepalive reply echoing the inbound `ping` timestamp.
 2. The bridge sends `session.start`; the plugin checks the inbound policy and creates the call
    session (a rejected caller closes the socket with reason `not-allowed`).
 3. Audio (and video) frames flow both ways; the plugin emits avatar cues as needed.
-4. On a tier-limit cutoff the bridge sends `assistant.say`; the agent speaks it.
+4. On a tier-limit cutoff the StandIn media bridge sends `assistant.say`; the agent speaks it.
 5. `session.end` (or a socket close, a stale-call reaper, or a duration cap) tears the session down
    exactly once.
 
