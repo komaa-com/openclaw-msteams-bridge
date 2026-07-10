@@ -2,7 +2,9 @@
 
 This is the architecture note for contributors. It explains what `@komaa/msteams-voice` is, how it
 is put together, and how it talks to the outside world. For usage, start with the
-[README](./README.md) and the [docs site](https://komaa-com.github.io/openclaw-msteams-voice/).
+[README](./README.md) and the [docs site](https://komaa-com.github.io/openclaw-msteams-voice/);
+the site's [Architecture page](https://komaa-com.github.io/openclaw-msteams-voice/architecture/) is
+the diagrammed version of this note.
 
 ## What it is
 

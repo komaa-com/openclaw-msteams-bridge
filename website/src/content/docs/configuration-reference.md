@@ -7,6 +7,13 @@ All options live under `plugins.entries."msteams-voice".config`. The schema is
 `additionalProperties: false`, so an unknown key is rejected. Defaults below come from the config
 resolver; secret-valued keys accept either a literal string or an OpenClaw secret reference.
 
+:::caution[Two settings gate every call]
+Inbound calls are **denied unless `inboundPolicy` is set** (use `allowlist` + `allowFrom`, or
+`open` for sandbox testing), and the hosted bridge cannot reach the plugin until `bindAddress`
+is opened up from its local-only default. If your first call never connects or is rejected,
+check these two first. See [Troubleshooting](/openclaw-msteams-voice/troubleshooting/).
+:::
+
 ## Core
 
 | Key | Type | Default | Meaning |
@@ -17,8 +24,8 @@ resolver; secret-valued keys accept either a literal string or an OpenClaw secre
 | `path` | string | `/voice/msteams/stream` | WebSocket route; StandIn connects to `{path}/{callId}`. |
 | `sharedSecret` | string \| secret-ref | - | HMAC secret; **must match StandIn**. Fails closed - a non-string coerces to empty and rejects all handshakes. |
 | `requireRecordingStatus` | bool | `true` | Hold media processing until Teams reports recording is active. |
-| `inboundPolicy` | enum | `allowlist` | `disabled` \| `allowlist` \| `pairing` \| `open`. `pairing` currently behaves like `allowlist`. |
-| `allowFrom` | string[] | `[]` | Allowlisted caller AAD object ids. Empty + `allowlist` = deny all. |
+| `inboundPolicy` | enum | unset (deny all) | `disabled` \| `allowlist` \| `pairing` \| `open`. **Unset or `disabled` rejects every inbound call** - you must set a policy to receive calls. `pairing` currently behaves like `allowlist`. |
+| `allowFrom` | string[] | `[]` | Allowlisted callers, matched by AAD object id (case-insensitive) or phone number (digits only). Empty + `allowlist` = deny all. |
 | `inboundGreeting` | string | - | Opening line the agent speaks on answer. |
 | `mode` | enum | auto | `realtime` \| `streaming`. Auto-selects realtime if a realtime provider resolves. |
 | `sessionScope` | enum | - | Conversation continuity: `per-phone` \| `per-call` \| `per-thread`. |

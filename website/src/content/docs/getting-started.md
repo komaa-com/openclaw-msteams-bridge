@@ -44,8 +44,10 @@ The sandbox is the fastest path to a first call and needs no Azure/Teams bot of 
 2. Put that secret in your plugin config as `sharedSecret` (below).
 3. Join the meeting yourself; the shared StandIn bot joins and connects to your plugin.
 
+:::tip
 The sandbox is time-limited (about 5 minutes/day per session) - enough to see it end to end. When the
 limit is reached, the agent speaks a short goodbye and the call ends gracefully.
+:::
 
 ## 3. Minimal configuration
 
@@ -62,6 +64,7 @@ Config lives under `plugins.entries."msteams-voice".config`. A minimal realtime 
           "bindAddress": "0.0.0.0",          // so the hosted bridge can reach the plugin
           "port": 9442,
           "sharedSecret": "<the secret from StandIn>",
+          "inboundPolicy": "open",           // first-call testing; lock down after (see below)
           "realtime": {
             "provider": "openai",
             "providers": { "openai": { "apiKey": "<key>", "model": "gpt-realtime" } }
@@ -76,7 +79,15 @@ Config lives under `plugins.entries."msteams-voice".config`. A minimal realtime 
 - `bindAddress: "0.0.0.0"` lets the hosted bridge connect (the default `127.0.0.1` only accepts local
   connections).
 - `sharedSecret` must match the value StandIn uses, or the handshake is rejected.
+- `inboundPolicy` must be set to receive calls at all: **when it is unset, every inbound call is
+  denied**. `open` is fine for the first sandbox call.
 - Leave `mode` out to auto-select: realtime if a provider resolves, otherwise streaming.
+
+:::caution[Lock down after the first call]
+`inboundPolicy: "open"` accepts any caller. Once the sandbox call works, switch to
+`"inboundPolicy": "allowlist"` and put the allowed callers' AAD object ids in `allowFrom`.
+See [Connecting to StandIn](/openclaw-msteams-voice/connecting-to-standin/#restricting-who-can-reach-the-agent).
+:::
 
 See the full [Configuration Reference](/openclaw-msteams-voice/configuration-reference/) for every option, and
 [Realtime & Streaming Modes](/openclaw-msteams-voice/realtime-and-streaming-modes/) for provider setup.
