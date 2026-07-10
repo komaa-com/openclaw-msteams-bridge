@@ -20,7 +20,7 @@
     "realtime",
     "komaa"
   ],
-  "description": "Turn a Microsoft Teams call into a real two-way video conversation: the agent sees your camera and screen-share, talks in real time (speech-to-speech or streaming STT to agent to TTS), and appears as a lip-synced avatar. Vision, meeting recap, outbound call-backs, wake-phrase etiquette, HMAC-secured media bridge.",
+  "description": "Microsoft Teams Bridge for OpenClaw: turn a Teams call into a real two-way video conversation. The agent sees your camera and screen-share, talks in real time (speech-to-speech or streaming STT to agent to TTS), and appears as a lip-synced avatar. Vision, meeting recap, outbound call-backs, wake-phrase etiquette, HMAC-secured.",
   "type": "module",
   "main": "./dist/index.js",
   "exports": {
