@@ -7,7 +7,7 @@ export default defineConfig({
   base: "/openclaw-msteams-voice",
   integrations: [
     starlight({
-      title: "MS Teams Voice for OpenClaw",
+      title: "Microsoft Teams Bridge for OpenClaw",
       description:
         "Microsoft Teams voice and video (CVI) for OpenClaw agents: realtime speech, vision, and a lip-synced avatar, connected through the StandIn media bridge.",
       social: [
