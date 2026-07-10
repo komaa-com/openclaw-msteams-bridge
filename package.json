@@ -1,14 +1,14 @@
 {
-  "name": "@komaa/msteams-voice",
-  "version": "0.1.12",
+  "name": "@komaa/msteams-bridge",
+  "version": "0.1.13",
   "author": "alaamh <alaamh@outlook.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/komaa-com/openclaw-msteams-voice"
+    "url": "https://github.com/komaa-com/openclaw-msteams-bridge"
   },
-  "homepage": "https://komaa-com.github.io/openclaw-msteams-voice/",
+  "homepage": "https://komaa-com.github.io/openclaw-msteams-bridge/",
   "bugs": {
-    "url": "https://github.com/komaa-com/openclaw-msteams-voice/issues"
+    "url": "https://github.com/komaa-com/openclaw-msteams-bridge/issues"
   },
   "license": "MIT",
   "keywords": [
@@ -58,7 +58,7 @@
       "./dist/index.js"
     ],
     "install": {
-      "npmSpec": "@komaa/msteams-voice",
+      "npmSpec": "@komaa/msteams-bridge",
       "defaultChoice": "npm"
     },
     "compat": {

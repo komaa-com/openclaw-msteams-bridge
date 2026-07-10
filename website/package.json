@@ -1,5 +1,5 @@
 {
-  "name": "@komaa/msteams-voice-docs",
+  "name": "@komaa/msteams-bridge-docs",
   "private": true,
   "type": "module",
   "scripts": {

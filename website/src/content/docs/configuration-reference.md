@@ -11,7 +11,7 @@ resolver; secret-valued keys accept either a literal string or an OpenClaw secre
 Inbound calls are **denied unless `inboundPolicy` is set** (use `allowlist` + `allowFrom`, or
 `open` for sandbox testing), and the hosted bridge cannot reach the plugin until `bindAddress`
 is opened up from its local-only default. If your first call never connects or is rejected,
-check these two first. See [Troubleshooting](/openclaw-msteams-voice/troubleshooting/).
+check these two first. See [Troubleshooting](/openclaw-msteams-bridge/troubleshooting/).
 :::
 
 ## Core
@@ -81,7 +81,7 @@ the plugin uses your configured transcription provider, then a VAD-segmented fil
 | `outbound.answerTimeoutMs` | int | `120000` | No-answer timeout before voicemail/cancel. |
 | `outbound.defaultMode` | enum | - | `notify` (speak and hang up) \| `conversation`. |
 
-See [Outbound Calls](/openclaw-msteams-voice/outbound-calls/).
+See [Outbound Calls](/openclaw-msteams-bridge/outbound-calls/).
 
 ## Secret-valued keys
 
