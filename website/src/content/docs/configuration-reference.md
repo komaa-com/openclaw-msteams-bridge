@@ -1,6 +1,6 @@
 ---
 title: "Configuration Reference"
-description: "Every configuration option of the msteams-voice plugin, with types, defaults, and meaning."
+description: "Every configuration option of the plugin, with types, defaults, and meaning."
 ---
 
 All options live under `plugins.entries."msteams-voice".config`. The schema is
