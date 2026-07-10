@@ -1,16 +1,17 @@
 # @komaa/msteams-voice
 
 [![npm](https://img.shields.io/npm/v/@komaa/msteams-voice.svg)](https://www.npmjs.com/package/@komaa/msteams-voice)
-[![docs](https://img.shields.io/badge/docs-komaa.com-2563eb.svg)](https://docs.komaa.com/)
+[![docs](https://img.shields.io/badge/docs-plugin%20site-2563eb.svg)](https://komaa-com.github.io/openclaw-msteams-voice/)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 A Microsoft Teams voice and video agent (CVI) for [OpenClaw](https://openclaw.ai). It turns an
 ordinary Teams call into a true two-way video conversation: the agent sees what you show it, talks
 back in real time, and appears in the call as an animated, lip-synced avatar.
 
-> Full documentation: the **[project wiki](https://github.com/komaa-com/openclaw-msteams-voice/wiki)**
-> (setup, connecting to StandIn, configuration reference, wire protocol, troubleshooting, contributing)
-> and **[docs.komaa.com](https://docs.komaa.com/)**. This README is the quick start.
+> Full documentation: the **[plugin docs site](https://komaa-com.github.io/openclaw-msteams-voice/)**
+> (setup, connecting to StandIn, configuration reference, wire protocol, troubleshooting, contributing).
+> For the hosted StandIn service itself, see **[docs.komaa.com](https://docs.komaa.com/)**. This README
+> is the quick start.
 
 It is one plugin, depending only on the published `openclaw` plugin-sdk + `api.runtime`. No fork, no
 vendored runtime, no trusted-plugin privileges required.
@@ -184,7 +185,7 @@ gating, DTMF, and vision all work in streaming mode too.
 
 ## Key reference
 
-Full reference at [docs.komaa.com](https://docs.komaa.com/openclaw/configuration). Common keys:
+Full reference in the [Configuration Reference](https://komaa-com.github.io/openclaw-msteams-voice/configuration-reference/). Common keys:
 
 **Core**
 
@@ -249,7 +250,8 @@ Full reference at [docs.komaa.com](https://docs.komaa.com/openclaw/configuration
 
 ## Links
 
-- Docs: [docs.komaa.com](https://docs.komaa.com/)
+- Plugin docs: [komaa-com.github.io/openclaw-msteams-voice](https://komaa-com.github.io/openclaw-msteams-voice/)
+- StandIn (hosted service) docs: [docs.komaa.com](https://docs.komaa.com/)
 - Source: [github.com/komaa-com/openclaw-msteams-voice](https://github.com/komaa-com/openclaw-msteams-voice)
 - npm: [@komaa/msteams-voice](https://www.npmjs.com/package/@komaa/msteams-voice)
 
