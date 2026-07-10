@@ -21,6 +21,7 @@ export default defineConfig({
         { label: "Overview", link: "/" },
         { label: "Getting Started", link: "/getting-started/" },
         { label: "Connecting to StandIn", link: "/connecting-to-standin/" },
+        { label: "Architecture", link: "/architecture/" },
         { label: "Configuration Reference", link: "/configuration-reference/" },
         { label: "Realtime and Streaming Modes", link: "/realtime-and-streaming-modes/" },
         { label: "Wire Protocol", link: "/wire-protocol/" },

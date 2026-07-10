@@ -61,15 +61,20 @@ whole config invalid rather than being silently ignored.
 - **Group gate** - in a meeting (2+ people) the agent only speaks when **addressed** by a wake
   phrase (`groupCall.wakePhrases`). Say its name, or disable `groupCall.requireAddress`.
 
-## Calls are declined
+## Calls are declined (`not-allowed` in the log)
 
-The allowlist is **deny-by-default**:
+The inbound gate is **deny-by-default**:
 
-- With `inboundPolicy: "allowlist"` (the default policy) and an **empty** `allowFrom`, **every**
-  caller is denied.
-- Callers are matched by **AAD object id** - add the caller's object id to `allowFrom`.
+- With `inboundPolicy` **unset** (the default) or `disabled`, **every** inbound call is denied -
+  including your first sandbox call. Set a policy to receive calls.
+- With `inboundPolicy: "allowlist"` and an **empty** `allowFrom`, every caller is denied too.
+- Callers are matched by **AAD object id** (case-insensitive) or **phone number** (digits only) -
+  add the caller to `allowFrom`.
 - `pairing` currently behaves exactly like `allowlist` - callers still must be in `allowFrom`.
-- `open` accepts any caller (use for sandbox testing only); `disabled` declines all inbound calls.
+- `open` accepts any caller (use for sandbox testing only).
+
+The gateway log's rejection line names the policy and the caller id it saw, so you can paste that
+id straight into `allowFrom`.
 
 ## The agent interrupts itself / barge-in feels off
 
