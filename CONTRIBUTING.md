@@ -28,7 +28,7 @@ hand-edit `dist/` (it is regenerated).
 ## Working on it
 
 - Point a local OpenClaw gateway at your working copy and connect it to the StandIn sandbox to
-  exercise a real call. See [Getting Started](https://github.com/komaa-com/openclaw-msteams-voice/wiki/Getting-Started).
+  exercise a real call. See [Getting Started](https://komaa-com.github.io/openclaw-msteams-voice/getting-started/).
 - Keep the config surface in sync across `src/config.ts`, `src/plugin-config.ts`, and the
   `configSchema` in `openclaw.plugin.json` - these three must agree, and the schema is
   `additionalProperties: false`, so a new option must be added to the schema or it is rejected.
