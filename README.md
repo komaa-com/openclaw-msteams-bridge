@@ -12,11 +12,6 @@ A Microsoft Teams voice and video agent (CVI) for [OpenClaw](https://openclaw.ai
 ordinary Teams call into a true two-way video conversation: the agent sees what you show it, talks
 back in real time, and appears in the call as an animated, lip-synced avatar.
 
-> Full documentation: the **[plugin docs site](https://komaa-com.github.io/openclaw-msteams-voice/)**
-> (setup, connecting to StandIn, configuration reference, wire protocol, troubleshooting, contributing).
-> For the hosted StandIn service itself, see **[docs.komaa.com](https://docs.komaa.com/)**. This README
-> is the quick start.
-
 It is one plugin, depending only on the published `openclaw` plugin-sdk + `api.runtime`. No fork, no
 vendored runtime, no trusted-plugin privileges required.
 
