@@ -1,20 +1,39 @@
 ---
 title: "Troubleshooting"
-description: "Fixes for handshake failures, missing audio, gated media, allowlist blocks, and provider errors."
+description: "Common problems and fixes: handshake rejections, unreachable plugin, silent calls, allowlist blocks, provider errors."
 ---
 
-Common issues and what to check.
+Common problems and how to fix them. The gateway log is your first stop - the plugin logs the
+handshake result, session lifecycle, and provider errors for every call.
 
 ## The bridge can't connect / handshake rejected
 
-- **Shared secret mismatch.** `sharedSecret` must exactly match the value StandIn uses. Re-copy it
-  from the sandbox session or the dashboard.
-- **Bind address.** The default `127.0.0.1` only accepts local connections. Set `bindAddress` to
-  `0.0.0.0` so the hosted bridge can reach the plugin.
-- **Port not reachable.** Confirm `port` (default `9442`) is open to StandIn and not taken by another
-  process.
-- **Clock skew.** The handshake enforces a replay window (60 s). If the host clock is far off, the
-  timestamp is rejected - sync the clock (NTP).
+**Symptom:** StandIn reports it cannot reach or authenticate with your agent; no `session.start`
+ever appears in the gateway log.
+
+**Causes & fixes:**
+
+- **Secret mismatch** (most common) - `sharedSecret` in your plugin config does not equal the value
+  StandIn holds. They must be byte-for-byte identical. Re-copy it from the StandIn sandbox page or
+  dashboard.
+- **Bind address** - the default `bindAddress` is `127.0.0.1`, which only accepts local
+  connections. Set `bindAddress: "0.0.0.0"` so the hosted bridge can reach the plugin.
+- **Port not reachable** - confirm `port` (default `9442`) is open to StandIn (firewall/NAT) and
+  not taken by another process.
+- **Clock skew** - the handshake enforces a 60 s replay window on the signed timestamp. If the host
+  clock is far off, every handshake is rejected. Sync time (NTP).
+- **No secret at all** - the plugin fails closed: with an empty or non-string `sharedSecret`, it
+  rejects every handshake. Set a real secret.
+
+## The plugin isn't loading
+
+**Symptom:** the gateway starts but the voice endpoint is not listening; no plugin banner in the
+log.
+
+- Confirm the plugin is installed: `openclaw plugins list` should show `msteams-voice`.
+  Reinstall with `openclaw plugins install npm:@komaa/msteams-voice` if not.
+- Confirm `enabled` is not set to `false` under `plugins.entries."msteams-voice".config`.
+- Restart the gateway after any install or config change: `openclaw gateway restart`.
 
 ## Config changes don't take effect
 
@@ -25,39 +44,74 @@ openclaw gateway restart
 ```
 
 Also confirm the config is under `plugins.entries."msteams-voice".config` and that keys match the
-schema exactly - unknown keys are rejected (`additionalProperties: false`).
+schema exactly - unknown keys are rejected (`additionalProperties: false`), so a typo makes the
+whole config invalid rather than being silently ignored.
 
 ## The agent answers but stays silent / no audio
 
-- **Recording gate.** With `requireRecordingStatus: true`, the agent holds media until Teams reports
-  recording active. Start recording, or set it to `false` for testing.
-- **No realtime provider resolved.** If you intended realtime but no provider key resolves, the runtime
-  falls back to streaming. Check `realtime.provider` and the provider `apiKey`.
+- **Recording gate** - with `requireRecordingStatus: true` (default), nothing is processed until
+  Teams reports recording `active`. If the meeting is not being recorded, the agent stays silent.
+  Start recording, or (for testing only) set `requireRecordingStatus: false`.
+- **No realtime provider resolved** - if you intended realtime but no provider key resolves, the
+  runtime falls back to streaming, which needs your OpenClaw STT/TTS configured. Check
+  `realtime.provider` and the provider `apiKey`.
+- **Realtime provider errors** - an invalid key, missing model access, or a wrong
+  `azureEndpoint`/`azureDeployment` shows up as a provider connect error in the log. Verify the key
+  and model/deployment name.
+- **Group gate** - in a meeting (2+ people) the agent only speaks when **addressed** by a wake
+  phrase (`groupCall.wakePhrases`). Say its name, or disable `groupCall.requireAddress`.
 
 ## Calls are declined
 
-- **Allowlist is closed by default.** With `inboundPolicy: "allowlist"` and an empty `allowFrom`, every
-  caller is denied. Add the caller's AAD object id to `allowFrom`, or use a different policy.
-- `pairing` behaves like `allowlist` today - callers still must be in `allowFrom`.
+The allowlist is **deny-by-default**:
+
+- With `inboundPolicy: "allowlist"` (the default policy) and an **empty** `allowFrom`, **every**
+  caller is denied.
+- Callers are matched by **AAD object id** - add the caller's object id to `allowFrom`.
+- `pairing` currently behaves exactly like `allowlist` - callers still must be in `allowFrom`.
+- `open` accepts any caller (use for sandbox testing only); `disabled` declines all inbound calls.
 
 ## The agent interrupts itself / barge-in feels off
 
-- Tune the echo guard: raise `realtime.echoBargeInRms` if it interrupts itself; lower it if barge-in is
-  unresponsive. `suppressInputDuringPlayback` and `echoSuppressionWindowMs` also help.
+- If the agent keeps cutting itself off (hearing its own voice as a barge-in), raise
+  `realtime.echoBargeInRms` and/or enable `realtime.suppressInputDuringPlayback`.
+- If real barge-in feels unresponsive, lower `realtime.echoBargeInRms` or shorten
+  `realtime.echoSuppressionWindowMs`.
 
-## The call ends early with a goodbye
+## The call drops itself mid-conversation
 
-That is the tier limit. The **sandbox** is about 5 minutes/day per session and the **free** tier is
-5 minutes/day; when the limit is hit the agent speaks a goodbye and ends. Move to a subscription for
-uncapped calls. See [Connecting to StandIn](/openclaw-msteams-voice/connecting-to-standin/).
+- **Stale-call reaper** - a call that stops being serviced is torn down after
+  `staleCallReaperSeconds` (default 120). If long silent periods are expected, raise it.
+- **Duration cap** - if `maxDurationSeconds` is set, the call is closed once it exceeds that
+  wall-clock budget. Raise it or leave it unset (unlimited).
+- **Concurrency cap** - beyond `maxConcurrentCalls` (default 4), additional calls are declined.
+
+## The call ends with a goodbye after a few minutes
+
+That is the **StandIn tier cutoff**, not a bug. The **sandbox** and **free** tiers are daily-capped
+(about 5 minutes/day); a **subscription** may have a max-minutes governor. StandIn sends an
+`assistant.say` goodbye that the agent speaks, then the call ends gracefully. For longer calls,
+move to a subscription tier - see
+[Connecting to StandIn](/openclaw-msteams-voice/connecting-to-standin/).
 
 ## Outbound never connects
 
-- `outbound.enabled` must be true and `outbound.workerBaseUrl` set.
+- `outbound.enabled` must be `true` and `outbound.workerBaseUrl` set.
 - The place-call request is signed with `sharedSecret`; a mismatch fails it.
-- Check `tenantId` is the callee's tenant and `answerTimeoutMs` is not too short.
+- Check `outbound.tenantId` is the callee's AAD tenant.
+- **No answer:** after `outbound.answerTimeoutMs` (default 120,000 ms) the plugin treats the call
+  as unanswered, delivers the voicemail-style fallback if configured, and cancels the ringing call
+  so the callee's Teams stops ringing. A late answer after that point is declined by design.
+
+## Where to look for logs
+
+Everything the plugin does is logged through the OpenClaw gateway log: handshake accept/reject
+reasons, `session.start`/`session.end`, recording-status changes, provider connects and errors, and
+teardown reasons. Watch it live while you place a test call.
 
 ## Still stuck?
 
-Open an issue on [GitHub](https://github.com/komaa-com/openclaw-msteams-voice/issues) with your
-(secret-redacted) config, the mode, and gateway logs around the failed call.
+Open an issue on [GitHub](https://github.com/komaa-com/openclaw-msteams-voice/issues) with the mode
+you used (`realtime`/`streaming`), the gateway log around the failed call, and your
+(secret-redacted) config. Hosted-service questions (account, pairing, dashboard) belong at
+[docs.komaa.com](https://docs.komaa.com).

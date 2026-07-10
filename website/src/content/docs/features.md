@@ -1,76 +1,113 @@
 ---
 title: "Features"
-description: "Vision, meeting etiquette, avatar cues, recap and minutes, DTMF, bilingual EN/AR, and reliability guards."
+description: "A full tour of dialogue, vision, avatar cues, meetings, tools, telephony, and reliability features."
 ---
 
-A tour of what the plugin can do in a call, and the config that governs each.
+A tour of what the plugin can do on a Teams call, and the config that governs each. Everything here
+is implemented in this repo; the hosted StandIn media bridge handles the Teams media so these
+features "just work" once you are connected.
 
 ## Dialogue
 
-- **Two modes** - realtime speech-to-speech or streaming STT→agent→TTS. See
-  [Realtime & Streaming Modes](/openclaw-msteams-voice/realtime-and-streaming-modes/).
-- **Barge-in** - the caller can interrupt; the agent stops speaking (an `assistant.cancel` cancels the
-  current TTS turn). Tune with `realtime.echoBargeInRms`.
-- **Verbal interrupts** - deterministic interrupt phrases, EN/AR.
-- **Echo suppression** - the agent does not hear itself; `suppressInputDuringPlayback` +
-  `echoSuppressionWindowMs`.
-- **DTMF / IVR** - keypad digits are surfaced to the agent.
-- **Bilingual EN/AR** - `bilingual: true`.
-- **Greeting** - `inboundGreeting` opens the call; the agent can greet meeting attendees by name from
-  the roster.
+- **Realtime speech-to-speech** (`mode: "realtime"`) - OpenAI or Azure OpenAI Realtime; low latency,
+  full-duplex feel. The default when a realtime provider resolves.
+- **Streaming STT → agent → TTS** (`mode: "streaming"`) - half-duplex; uses your OpenClaw-configured
+  STT/TTS/agent, so it works without a realtime provider.
+- **Barge-in** - the caller can interrupt the agent mid-reply; playback is flushed
+  (`assistant.cancel`) and the current turn is cancelled immediately. Tune the trigger with
+  `realtime.echoBargeInRms`.
+- **Verbal interrupts (EN/AR)** - deterministic "stop" / "توقف" phrase detection that cuts playback
+  even when voice-activity detection misses it.
+- **Echo suppression** - the agent does not hear (and answer) itself:
+  `realtime.suppressInputDuringPlayback` ignores input while the agent speaks, and
+  `realtime.echoSuppressionWindowMs` extends the guard window past playback.
+- **Recording gate** - with `requireRecordingStatus: true` (default), no media is processed until
+  Teams reports recording `active`.
+- **Greeting** - `inboundGreeting` opens the call; in meetings the agent can greet attendees by name
+  from the roster.
+- **DTMF / IVR** - keypad presses are surfaced to the agent so it can run "press 1 to…" flows.
+- **Bilingual EN/AR** (`bilingual: true`) - the agent detects and mirrors the caller's language and
+  translates on request.
 
 ## Perception (vision)
 
-- Reads inbound **camera** and **screen-share (VBSS)** frames.
-- Keeps a **continuous ambient view** in realtime mode; **attaches a keyframe per turn** in streaming
-  mode.
-- Retains a **scene-change keyframe history** so the agent can look back.
-- Stays inside a **per-call budget** - `maxVisionPerMinute`.
-- The agent reaches vision through the `look_at_screen` tool (live or from history).
+- **Camera + screen-share (VBSS)** - the plugin ingests inbound `video.frame`s from both sources,
+  attributed per participant.
+- **`look_at_screen`** - the agent looks at the current frame (`live`) or at the recent
+  scene-change keyframe history (`history`) to answer about something shown earlier.
+- **Ambient view (realtime)** - the latest changed frame per source is pushed to the model
+  periodically, so it stays visually aware between explicit looks; in streaming mode a keyframe is
+  attached per turn instead.
+- **Per-call vision budget** - `maxVisionPerMinute` caps total vision spend (explicit looks +
+  ambient pushes); over budget, ambient pushes back off first.
 
 ## Rendering (avatar)
 
-The plugin emits cues the StandIn bridge draws into the caller-facing video:
+The plugin emits cues that the StandIn bridge draws into the caller-facing video:
 
-- **`expression`** - emotion cues (happy, sad, surprised, …).
-- **`speech.marks`** - viseme lip-sync driven by speech marks.
-- **`display.image`** - share an image as a picture-in-picture overlay or fullscreen (`show_to_caller`).
+- **`expression`** - emotion cues (`neutral`, `happy`, `sad`, `surprised`, `thinking`) inferred from
+  the reply text; a thinking face shows while a tool runs.
+- **`speech.marks`** - a viseme timeline (Azure viseme ids 0-21) drives lip-sync in time with the
+  agent's audio.
+- **`display.image`** - `show_to_caller` renders an image into the call, fullscreen or
+  picture-in-picture, with an optional caption.
 
-## Meeting etiquette
+## Group / meeting etiquette
 
-- **Wake-phrase gate** - in meetings (2+ humans), the agent stays quiet until addressed
-  (`groupCall.requireAddress`, `groupCall.wakePhrases`), then answers through a short follow-up window
-  (`groupCall.followUpWindowMs`).
-- **1:1 always answers.**
-- **Per-speaker attribution** - frames and utterances are tied to the participant who produced them.
+- **Speak only when addressed** - in a call with 2+ humans, the agent stays silent unless someone
+  addresses it with a wake phrase (`groupCall.requireAddress`, `groupCall.wakePhrases`); a follow-up
+  window (`groupCall.followUpWindowMs`) then lets the exchange continue without repeating the name.
+- **1:1 always answers** - the gate only applies to meetings.
+- **Per-speaker attribution** - utterances and frames are tied to the participant who produced them
+  (used in minutes and vision answers).
 
 ## Agent tools
 
-Exposed to the voice agent (governed by `realtime.toolPolicy`):
+Exposed to the realtime voice agent, governed by `realtime.toolPolicy`
+(`safe-read-only` | `owner` | `none`, default `none`):
 
-- `look_at_screen` - inspect the current screen-share/camera or recent history.
-- `show_to_caller` - display an image to the caller.
-- `post_meeting_minutes` - post minutes for the call.
-- A background-task tool for longer work that reports back.
+| Tool | What it does |
+|---|---|
+| `look_at_screen` | Look at the shared screen/camera (live or history) and answer. |
+| `show_to_caller` | Generate or fetch an image and show it on the bot's tile. |
+| `post_meeting_minutes` | Summarize the call and post minutes to the Teams chat. |
+| background task | Run longer work in the background and report back (optionally via an outbound call-back). |
 
-## Meeting recap and minutes
+## Meetings & productivity
 
-- **Recap** - an end-of-call summary of key points, decisions, and action items (`meetingRecap`).
-- **`.docx` minutes** - on-demand minutes with per-person attribution.
+- **End-of-call recap** (`meetingRecap: true`) - post minutes (key points, decisions, action items)
+  to the Teams chat when the call ends.
+- **On-demand minutes** - `post_meeting_minutes` (or asking the agent to summarize) posts minutes
+  mid-call.
+- **`.docx` minutes** - generated with per-person attribution.
 
 ## Outbound call-backs
 
-Place a call, speak a result or hold a conversation, and hang up - with a no-answer/voicemail fallback
-and cancel-ringing. See [Outbound Calls](/openclaw-msteams-voice/outbound-calls/).
+Place a call, speak a result (`notify`) or hold a conversation (`conversation`), and hang up - with
+a no-answer/voicemail fallback and cancel-ringing so the callee's phone stops ringing when the
+plugin gives up. See [Outbound Calls](/openclaw-msteams-voice/outbound-calls/).
+
+## Sessions
+
+- **`sessionScope`** - conversation continuity: `per-call` (fresh each call), `per-thread` (keyed by
+  the Teams thread), or `per-phone` (keyed by the caller).
 
 ## Reliability and security
 
-- **Replay-proof HMAC handshake** on every connection (see [Wire Protocol](/openclaw-msteams-voice/wire-protocol/)).
-- **Allowlist, closed by default** - `inboundPolicy` + `allowFrom`.
+- **Replay-proof HMAC handshake** on every connection - constant-time compare, 60 s window,
+  single-use tuples. See [Wire Protocol](/openclaw-msteams-voice/wire-protocol/).
+- **Fail-closed secret** - no shared secret (or a malformed one) means the server refuses to accept
+  any handshake at all.
+- **Caller allowlist, closed by default** - `inboundPolicy` + `allowFrom`; with the default
+  `allowlist` policy and an empty list, every caller is denied.
 - **Recording-status gate** - hold media until recording is active (`requireRecordingStatus`).
 - **Reconnect** - a dropped connection re-authenticates with a fresh handshake.
-- **Stale-call reaper** - `staleCallReaperSeconds`.
-- **Concurrency cap** - `maxConcurrentCalls`.
-- **Duration cap** - `maxDurationSeconds`.
-- **Backpressure / frame-size bounds** to keep a single agent from being overrun.
-- **Graceful cutoff** - a tier limit triggers a spoken `assistant.say` goodbye before teardown.
+- **Stale-call reaper** - `staleCallReaperSeconds` (default 120) tears down calls that stop being
+  serviced.
+- **Concurrency cap** - `maxConcurrentCalls` (default 4).
+- **Duration cap** - `maxDurationSeconds` (default 0 = unlimited) bounds a single call's wall-clock
+  time.
+- **DoS guards** - 64 total / 8 per-IP connection caps, a 10 s pre-start timeout, a 2 MB frame cap,
+  and a 1 MB outbound backpressure bound.
+- **Graceful cutoff** - a StandIn tier limit triggers a spoken `assistant.say` goodbye before the
+  call ends, instead of an abrupt drop.
