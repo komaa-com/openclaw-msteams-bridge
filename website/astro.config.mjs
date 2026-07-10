@@ -1,10 +1,10 @@
-// Docs site for @komaa/msteams-voice, published to GitHub Pages by .github/workflows/docs.yml.
+// Docs site for @komaa/msteams-bridge, published to GitHub Pages by .github/workflows/docs.yml.
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 
 export default defineConfig({
   site: "https://komaa-com.github.io",
-  base: "/openclaw-msteams-voice",
+  base: "/openclaw-msteams-bridge",
   integrations: [
     starlight({
       title: "Microsoft Teams Bridge for OpenClaw",
@@ -14,7 +14,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/komaa-com/openclaw-msteams-voice",
+          href: "https://github.com/komaa-com/openclaw-msteams-bridge",
         },
       ],
       sidebar: [

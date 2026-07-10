@@ -3,14 +3,14 @@ title: "Contributing"
 description: "How to set up a dev environment and contribute to the plugin."
 ---
 
-Contributions are welcome. The repo's [CONTRIBUTING.md](https://github.com/komaa-com/openclaw-msteams-voice/blob/main/CONTRIBUTING.md)
+Contributions are welcome. The repo's [CONTRIBUTING.md](https://github.com/komaa-com/openclaw-msteams-bridge/blob/main/CONTRIBUTING.md)
 is the authoritative guide; this page is the quick orientation.
 
 ## Setup
 
 ```bash
-git clone https://github.com/komaa-com/openclaw-msteams-voice
-cd openclaw-msteams-voice
+git clone https://github.com/komaa-com/openclaw-msteams-bridge
+cd openclaw-msteams-bridge
 npm ci
 npm run build       # tsc -> dist/
 npm run typecheck
@@ -35,7 +35,7 @@ source under `src/`, never hand-edit `dist/`.
 | Group gate | `src/group-call-gate.ts` |
 | Avatar cues | `src/expression.ts`, `src/viseme-estimate.ts` |
 
-See [DESIGN.md](https://github.com/komaa-com/openclaw-msteams-voice/blob/main/DESIGN.md) for the
+See [DESIGN.md](https://github.com/komaa-com/openclaw-msteams-bridge/blob/main/DESIGN.md) for the
 architecture.
 
 ## Conventions

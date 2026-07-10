@@ -3,10 +3,10 @@ title: "Architecture"
 description: "How the plugin is designed: system overview, call lifecycle, the two dialogue pipelines, module map, and the trust model."
 ---
 
-This page is the contributor-level design of `@komaa/msteams-voice`. It covers what runs where,
+This page is the contributor-level design of `@komaa/msteams-bridge`. It covers what runs where,
 how a call moves through the system, and which module owns what. For the wire-level details see the
-[Wire Protocol](/openclaw-msteams-voice/wire-protocol/); for option-by-option settings see the
-[Configuration Reference](/openclaw-msteams-voice/configuration-reference/).
+[Wire Protocol](/openclaw-msteams-bridge/wire-protocol/); for option-by-option settings see the
+[Configuration Reference](/openclaw-msteams-bridge/configuration-reference/).
 
 ## System overview
 
@@ -18,7 +18,7 @@ client.
 ```
                  (hosted service)                        (your machine / your gateway)
  ┌────────────┐   ┌─────────────────────┐  HMAC WebSocket  ┌──────────────────────────────┐
- │ Teams call │◄─►│ StandIn media bridge │═══════(dials in)═►│ @komaa/msteams-voice          │
+ │ Teams call │◄─►│ StandIn media bridge │═══════(dials in)═►│ @komaa/msteams-bridge          │
  └────────────┘   │  joins the meeting,  │  audio/video/    │  WS server + call brain       │
                   │  carries the media   │  events, JSON    │  inside the OpenClaw gateway  │
                   └─────────┬───────────┘                   └───────┬───────────┬──────────┘
@@ -106,7 +106,7 @@ realtime provider resolves.
 
 Shared by both: barge-in (`assistant.cancel`), verbal interrupts (EN/AR), the echo guard, the
 group-call gate, DTMF, and bilingual handling. See
-[Realtime and Streaming Modes](/openclaw-msteams-voice/realtime-and-streaming-modes/).
+[Realtime and Streaming Modes](/openclaw-msteams-bridge/realtime-and-streaming-modes/).
 
 ## The three pillars and their wire messages
 

@@ -1,14 +1,14 @@
 # Design
 
-This is the architecture note for contributors. It explains what `@komaa/msteams-voice` is, how it
+This is the architecture note for contributors. It explains what `@komaa/msteams-bridge` is, how it
 is put together, and how it talks to the outside world. For usage, start with the
-[README](./README.md) and the [docs site](https://komaa-com.github.io/openclaw-msteams-voice/);
-the site's [Architecture page](https://komaa-com.github.io/openclaw-msteams-voice/architecture/) is
+[README](./README.md) and the [docs site](https://komaa-com.github.io/openclaw-msteams-bridge/);
+the site's [Architecture page](https://komaa-com.github.io/openclaw-msteams-bridge/architecture/) is
 the diagrammed version of this note.
 
 ## What it is
 
-`@komaa/msteams-voice` is an **OpenClaw channel plugin** that adds Microsoft Teams **CVI** (customer
+`@komaa/msteams-bridge` is an **OpenClaw channel plugin** that adds Microsoft Teams **CVI** (customer
 voice + video interaction) to an OpenClaw agent. It layers real-time voice and video on top of
 OpenClaw's Teams chat channel: the agent hears the caller, sees their camera and screen-share, talks
 back with low latency, and appears in the call as a lip-synced avatar.
@@ -27,13 +27,13 @@ There are two processes at run time:
    out for media; it only accepts authenticated inbound connections from StandIn.
 
 ```
-Teams call  <-->  StandIn media bridge  ==WebSocket==>  @komaa/msteams-voice  <-->  OpenClaw agent
+Teams call  <-->  StandIn media bridge  ==WebSocket==>  @komaa/msteams-bridge  <-->  OpenClaw agent
                     (hosted, joins the call)             (this plugin, WS server)      + voice provider
 ```
 
 Because the plugin is a server, the same build works whether StandIn runs in the hosted sandbox or
 against your own paired Teams bot - only the shared secret and the identity differ. See
-[Connecting to StandIn](https://komaa-com.github.io/openclaw-msteams-voice/connecting-to-standin/).
+[Connecting to StandIn](https://komaa-com.github.io/openclaw-msteams-bridge/connecting-to-standin/).
 
 ## The wire
 
@@ -42,7 +42,7 @@ replay-proof HMAC handshake (timestamp + signature headers, signed over `"{times
 After the handshake the two sides exchange a small JSON message protocol - `session.start`,
 `audio.frame`, `video.frame`, `assistant.say`, `assistant.cancel`, `expression`, `speech.marks`,
 `display.image`, and so on. Audio is PCM 16 kHz / 16-bit / mono, base64-framed, both directions. The
-full contract is the [Wire Protocol](https://komaa-com.github.io/openclaw-msteams-voice/wire-protocol/)
+full contract is the [Wire Protocol](https://komaa-com.github.io/openclaw-msteams-bridge/wire-protocol/)
 page. The protocol is deliberately transport-only: this plugin knows nothing about how the bridge
 produces Teams media, and the bridge knows nothing about the agent.
 
@@ -101,7 +101,7 @@ speaker from the roster so the agent can greet and reference people by name.
 When `outbound.enabled`, the agent can place a call through the StandIn outbound API (an HMAC-signed
 REST call), speak a result or hold a conversation, and hang up - with a no-answer / voicemail fallback
 and a cancel-ringing path so a late pickup does not strand the callee. See
-[Outbound Calls](https://komaa-com.github.io/openclaw-msteams-voice/outbound-calls/).
+[Outbound Calls](https://komaa-com.github.io/openclaw-msteams-bridge/outbound-calls/).
 
 ## Module map
 

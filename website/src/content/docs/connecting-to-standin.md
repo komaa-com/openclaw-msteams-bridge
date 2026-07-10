@@ -13,7 +13,7 @@ each call it opens an authenticated WebSocket to your plugin and streams audio/v
 not dial out and you never handle Teams media yourself.
 
 ```
-Teams call <-> StandIn media bridge ==WebSocket (StandIn dials in)==> @komaa/msteams-voice
+Teams call <-> StandIn media bridge ==WebSocket (StandIn dials in)==> @komaa/msteams-bridge
 ```
 
 What you configure to make this work:
@@ -25,9 +25,9 @@ What you configure to make this work:
 | `path` | The WebSocket route (default `/voice/msteams/stream`). |
 | `sharedSecret` | The HMAC secret. It **must match** the value StandIn uses, or the handshake is rejected. |
 
-Every connection is authenticated with a replay-proof HMAC handshake - see the [Wire Protocol](/openclaw-msteams-voice/wire-protocol/).
+Every connection is authenticated with a replay-proof HMAC handshake - see the [Wire Protocol](/openclaw-msteams-bridge/wire-protocol/).
 This is the same regardless of which tier you use; only the identity and limits differ. For the
-bigger picture of what runs where, see [Architecture](/openclaw-msteams-voice/architecture/).
+bigger picture of what runs where, see [Architecture](/openclaw-msteams-bridge/architecture/).
 
 :::note[Keep the secret a secret]
 The shared secret authenticates every media connection **and** signs outbound place-call requests.
@@ -105,7 +105,7 @@ codes; callers must be present in `allowFrom`.
 `open` accepts **any** caller who reaches your bot. Use it for sandbox testing only.
 :::
 
-See the [Configuration Reference](/openclaw-msteams-voice/configuration-reference/) for details.
+See the [Configuration Reference](/openclaw-msteams-bridge/configuration-reference/) for details.
 
 ## Cutoff and the spoken goodbye
 

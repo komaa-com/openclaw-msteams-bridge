@@ -1,14 +1,14 @@
 # Microsoft Teams Bridge for OpenClaw
 
-[![CI](https://github.com/komaa-com/openclaw-msteams-voice/actions/workflows/dist-sync.yml/badge.svg)](https://github.com/komaa-com/openclaw-msteams-voice/actions/workflows/dist-sync.yml)
-[![npm version](https://img.shields.io/npm/v/@komaa/msteams-voice.svg)](https://www.npmjs.com/package/@komaa/msteams-voice)
-[![downloads](https://img.shields.io/npm/dm/@komaa/msteams-voice.svg)](https://www.npmjs.com/package/@komaa/msteams-voice)
-[![docs](https://img.shields.io/badge/docs-komaa--com.github.io-2563eb.svg)](https://komaa-com.github.io/openclaw-msteams-voice/)
+[![CI](https://github.com/komaa-com/openclaw-msteams-bridge/actions/workflows/dist-sync.yml/badge.svg)](https://github.com/komaa-com/openclaw-msteams-bridge/actions/workflows/dist-sync.yml)
+[![npm version](https://img.shields.io/npm/v/@komaa/msteams-bridge.svg)](https://www.npmjs.com/package/@komaa/msteams-bridge)
+[![downloads](https://img.shields.io/npm/dm/@komaa/msteams-bridge.svg)](https://www.npmjs.com/package/@komaa/msteams-bridge)
+[![docs](https://img.shields.io/badge/docs-komaa--com.github.io-2563eb.svg)](https://komaa-com.github.io/openclaw-msteams-bridge/)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg)](https://www.typescriptlang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-**`@komaa/msteams-voice`** is a Microsoft Teams voice and video agent (CVI) for
+**`@komaa/msteams-bridge`** is a Microsoft Teams voice and video agent (CVI) for
 [OpenClaw](https://openclaw.ai). It turns an
 ordinary Teams call into a true two-way video conversation: the agent sees what you show it, talks
 back in real time, and appears in the call as an animated, lip-synced avatar.
@@ -85,11 +85,11 @@ curl -fsSL https://standin.komaa.com/install.sh | bash
 Or install the plugin manually, then restart the gateway:
 
 ```bash
-openclaw plugins install npm:@komaa/msteams-voice
+openclaw plugins install npm:@komaa/msteams-bridge
 openclaw gateway restart
 ```
 
-Also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/msteams-voice`
+Also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/msteams-bridge`
 (OpenClaw falls back to npm automatically if the ClawHub fetch fails). The package ships prebuilt
 (v0.1.10+): no build step either way.
 
@@ -185,7 +185,7 @@ gating, DTMF, and vision all work in streaming mode too.
 
 ## Key reference
 
-Full reference in the [Configuration Reference](https://komaa-com.github.io/openclaw-msteams-voice/configuration-reference/). Common keys:
+Full reference in the [Configuration Reference](https://komaa-com.github.io/openclaw-msteams-bridge/configuration-reference/). Common keys:
 
 **Core**
 
@@ -250,10 +250,10 @@ Full reference in the [Configuration Reference](https://komaa-com.github.io/open
 
 ## Links
 
-- Plugin docs: [komaa-com.github.io/openclaw-msteams-voice](https://komaa-com.github.io/openclaw-msteams-voice/)
+- Plugin docs: [komaa-com.github.io/openclaw-msteams-bridge](https://komaa-com.github.io/openclaw-msteams-bridge/)
 - StandIn (hosted service) docs: [docs.komaa.com](https://docs.komaa.com/)
-- Source: [github.com/komaa-com/openclaw-msteams-voice](https://github.com/komaa-com/openclaw-msteams-voice)
-- npm: [@komaa/msteams-voice](https://www.npmjs.com/package/@komaa/msteams-voice)
+- Source: [github.com/komaa-com/openclaw-msteams-bridge](https://github.com/komaa-com/openclaw-msteams-bridge)
+- npm: [@komaa/msteams-bridge](https://www.npmjs.com/package/@komaa/msteams-bridge)
 
 ---
 

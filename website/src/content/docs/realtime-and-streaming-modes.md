@@ -56,7 +56,7 @@ Azure:
 
 - `instructions` - the system prompt for the voice agent.
 - `toolPolicy` - `safe-read-only`, `owner`, or `none`. Controls which agent tools the voice session may
-  call. See [Features](/openclaw-msteams-voice/features/) for the tool set.
+  call. See [Features](/openclaw-msteams-bridge/features/) for the tool set.
 - `suppressInputDuringPlayback`, `echoSuppressionWindowMs`, `echoBargeInRms` - the echo guard and
   barge-in sensitivity. Raise `echoBargeInRms` if the agent interrupts itself; lower it if barge-in
   feels unresponsive.
