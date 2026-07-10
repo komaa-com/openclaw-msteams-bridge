@@ -1,86 +1,72 @@
 ---
-title: MS Teams Voice for OpenClaw
-description: A Microsoft Teams voice and video agent (CVI) for OpenClaw. Your agent hears the caller, sees what they show it, talks back in real time, and appears as a lip-synced avatar.
-template: splash
-hero:
-  tagline: Turn an ordinary Teams call into a two-way video conversation. Your OpenClaw agent hears the caller, sees what they show it, talks back in real time, and appears in the call as an animated, lip-synced avatar.
-  actions:
-    - text: Get started
-      link: /openclaw-msteams-voice/getting-started/
-      icon: right-arrow
-    - text: View on GitHub
-      link: https://github.com/komaa-com/openclaw-msteams-voice
-      icon: github
-      variant: minimal
+title: "MS Teams Voice for OpenClaw"
+description: "Microsoft Teams voice and video (CVI) for an OpenClaw agent, connected through the StandIn media bridge."
 ---
 
-import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+Welcome! **`@komaa/msteams-voice`** (npm: [`@komaa/msteams-voice`](https://www.npmjs.com/package/@komaa/msteams-voice),
+OpenClaw channel id `msteams-voice`) adds **Microsoft Teams voice and video** to an
+[OpenClaw](https://openclaw.ai) agent.
 
-## How it fits together
+It is a single OpenClaw plugin. You install it into your OpenClaw gateway, and it runs a
+small local WebSocket server. The hosted **StandIn media bridge** joins your Teams call
+and dials into that server - so your OpenClaw agent can talk, see, and act on a real
+Teams call without you having to build any Teams media stack yourself. The agent appears
+in the call as an animated, lip-synced avatar.
 
-The plugin runs inside your OpenClaw gateway and hosts a local WebSocket server. A hosted service -
-**the StandIn media bridge** - joins the Teams call and dials into that server for each call. You
-never expose Teams internals yourself; you run the plugin, point StandIn at it with a shared secret,
-and the agent is in the call.
+## What it does
+
+- **Real-time voice** - the caller talks to your agent and hears it reply, with natural
+  **barge-in** (interrupt mid-sentence). Two engines:
+  - **Realtime** - OpenAI or Azure OpenAI speech-to-speech (lowest latency).
+  - **Streaming** - STT to agent to TTS, using your OpenClaw-configured providers.
+- **Vision** - the agent can look at the caller's **shared screen or camera**, both on
+  request (`look_at_screen`) and ambiently (it stays visually aware during the call),
+  with a per-call spend budget.
+- **Avatar cues** - expression hints, viseme lip-sync, and `show_to_caller` to render an
+  image on the bot's tile (picture-in-picture or fullscreen).
+- **Meetings** - "speak only when addressed" group etiquette with wake phrases and a
+  follow-up window, per-speaker attribution, and an optional end-of-call recap with
+  `.docx` minutes.
+- **Outbound call-backs** - place a call, speak a result or hold a conversation, hang
+  up, with a no-answer/voicemail fallback and cancel-ringing.
+- **DTMF / IVR**, **bilingual EN/AR**, **verbal interrupts**, **echo suppression**, and
+  a **cutoff goodbye** when a StandIn time limit is reached.
+- **Secure transport** - a replay-proof HMAC handshake on every connection, a caller
+  allowlist that is closed by default, and a recording-status gate.
+
+## How the pieces fit
 
 ```
-Teams call <-> StandIn media bridge ==WebSocket==> @komaa/msteams-voice <-> your OpenClaw agent
+ Teams call <->  StandIn media bridge  --HMAC WebSocket-->  @komaa/msteams-voice (in the OpenClaw gateway)
+   (hosted)       joins the meeting             the local WS server + the call brain
+                                                        |
+                                                  your OpenClaw agent (real work, tools)
 ```
 
-## The three pillars
+The plugin is the **local WebSocket server** (default `127.0.0.1:9442`; set
+`bindAddress: "0.0.0.0"` so the hosted bridge can reach it). StandIn is the **client**
+that dials in over an HMAC-authenticated WebSocket using a shared secret both sides
+hold. You never operate any Teams media yourself - that is StandIn's job.
 
-<CardGrid>
-  <Card title="Perception - it sees you" icon="magnifier">
-    Reads inbound camera and screen-share (VBSS) frames - on demand, per-turn, or as a continuous
-    ambient view - attributed per participant and capped per call.
-  </Card>
-  <Card title="Dialogue - it talks with you" icon="comment">
-    Natural spoken conversation, realtime speech-to-speech or streaming STT to agent to TTS, with
-    barge-in, a "speak only when addressed" gate for meetings, DTMF, and bilingual EN/AR.
-  </Card>
-  <Card title="Rendering - it is seen by you" icon="seti:video">
-    Appears as a lip-synced avatar tile; emits expression cues, visemes, and image overlays that the
-    StandIn bridge draws into the caller's video.
-  </Card>
-</CardGrid>
+## Where to go next
 
-## Capability highlights
-
-- **Two dialogue modes** - realtime (OpenAI / Azure OpenAI) or streaming with any provider.
-- **Vision** - camera + screen-share, ambient view, keyframe history, per-call budget.
-- **Meeting etiquette** - wake-phrase gate, follow-up window, per-speaker attribution.
-- **Outbound call-backs** - place a call, speak a result, hang up, with voicemail fallback.
-- **Meeting recap + `.docx` minutes** with per-person attribution.
-- **Avatar cues** - expressions, viseme lip-sync, picture-in-picture image sharing.
-- **Secure transport** - replay-proof HMAC handshake, allowlist closed by default, recording-status gate.
-
-## Start here
-
-<CardGrid>
-  <LinkCard
-    title="Getting Started"
-    description="Install, connect to the sandbox, first call."
-    href="/openclaw-msteams-voice/getting-started/"
-  />
-  <LinkCard
-    title="Connecting to StandIn"
-    description="The connection model and the sandbox / free / subscription tiers."
-    href="/openclaw-msteams-voice/connecting-to-standin/"
-  />
-  <LinkCard
-    title="Configuration Reference"
-    description="Every option, with types and defaults."
-    href="/openclaw-msteams-voice/configuration-reference/"
-  />
-  <LinkCard
-    title="Wire Protocol"
-    description="The WebSocket contract: handshake, HMAC, message types."
-    href="/openclaw-msteams-voice/wire-protocol/"
-  />
-</CardGrid>
+- **[Getting Started](/openclaw-msteams-voice/getting-started/)** - install, connect to the sandbox, first call.
+- **[Connecting to StandIn](/openclaw-msteams-voice/connecting-to-standin/)** - the connection model, the three
+  tiers (sandbox / free / subscription), and the shared secret.
+- **[Configuration Reference](/openclaw-msteams-voice/configuration-reference/)** - every config key, type, and
+  default.
+- **[Realtime & Streaming Modes](/openclaw-msteams-voice/realtime-and-streaming-modes/)** - realtime vs streaming;
+  OpenAI vs Azure; echo and barge-in tuning.
+- **[Wire Protocol](/openclaw-msteams-voice/wire-protocol/)** - the WebSocket contract, HMAC, and message tables.
+- **[Features](/openclaw-msteams-voice/features/)** - the full capability tour.
+- **[Outbound Calls](/openclaw-msteams-voice/outbound-calls/)** - placing calls and call-backs.
+- **[Troubleshooting](/openclaw-msteams-voice/troubleshooting/)** - common problems and fixes.
+- **[Contributing](/openclaw-msteams-voice/contributing/)** - help improve the plugin.
 
 ## Links
 
 - Source: [github.com/komaa-com/openclaw-msteams-voice](https://github.com/komaa-com/openclaw-msteams-voice)
 - npm: [@komaa/msteams-voice](https://www.npmjs.com/package/@komaa/msteams-voice)
-- StandIn: [standin.komaa.com](https://standin.komaa.com) - hosted-service docs: [docs.komaa.com](https://docs.komaa.com)
+
+> Full hosted-service docs: [docs.komaa.com](https://docs.komaa.com) - StandIn account &
+> dashboard: [standin.komaa.com](https://standin.komaa.com).

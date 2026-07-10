@@ -21,9 +21,9 @@ resolver; secret-valued keys accept either a literal string or an OpenClaw secre
 | `allowFrom` | string[] | `[]` | Allowlisted caller AAD object ids. Empty + `allowlist` = deny all. |
 | `inboundGreeting` | string | - | Opening line the agent speaks on answer. |
 | `mode` | enum | auto | `realtime` \| `streaming`. Auto-selects realtime if a realtime provider resolves. |
-| `sessionScope` | enum | `per-call` | Conversation continuity: `per-phone` \| `per-call` \| `per-thread`. |
+| `sessionScope` | enum | - | Conversation continuity: `per-phone` \| `per-call` \| `per-thread`. |
 | `maxConcurrentCalls` | int | `4` | Concurrent active-call cap. |
-| `maxDurationSeconds` | int | - | Hard cap on a single answered call's duration. |
+| `maxDurationSeconds` | int | `0` (unlimited) | Hard cap on a single answered call's duration. |
 | `staleCallReaperSeconds` | int | `120` | Tear down calls that stop being serviced after this long. |
 | `maxVisionPerMinute` | int | - | Per-call vision spend cap. |
 | `meetingRecap` | bool | - | Post an end-of-call recap / minutes. |
@@ -49,7 +49,7 @@ resolver; secret-valued keys accept either a literal string or an OpenClaw secre
 | `realtime.providers.<id>.azureEndpoint` | string | - | Azure OpenAI endpoint (selects Azure). |
 | `realtime.providers.<id>.azureDeployment` | string | - | Azure deployment name. |
 | `realtime.instructions` | string | - | System instructions for the voice agent. |
-| `realtime.toolPolicy` | enum | - | `safe-read-only` \| `owner` \| `none`. |
+| `realtime.toolPolicy` | enum | `none` | Which agent tools the voice model may call: `safe-read-only` \| `owner` \| `none`. |
 | `realtime.suppressInputDuringPlayback` | bool | - | Echo guard: ignore input while the agent is speaking. |
 | `realtime.echoSuppressionWindowMs` | int | - | Echo-guard window. |
 | `realtime.echoBargeInRms` | int | - | RMS threshold above which caller speech counts as barge-in. |
