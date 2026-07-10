@@ -2,7 +2,7 @@
 
 This is the architecture note for contributors. It explains what `@komaa/msteams-voice` is, how it
 is put together, and how it talks to the outside world. For usage, start with the
-[README](./README.md) and the [wiki](https://github.com/komaa-com/openclaw-msteams-voice/wiki).
+[README](./README.md) and the [docs site](https://komaa-com.github.io/openclaw-msteams-voice/).
 
 ## What it is
 
@@ -31,7 +31,7 @@ Teams call  <-->  StandIn media bridge  ==WebSocket==>  @komaa/msteams-voice  <-
 
 Because the plugin is a server, the same build works whether StandIn runs in the hosted sandbox or
 against your own paired Teams bot - only the shared secret and the identity differ. See
-[Connecting to StandIn](https://github.com/komaa-com/openclaw-msteams-voice/wiki/Connecting-to-StandIn).
+[Connecting to StandIn](https://komaa-com.github.io/openclaw-msteams-voice/connecting-to-standin/).
 
 ## The wire
 
@@ -40,7 +40,7 @@ replay-proof HMAC handshake (timestamp + signature headers, signed over `"{times
 After the handshake the two sides exchange a small JSON message protocol - `session.start`,
 `audio.frame`, `video.frame`, `assistant.say`, `assistant.cancel`, `expression`, `speech.marks`,
 `display.image`, and so on. Audio is PCM 16 kHz / 16-bit / mono, base64-framed, both directions. The
-full contract is the [Wire Protocol](https://github.com/komaa-com/openclaw-msteams-voice/wiki/Wire-Protocol)
+full contract is the [Wire Protocol](https://komaa-com.github.io/openclaw-msteams-voice/wire-protocol/)
 page. The protocol is deliberately transport-only: this plugin knows nothing about how the bridge
 produces Teams media, and the bridge knows nothing about the agent.
 
@@ -99,7 +99,7 @@ speaker from the roster so the agent can greet and reference people by name.
 When `outbound.enabled`, the agent can place a call through the StandIn outbound API (an HMAC-signed
 REST call), speak a result or hold a conversation, and hang up - with a no-answer / voicemail fallback
 and a cancel-ringing path so a late pickup does not strand the callee. See
-[Outbound Calls](https://github.com/komaa-com/openclaw-msteams-voice/wiki/Outbound-Calls).
+[Outbound Calls](https://komaa-com.github.io/openclaw-msteams-voice/outbound-calls/).
 
 ## Module map
 
