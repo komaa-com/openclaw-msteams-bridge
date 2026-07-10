@@ -98,8 +98,9 @@ plugin gives up. See [Outbound Calls](/openclaw-msteams-voice/outbound-calls/).
   single-use tuples. See [Wire Protocol](/openclaw-msteams-voice/wire-protocol/).
 - **Fail-closed secret** - no shared secret (or a malformed one) means the server refuses to accept
   any handshake at all.
-- **Caller allowlist, closed by default** - `inboundPolicy` + `allowFrom`; with the default
-  `allowlist` policy and an empty list, every caller is denied.
+- **Inbound policy, closed by default** - `inboundPolicy` + `allowFrom`; with the policy unset
+  (the default) every inbound call is denied, and `allowlist` with an empty list denies all too.
+  Callers match by AAD object id or phone number.
 - **Recording-status gate** - hold media until recording is active (`requireRecordingStatus`).
 - **Reconnect** - a dropped connection re-authenticates with a fresh handshake.
 - **Stale-call reaper** - `staleCallReaperSeconds` (default 120) tears down calls that stop being

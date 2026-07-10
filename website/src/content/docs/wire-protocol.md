@@ -249,7 +249,8 @@ Keepalive reply echoing the inbound `ping` timestamp.
 ## Lifecycle in brief
 
 1. The bridge connects to `{path}/{callId}` and passes the HMAC handshake.
-2. The bridge sends `session.start`; the plugin checks the allowlist and creates the call session.
+2. The bridge sends `session.start`; the plugin checks the inbound policy and creates the call
+   session (a rejected caller closes the socket with reason `not-allowed`).
 3. Audio (and video) frames flow both ways; the plugin emits avatar cues as needed.
 4. On a tier-limit cutoff the bridge sends `assistant.say`; the agent speaks it.
 5. `session.end` (or a socket close, a stale-call reaper, or a duration cap) tears the session down
