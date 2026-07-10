@@ -20,7 +20,7 @@ There are two processes at run time:
 
 1. **This plugin**, running inside your OpenClaw gateway. It hosts a local WebSocket **server** and
    owns the conversation: speech, vision, tools, avatar cues, and the call state machine.
-2. **The StandIn media bridge** — a hosted service that actually joins the Teams call. It carries the
+2. **The StandIn media bridge** - a hosted service that actually joins the Teams call. It carries the
    media and, for each call, **dials into this plugin's WebSocket server**. This plugin never dials
    out for media; it only accepts authenticated inbound connections from StandIn.
 
@@ -30,14 +30,14 @@ Teams call  <-->  StandIn media bridge  ==WebSocket==>  @komaa/msteams-voice  <-
 ```
 
 Because the plugin is a server, the same build works whether StandIn runs in the hosted sandbox or
-against your own paired Teams bot — only the shared secret and the identity differ. See
+against your own paired Teams bot - only the shared secret and the identity differ. See
 [Connecting to StandIn](https://github.com/komaa-com/openclaw-msteams-voice/wiki/Connecting-to-StandIn).
 
 ## The wire
 
 One WebSocket per active call, opened by the bridge to `/{path}/{callId}` and authenticated with a
 replay-proof HMAC handshake (timestamp + signature headers, signed over `"{timestamp}.{callId}"`).
-After the handshake the two sides exchange a small JSON message protocol — `session.start`,
+After the handshake the two sides exchange a small JSON message protocol - `session.start`,
 `audio.frame`, `video.frame`, `assistant.say`, `assistant.cancel`, `expression`, `speech.marks`,
 `display.image`, and so on. Audio is PCM 16 kHz / 16-bit / mono, base64-framed, both directions. The
 full contract is the [Wire Protocol](https://github.com/komaa-com/openclaw-msteams-voice/wiki/Wire-Protocol)
@@ -66,10 +66,10 @@ initiate -> ringing -> answered -> active -> terminal
 The runtime (`src/msteams-runtime.ts`) picks a mode per the config, auto-selecting **realtime** when a
 realtime provider resolves, otherwise **streaming**:
 
-- **Realtime** (`src/msteams-realtime.ts`) — a speech-to-speech model (OpenAI or Azure OpenAI). Caller
+- **Realtime** (`src/msteams-realtime.ts`) - a speech-to-speech model (OpenAI or Azure OpenAI). Caller
   audio streams to the provider; model audio streams back, chunked into wire frames. Vision is pushed
   continuously.
-- **Streaming** (`src/msteams-streaming.ts`, `msteams-tts*.ts`, `telephony-*.ts`) — STT to the OpenClaw
+- **Streaming** (`src/msteams-streaming.ts`, `msteams-tts*.ts`, `telephony-*.ts`) - STT to the OpenClaw
   agent to TTS. Any provider works; vision is attached per turn.
 
 Both modes share barge-in and a deterministic verbal-interrupt path (`verbal-interrupt.ts`), echo
@@ -84,7 +84,7 @@ agent reaches vision through tools (`look_at_screen`) and, in realtime mode, an 
 
 ## Rendering (avatar cues)
 
-The plugin does not draw anything itself — it emits **cues** the bridge renders into the caller-facing
+The plugin does not draw anything itself - it emits **cues** the bridge renders into the caller-facing
 video: `expression` (emotion), `speech.marks` (viseme lip-sync, `viseme-estimate.ts` / `expression.ts`),
 and `display.image` (picture-in-picture / fullscreen image sharing).
 
@@ -97,7 +97,7 @@ speaker from the roster so the agent can greet and reference people by name.
 ## Outbound call-backs
 
 When `outbound.enabled`, the agent can place a call through the StandIn outbound API (an HMAC-signed
-REST call), speak a result or hold a conversation, and hang up — with a no-answer / voicemail fallback
+REST call), speak a result or hold a conversation, and hang up - with a no-answer / voicemail fallback
 and a cancel-ringing path so a late pickup does not strand the callee. See
 [Outbound Calls](https://github.com/komaa-com/openclaw-msteams-voice/wiki/Outbound-Calls).
 
@@ -120,7 +120,7 @@ and a cancel-ringing path so a late pickup does not strand the callee. See
 
 ## Non-goals
 
-- The plugin never touches Teams media internals — that is entirely the bridge's job, reached only
+- The plugin never touches Teams media internals - that is entirely the bridge's job, reached only
   through the documented wire protocol.
 - No trusted-plugin privileges and no runtime fork: everything runs on the public OpenClaw plugin SDK.
 
