@@ -1,0 +1,35 @@
+name: retire-old-package
+
+# One-off maintenance: retire the pre-rename npm package @komaa/msteams-voice
+# (renamed to @komaa/msteams-bridge in v0.1.13). Manual dispatch only.
+#   mode=unpublish  remove the old package entirely (npm policy permitting)
+#   mode=deprecate  leave it installable but print a rename pointer
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "unpublish | deprecate"
+        required: true
+        default: "deprecate"
+
+permissions:
+  contents: read
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Retire @komaa/msteams-voice
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -x
+          if [ "${{ inputs.mode }}" = "unpublish" ]; then
+            npm unpublish @komaa/msteams-voice --force
+          else
+            npm deprecate @komaa/msteams-voice "Renamed: install @komaa/msteams-bridge instead."
+          fi
