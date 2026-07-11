@@ -25,7 +25,7 @@ export function createMsteamsTtsProvider(params) {
             const attemptedChain = result.attemptedProviders && result.attemptedProviders.length > 0
                 ? result.attemptedProviders.join(" -> ")
                 : `${result.fallbackFrom} -> ${result.provider}`;
-            logger?.warn?.(`[voice-call] msteams TTS fallback used from=${result.fallbackFrom} to=${result.provider} attempts=${attemptedChain}`);
+            logger?.warn?.(`[msteams-voice] TTS fallback used from=${result.fallbackFrom} to=${result.provider} attempts=${attemptedChain}`);
         }
         // Alignment is wall-clock seconds, so it stays valid across the resample below.
         const pcm16k = result.sampleRate === MSTEAMS_TTS_SAMPLE_RATE_HZ
@@ -38,7 +38,7 @@ export function createMsteamsTtsProvider(params) {
         synthesizePcm16kWithTiming,
     };
 }
-/** Layer the voice-call `tts` override on top of the core `messages.tts` config. */
+/** Layer the plugin `tts` override on top of the core `messages.tts` config. */
 function applyTtsOverride(coreConfig, override) {
     if (!override) {
         return coreConfig;

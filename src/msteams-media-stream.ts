@@ -1,7 +1,7 @@
 /**
  * MsteamsMediaStream
  *
- * WebSocket server that accepts connections from an external Windows-side Teams
+ * WebSocket server that accepts connections from the StandIn media bridge
  * bridge worker and relays Microsoft Teams call audio in both directions. One
  * connection per Teams call, keyed by callId in the URL path.
  *
@@ -9,7 +9,7 @@
  * - HTTP upgrade with HMAC-SHA256 verification of timestamp + callId, plus a
  *   replay window on the timestamp.
  * - Session lifecycle messages (session.start / session.end) parsed and emitted
- *   via callbacks for the host to wire into voice-call's session machinery.
+ *   via callbacks for the host to wire into its session machinery.
  * - Inbound audio frames surfaced via `onAudioFrame` for the host to forward to
  *   the realtime-transcription provider.
  * - Outbound `send` and `close` exposed on the SessionStart callback so the host
@@ -24,7 +24,7 @@ import { type RawData, WebSocket, WebSocketServer } from "ws";
 import { type InboundMessage, InboundMessageSchema, type MsteamsRecordingStatus } from "./protocol.gen.js";
 
 // The wire protocol (message schemas + shared constants) is generated from the
-// OpenClawBridge repo's protocol/schema.yaml — see src/protocol.gen.ts. This file
+// the shared wire-protocol schema, mirrored in src/protocol.gen.ts. This file
 // keeps only the transport: HMAC/replay/connection guards and message routing.
 export { MSTEAMS_PCM_SAMPLE_RATE_HZ } from "./protocol.gen.js";
 export type { MsteamsRecordingStatus } from "./protocol.gen.js";
