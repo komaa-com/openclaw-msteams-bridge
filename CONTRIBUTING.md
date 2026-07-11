@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving `@komaa/msteams-bridge`. This guide covers local setup, the
+Thanks for your interest in improving `@komaa/openclaw-msteams-bridge`. This guide covers local setup, the
 conventions we follow, and how releases work.
 
 ## Prerequisites

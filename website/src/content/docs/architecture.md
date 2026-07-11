@@ -3,7 +3,7 @@ title: "Architecture"
 description: "How the plugin is designed: system overview, call lifecycle, the two dialogue pipelines, module map, and the trust model."
 ---
 
-This page is the contributor-level design of `@komaa/msteams-bridge`. It covers what runs where,
+This page is the contributor-level design of `@komaa/openclaw-msteams-bridge`. It covers what runs where,
 how a call moves through the system, and which module owns what. For the wire-level details see the
 [Wire Protocol](/openclaw-msteams-bridge/wire-protocol/); for option-by-option settings see the
 [Configuration Reference](/openclaw-msteams-bridge/configuration-reference/).
@@ -19,7 +19,7 @@ client.
 flowchart LR
     Teams["Teams call"]
     StandIn["StandIn media bridge<br/>(hosted: joins the meeting,<br/>carries the media)"]
-    Plugin["@komaa/msteams-bridge<br/>(WS server + call brain,<br/>inside the OpenClaw gateway)"]
+    Plugin["@komaa/openclaw-msteams-bridge<br/>(WS server + call brain,<br/>inside the OpenClaw gateway)"]
     Outbound["StandIn outbound API"]
     Model["realtime model<br/>(OpenAI / Azure)"]
     Agent["OpenClaw agent<br/>+ STT/TTS providers"]

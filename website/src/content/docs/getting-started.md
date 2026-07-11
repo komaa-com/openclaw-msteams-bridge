@@ -27,11 +27,11 @@ curl -fsSL https://standin.komaa.com/install.sh | bash
 Prefer to do it by hand?
 
 ```bash
-openclaw plugins install npm:@komaa/msteams-bridge
+openclaw plugins install npm:@komaa/openclaw-msteams-bridge
 openclaw gateway restart
 ```
 
-It is also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/msteams-bridge`
+It is also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/openclaw-msteams-bridge`
 (OpenClaw falls back to npm automatically). The package ships prebuilt (v0.1.10+) - no build step
 either way.
 

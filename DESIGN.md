@@ -1,6 +1,6 @@
 # Design
 
-This is the architecture note for contributors. It explains what `@komaa/msteams-bridge` is, how it
+This is the architecture note for contributors. It explains what `@komaa/openclaw-msteams-bridge` is, how it
 is put together, and how it talks to the outside world. For usage, start with the
 [README](./README.md) and the [docs site](https://komaa-com.github.io/openclaw-msteams-bridge/);
 the site's [Architecture page](https://komaa-com.github.io/openclaw-msteams-bridge/architecture/) is
@@ -8,7 +8,7 @@ the diagrammed version of this note.
 
 ## What it is
 
-`@komaa/msteams-bridge` is an **OpenClaw channel plugin** that adds Microsoft Teams **CVI** (customer
+`@komaa/openclaw-msteams-bridge` is an **OpenClaw channel plugin** that adds Microsoft Teams **CVI** (customer
 voice + video interaction) to an OpenClaw agent. It layers real-time voice and video on top of
 OpenClaw's Teams chat channel: the agent hears the caller, sees their camera and screen-share, talks
 back with low latency, and appears in the call as a lip-synced avatar.
@@ -27,7 +27,7 @@ There are two processes at run time:
    out for media; it only accepts authenticated inbound connections from StandIn.
 
 ```
-Teams call  <-->  StandIn media bridge  ==WebSocket==>  @komaa/msteams-bridge  <-->  OpenClaw agent
+Teams call  <-->  StandIn media bridge  ==WebSocket==>  @komaa/openclaw-msteams-bridge  <-->  OpenClaw agent
                     (hosted, joins the call)             (this plugin, WS server)      + voice provider
 ```
 

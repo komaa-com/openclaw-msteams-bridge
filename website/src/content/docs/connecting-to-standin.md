@@ -13,7 +13,7 @@ each call it opens an authenticated WebSocket to your plugin and streams audio/v
 not dial out and you never handle Teams media yourself.
 
 ```
-Teams call <-> StandIn media bridge ==WebSocket (StandIn dials in)==> @komaa/msteams-bridge
+Teams call <-> StandIn media bridge ==WebSocket (StandIn dials in)==> @komaa/openclaw-msteams-bridge
 ```
 
 What you configure to make this work:

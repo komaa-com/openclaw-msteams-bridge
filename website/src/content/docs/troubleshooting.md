@@ -31,7 +31,7 @@ ever appears in the gateway log.
 log.
 
 - Confirm the plugin is installed: `openclaw plugins list` should show `msteams-voice`.
-  Reinstall with `openclaw plugins install npm:@komaa/msteams-bridge` if not.
+  Reinstall with `openclaw plugins install npm:@komaa/openclaw-msteams-bridge` if not.
 - Confirm `enabled` is not set to `false` under `plugins.entries."msteams-voice".config`.
 - Restart the gateway after any install or config change: `openclaw gateway restart`.
 

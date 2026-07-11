@@ -1,6 +1,6 @@
 {
-  "name": "@komaa/msteams-bridge",
-  "version": "0.1.14",
+  "name": "@komaa/openclaw-msteams-bridge",
+  "version": "0.1.15",
   "author": "Alaaeldin Elhenawy <alaamh@outlook.com>",
   "repository": {
     "type": "git",
@@ -58,7 +58,7 @@
       "./dist/index.js"
     ],
     "install": {
-      "npmSpec": "@komaa/msteams-bridge",
+      "npmSpec": "@komaa/openclaw-msteams-bridge",
       "defaultChoice": "npm"
     },
     "compat": {

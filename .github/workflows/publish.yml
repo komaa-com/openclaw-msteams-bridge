@@ -1,6 +1,6 @@
 name: Publish to npm
 
-# Publishes @komaa/msteams-bridge when you push a version tag (e.g. `v0.1.1`) or publish a GitHub Release.
+# Publishes @komaa/openclaw-msteams-bridge when you push a version tag (e.g. `v0.1.1`) or publish a GitHub Release.
 on:
   push:
     tags:
