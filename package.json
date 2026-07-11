@@ -1,7 +1,7 @@
 {
   "name": "@komaa/msteams-bridge",
   "version": "0.1.13",
-  "author": "alaamh <alaamh@outlook.com>",
+  "author": "Alaaeldin Elhenawy <alaamh@outlook.com>",
   "repository": {
     "type": "git",
     "url": "https://github.com/komaa-com/openclaw-msteams-bridge"
