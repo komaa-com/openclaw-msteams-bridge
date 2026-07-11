@@ -1,11 +1,14 @@
 // Docs site for @komaa/msteams-bridge, published to GitHub Pages by .github/workflows/docs.yml.
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import mermaid from "astro-mermaid";
 
 export default defineConfig({
   site: "https://komaa-com.github.io",
   base: "/openclaw-msteams-bridge",
   integrations: [
+    // Client-side Mermaid rendering (theme-aware, offline). Must come BEFORE starlight.
+    mermaid({ theme: "default", autoTheme: true }),
     starlight({
       title: "Microsoft Teams Bridge for OpenClaw",
       description:

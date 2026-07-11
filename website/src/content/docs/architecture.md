@@ -15,20 +15,20 @@ conversation. The hosted StandIn media bridge joins the Teams call and carries t
 on one HMAC-authenticated WebSocket per call, with the plugin as the server and StandIn as the
 client.
 
-```
-                 (hosted service)                        (your machine / your gateway)
- ┌────────────┐   ┌─────────────────────┐  HMAC WebSocket  ┌──────────────────────────────┐
- │ Teams call │◄─►│ StandIn media bridge │═══════(dials in)═►│ @komaa/msteams-bridge          │
- └────────────┘   │  joins the meeting,  │  audio/video/    │  WS server + call brain       │
-                  │  carries the media   │  events, JSON    │  inside the OpenClaw gateway  │
-                  └─────────┬───────────┘                   └───────┬───────────┬──────────┘
-                            ▲                                       │           │
-                            │ REST: place / cancel call             │           │
-                            │ (HMAC-signed, SSRF-guarded)           ▼           ▼
-                  ┌─────────┴───────────┐                 ┌───────────────┐ ┌────────────────────┐
-                  │ StandIn outbound API │                 │ realtime model │ │ OpenClaw agent      │
-                  └─────────────────────┘                 │ (OpenAI/Azure) │ │ + STT/TTS providers │
-                                                          └───────────────┘ └────────────────────┘
+```mermaid
+flowchart LR
+    Teams["Teams call"]
+    StandIn["StandIn media bridge<br/>(hosted: joins the meeting,<br/>carries the media)"]
+    Plugin["@komaa/msteams-bridge<br/>(WS server + call brain,<br/>inside the OpenClaw gateway)"]
+    Outbound["StandIn outbound API"]
+    Model["realtime model<br/>(OpenAI / Azure)"]
+    Agent["OpenClaw agent<br/>+ STT/TTS providers"]
+
+    Teams <--> StandIn
+    StandIn == "HMAC WebSocket: audio / video / events (JSON), dials in" ==> Plugin
+    Plugin -- "REST: place / cancel call<br/>(HMAC-signed, SSRF-guarded)" --> Outbound
+    Plugin --> Model
+    Plugin --> Agent
 ```
 
 Key consequences of this shape:
@@ -47,19 +47,13 @@ Key consequences of this shape:
 The call state machine lives in `src/call-lifecycle.ts` and every call, inbound or outbound, walks
 the same states:
 
-```
-                 place call (outbound only)
-                          │
-                          ▼
-   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-   │ initiate │───►│ ringing  │───►│ answered │───►│  active  │
-   └──────────┘    └────┬─────┘    └──────────┘    └────┬─────┘
-                        │ answer timeout                │ session.end / socket close /
-                        ▼                               │ reaper / duration cap / policy
-                  no-answer / voicemail                 ▼
-                  (+ cancel ringing)              ┌──────────┐
-                                                  │ terminal │  (teardown runs exactly once)
-                                                  └──────────┘
+```mermaid
+flowchart LR
+    initiate["initiate<br/>(outbound only)"] --> ringing
+    ringing --> answered --> active
+    ringing -- "answer timeout" --> noanswer["no-answer / voicemail<br/>(+ cancel ringing)"]
+    active -- "session.end / socket close /<br/>reaper / duration cap / policy" --> terminal["terminal<br/>(teardown runs exactly once)"]
+    noanswer --> terminal
 ```
 
 How the wire events map onto it:
@@ -82,27 +76,24 @@ Both pipelines consume the same inbound 16 kHz PCM and produce the same outbound
 differ in what happens in between. `mode` picks one, or the runtime auto-selects realtime when a
 realtime provider resolves.
 
+```mermaid
+flowchart TB
+    subgraph RT["Realtime (speech-to-speech)"]
+        direction TB
+        r1["caller audio 16 kHz PCM"] -- "resample to 24 kHz" --> r2["realtime model (OpenAI / Azure)"]
+        r2 -- "model audio 24 kHz + tool calls,<br/>resample to 16 kHz" --> r3["outbound audio.frame 16 kHz<br/>+ speech.marks (visemes) + expression"]
+        r4["vision: ambient push of the latest changed frame"]
+    end
+    subgraph ST["Streaming (STT to agent to TTS)"]
+        direction TB
+        s1["caller audio 16 kHz PCM"] -- "VAD / segmentation" --> s2["STT provider to text"]
+        s2 --> s3["OpenClaw agent to reply text"]
+        s3 --> s4["TTS provider to audio"]
+        s4 -- "resample to 16 kHz" --> s5["outbound audio.frame 16 kHz<br/>+ speech.marks + expression"]
+    end
 ```
- REALTIME (speech-to-speech)                    STREAMING (STT → agent → TTS)
 
- caller audio 16 kHz PCM                        caller audio 16 kHz PCM
-      │ resample to 24 kHz                           │ VAD / segmentation
-      ▼                                              ▼
- realtime model (OpenAI/Azure)                  STT provider → text
-      │ model audio 24 kHz                           │
-      │ + tool calls                                 ▼
-      ▼ resample to 16 kHz                      OpenClaw agent → reply text
- outbound audio.frame 16 kHz                         │
-      + speech.marks (visemes)                       ▼
-      + expression cues                         TTS provider → audio
-                                                     │ resample to 16 kHz
- vision: ambient push of the                         ▼
- latest changed frame                           outbound audio.frame 16 kHz
-                                                     + speech.marks + expression
-
- lowest latency, continuous vision              works with any configured STT/TTS,
- needs a realtime provider key                  vision attached per turn
-```
+**Realtime** is lowest latency with continuous vision, and needs a realtime provider key. **Streaming** works with any configured STT/TTS, with vision attached per turn.
 
 Shared by both: barge-in (`assistant.cancel`), verbal interrupts (EN/AR), the echo guard, the
 group-call gate, DTMF, and bilingual handling. See
