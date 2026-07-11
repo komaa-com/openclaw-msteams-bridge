@@ -10,7 +10,7 @@
  * realtime model speaks PCM 16-bit mono at 24 kHz, so we resample on both legs:
  *   caller  16 kHz -> 24 kHz -> model
  *   model   24 kHz -> 16 kHz -> caller
- * The Windows worker reframes the downlink PCM into 20 ms / 640-byte frames, so
+ * The StandIn media bridge reframes the downlink PCM into 20 ms / 640-byte frames, so
  * we can forward arbitrary-length chunks as a single `audio.frame`.
  *
  * The model owns conversation/VAD/turn-taking and answers small talk directly.
@@ -427,7 +427,7 @@ export function createMsteamsRealtimeCall(params: {
   const { session, deps } = params;
   const { logger } = deps;
   const callId = session.callId;
-  // Realtime subagent memory key honors the voice-call `sessionScope` (matching the streaming path):
+  // Realtime subagent memory key honors the `sessionScope` (matching the streaming path):
   // "per-phone" (default) keys by the caller's Teams AAD id so the same caller's memory carries across
   // calls; "per-call" keys by callId. An anonymous caller (no aadId) falls back to per-call so distinct
   // anonymous callers never collide into one session.

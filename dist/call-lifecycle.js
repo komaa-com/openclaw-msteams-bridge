@@ -1,6 +1,6 @@
 // Call-lifecycle coordinator — the ONLY substantial hand-written glue (DESIGN.md).
 //
-// Replaces the subset of voice-call's CallManager a Teams-only realtime plugin needs:
+// The call-lifecycle coordination a Teams-only realtime plugin needs:
 //  - in-memory active-call registry
 //  - state machine + transitions (initiate/answer/end)
 //  - a keyed record store (in-memory; call state is ephemeral — a gateway restart drops live calls)

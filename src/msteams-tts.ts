@@ -65,7 +65,7 @@ export function createMsteamsTtsProvider(params: {
           ? result.attemptedProviders.join(" -> ")
           : `${result.fallbackFrom} -> ${result.provider}`;
       logger?.warn?.(
-        `[voice-call] msteams TTS fallback used from=${result.fallbackFrom} to=${result.provider} attempts=${attemptedChain}`,
+        `[msteams-voice] TTS fallback used from=${result.fallbackFrom} to=${result.provider} attempts=${attemptedChain}`,
       );
     }
 
@@ -83,7 +83,7 @@ export function createMsteamsTtsProvider(params: {
   };
 }
 
-/** Layer the voice-call `tts` override on top of the core `messages.tts` config. */
+/** Layer the plugin `tts` override on top of the core `messages.tts` config. */
 function applyTtsOverride(coreConfig: CoreConfig, override?: VoiceCallTtsConfig): CoreConfig {
   if (!override) {
     return coreConfig;

@@ -26,7 +26,7 @@ export async function playTtsToCall(deps, state, text) {
     // an unknown tag, and a failed send must never block playback.
     try {
         const emotion = inferEmotion(text);
-        deps.logger?.debug?.(`MsteamsProvider: expression cue '${emotion}' for ${state.providerCallId}`);
+        deps.logger?.debug?.(`msteams-voice: expression cue '${emotion}' for ${state.providerCallId}`);
         state.session.send({ type: "expression", emotion });
     }
     catch {
@@ -43,7 +43,7 @@ export async function playTtsToCall(deps, state, text) {
         return;
     }
     if (pcm16k.length === 0) {
-        throw new Error("MsteamsProvider.playTts: TTS produced no audio");
+        throw new Error("playTts: TTS produced no audio");
     }
     // CVI Phase 5: send a viseme timeline just ahead of the audio. Real per-character timing from
     // the provider's alignment when available; otherwise an even-spread estimate from the text and
@@ -60,7 +60,7 @@ export async function playTtsToCall(deps, state, text) {
             marks = estimateVisemes(text, durationMs);
         }
         if (marks.length > 0) {
-            deps.logger?.debug?.(`MsteamsProvider: speech.marks ${marks.length} visemes (${alignment ? "aligned" : "estimated"}) for ${state.providerCallId}`);
+            deps.logger?.debug?.(`msteams-voice: speech.marks ${marks.length} visemes (${alignment ? "aligned" : "estimated"}) for ${state.providerCallId}`);
             state.session.send({ type: "speech.marks", ts: 0, marks });
         }
     }
@@ -94,7 +94,7 @@ async function streamPcmFrames(deps, state, pcm, signal) {
             payloadBase64: frame.toString("base64"),
         });
         if (!delivered) {
-            deps.logger?.warn(`MsteamsProvider: audio.frame dropped for ${state.providerCallId} — Teams socket closed; aborting playback`);
+            deps.logger?.warn(`msteams-voice: audio.frame dropped for ${state.providerCallId}, Teams socket closed; aborting playback`);
             throw new Error(`msteams audio send failed for ${state.providerCallId}: session socket closed`);
         }
         state.outboundSeq += 1;

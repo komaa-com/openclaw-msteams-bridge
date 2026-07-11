@@ -59,7 +59,7 @@ export async function playTtsToCall(
   try {
     const emotion = inferEmotion(text);
     deps.logger?.debug?.(
-      `MsteamsProvider: expression cue '${emotion}' for ${state.providerCallId}`,
+      `msteams-voice: expression cue '${emotion}' for ${state.providerCallId}`,
     );
     state.session.send({ type: "expression", emotion });
   } catch {
@@ -77,7 +77,7 @@ export async function playTtsToCall(
     return;
   }
   if (pcm16k.length === 0) {
-    throw new Error("MsteamsProvider.playTts: TTS produced no audio");
+    throw new Error("playTts: TTS produced no audio");
   }
 
   // CVI Phase 5: send a viseme timeline just ahead of the audio. Real per-character timing from
@@ -96,7 +96,7 @@ export async function playTtsToCall(
     }
     if (marks.length > 0) {
       deps.logger?.debug?.(
-        `MsteamsProvider: speech.marks ${marks.length} visemes (${alignment ? "aligned" : "estimated"}) for ${state.providerCallId}`,
+        `msteams-voice: speech.marks ${marks.length} visemes (${alignment ? "aligned" : "estimated"}) for ${state.providerCallId}`,
       );
       state.session.send({ type: "speech.marks", ts: 0, marks });
     }
@@ -139,7 +139,7 @@ async function streamPcmFrames(
     });
     if (!delivered) {
       deps.logger?.warn(
-        `MsteamsProvider: audio.frame dropped for ${state.providerCallId} — Teams socket closed; aborting playback`,
+        `msteams-voice: audio.frame dropped for ${state.providerCallId}, Teams socket closed; aborting playback`,
       );
       throw new Error(
         `msteams audio send failed for ${state.providerCallId}: session socket closed`,

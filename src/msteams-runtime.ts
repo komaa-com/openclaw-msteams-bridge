@@ -1,5 +1,5 @@
-// MsteamsVoiceRuntime — self-contained orchestration that replaces voice-call's MsteamsProvider +
-// CallManager for the standalone plugin. Owns the Teams media WebSocket, drives CallLifecycle, and
+// MsteamsVoiceRuntime, self-contained orchestration for the standalone plugin: a full msteams
+// provider and call-manager. Owns the Teams media WebSocket, drives CallLifecycle, and
 // bridges each call to the realtime voice model via createMsteamsRealtimeCall.
 //
 // Scope: realtime speech-to-speech (inbound + outbound call-backs via worker place-call) and the
