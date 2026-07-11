@@ -1,4 +1,4 @@
-// @komaa/msteams-bridge — plugin entry (self-contained Teams CVI voice).
+// @komaa/openclaw-msteams-bridge — plugin entry (self-contained Teams CVI voice).
 //
 // Registers a host-managed background service so the runtime's lifecycle (start on boot, stop on
 // shutdown/reload) is wired by OpenClaw — this is the teardown hook. On start the service brings up

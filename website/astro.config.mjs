@@ -1,4 +1,4 @@
-// Docs site for @komaa/msteams-bridge, published to GitHub Pages by .github/workflows/docs.yml.
+// Docs site for @komaa/openclaw-msteams-bridge, published to GitHub Pages by .github/workflows/docs.yml.
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import mermaid from "astro-mermaid";

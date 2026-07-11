@@ -1,14 +1,14 @@
 # Microsoft Teams Bridge for OpenClaw
 
 [![CI](https://github.com/komaa-com/openclaw-msteams-bridge/actions/workflows/dist-sync.yml/badge.svg)](https://github.com/komaa-com/openclaw-msteams-bridge/actions/workflows/dist-sync.yml)
-[![npm version](https://img.shields.io/npm/v/@komaa/msteams-bridge.svg)](https://www.npmjs.com/package/@komaa/msteams-bridge)
-[![downloads](https://img.shields.io/npm/dm/@komaa/msteams-bridge.svg)](https://www.npmjs.com/package/@komaa/msteams-bridge)
+[![npm version](https://img.shields.io/npm/v/@komaa/openclaw-msteams-bridge.svg)](https://www.npmjs.com/package/@komaa/openclaw-msteams-bridge)
+[![downloads](https://img.shields.io/npm/dm/@komaa/openclaw-msteams-bridge.svg)](https://www.npmjs.com/package/@komaa/openclaw-msteams-bridge)
 [![docs](https://img.shields.io/badge/docs-komaa--com.github.io-2563eb.svg)](https://komaa-com.github.io/openclaw-msteams-bridge/)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg)](https://www.typescriptlang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-**`@komaa/msteams-bridge`** is a Microsoft Teams voice and video agent (CVI) for
+**`@komaa/openclaw-msteams-bridge`** is a Microsoft Teams voice and video agent (CVI) for
 [OpenClaw](https://openclaw.ai). It turns an
 ordinary Teams call into a true two-way video conversation: the agent sees what you show it, talks
 back in real time, and appears in the call as an animated, lip-synced avatar.
@@ -85,11 +85,11 @@ curl -fsSL https://standin.komaa.com/install.sh | bash
 Or install the plugin manually, then restart the gateway:
 
 ```bash
-openclaw plugins install npm:@komaa/msteams-bridge
+openclaw plugins install npm:@komaa/openclaw-msteams-bridge
 openclaw gateway restart
 ```
 
-Also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/msteams-bridge`
+Also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/openclaw-msteams-bridge`
 (OpenClaw falls back to npm automatically if the ClawHub fetch fails). The package ships prebuilt
 (v0.1.10+): no build step either way.
 
@@ -253,7 +253,7 @@ Full reference in the [Configuration Reference](https://komaa-com.github.io/open
 - Plugin docs: [komaa-com.github.io/openclaw-msteams-bridge](https://komaa-com.github.io/openclaw-msteams-bridge/)
 - StandIn (hosted service) docs: [docs.komaa.com](https://docs.komaa.com/)
 - Source: [github.com/komaa-com/openclaw-msteams-bridge](https://github.com/komaa-com/openclaw-msteams-bridge)
-- npm: [@komaa/msteams-bridge](https://www.npmjs.com/package/@komaa/msteams-bridge)
+- npm: [@komaa/openclaw-msteams-bridge](https://www.npmjs.com/package/@komaa/openclaw-msteams-bridge)
 
 ---
 
