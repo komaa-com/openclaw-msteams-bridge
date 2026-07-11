@@ -102,10 +102,3 @@ openclaw gateway restart
 
 Then place (or join) the Teams call. You should hear the agent, see its avatar, and - if you turn on
 your camera or share your screen - it can see you too.
-
-## Next steps
-
-- Add **your own Teams bot** for real inbound calls: [Connecting to StandIn](/openclaw-msteams-bridge/connecting-to-standin/).
-- Lock down who can call you: `inboundPolicy` + `allowFrom` in the [Configuration Reference](/openclaw-msteams-bridge/configuration-reference/).
-- Turn on **meeting recap**, **vision budget**, **group-call etiquette**: [Features](/openclaw-msteams-bridge/features/).
-- Something not working? [Troubleshooting](/openclaw-msteams-bridge/troubleshooting/).
