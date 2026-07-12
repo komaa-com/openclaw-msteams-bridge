@@ -183,6 +183,10 @@ export class MsteamsVoiceRuntime {
                 method: "POST",
                 headers: {
                     "content-type": "application/json",
+                    // Both header pairs during the X-StandIn-* transition: old workers verify
+                    // only the legacy names, new ones prefer the StandIn names.
+                    "x-standin-timestamp": String(timestampMs),
+                    "x-standin-signature": signature,
                     "x-openclawteamsbridge-timestamp": String(timestampMs),
                     "x-openclawteamsbridge-signature": signature,
                 },
@@ -256,6 +260,8 @@ export class MsteamsVoiceRuntime {
                 init: {
                     method: "DELETE",
                     headers: {
+                        "x-standin-timestamp": String(timestampMs),
+                        "x-standin-signature": signature,
                         "x-openclawteamsbridge-timestamp": String(timestampMs),
                         "x-openclawteamsbridge-signature": signature,
                     },
