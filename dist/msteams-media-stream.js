@@ -144,8 +144,10 @@ export class MsteamsMediaStream {
             this.rejectUpgrade(socket, 400, "Bad Request (missing callId)");
             return;
         }
-        const timestamp = request.headers["x-openclawteamsbridge-timestamp"];
-        const signature = request.headers["x-openclawteamsbridge-signature"];
+        // Prefer the X-StandIn-* names; fall back to the legacy X-OpenClawTeamsBridge-*
+        // pair so pre-rename StandIn deployments keep connecting.
+        const timestamp = request.headers["x-standin-timestamp"] ?? request.headers["x-openclawteamsbridge-timestamp"];
+        const signature = request.headers["x-standin-signature"] ?? request.headers["x-openclawteamsbridge-signature"];
         if (typeof timestamp !== "string" || typeof signature !== "string") {
             this.config.logger?.warn(`MsteamsMediaStream: rejecting upgrade for ${callId} — missing HMAC headers`);
             this.rejectUpgrade(socket, 401, "Unauthorized");

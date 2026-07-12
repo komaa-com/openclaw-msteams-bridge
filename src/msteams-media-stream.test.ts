@@ -62,13 +62,25 @@ async function startServer(opts: {
   return server;
 }
 
-/** Open an authenticated WS connection for a callId. */
+/** Open an authenticated WS connection for a callId (legacy header names -
+ * keeps the pre-rename compatibility path under test). */
 function openAuthed(port: number, callId: string): WebSocket {
   const ts = Date.now();
   return new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
     headers: {
       "x-openclawteamsbridge-timestamp": String(ts),
       "x-openclawteamsbridge-signature": signHmac(SECRET, ts, callId),
+    },
+  });
+}
+
+/** Same, with the current X-StandIn-* header names. */
+function openAuthedStandIn(port: number, callId: string): WebSocket {
+  const ts = Date.now();
+  return new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
+    headers: {
+      "x-standin-timestamp": String(ts),
+      "x-standin-signature": signHmac(SECRET, ts, callId),
     },
   });
 }
@@ -137,6 +149,36 @@ describe("MsteamsMediaStream", () => {
     expect(receivedSession?.caller.displayName).toBe("Alice");
     expect(receivedSession?.caller.aadId).toBe("aad-1");
     expect(server.sessionCount).toBe(1);
+
+    ws.close();
+  });
+
+  it("accepts a connection with the X-StandIn-* header names", async () => {
+    const port = randomPort();
+    let receivedSession: MsteamsSession | undefined;
+    server = await startServer({
+      port,
+      onSessionStart: (s) => {
+        receivedSession = s;
+      },
+    });
+
+    const callId = "call-standin-headers";
+    const ws = openAuthedStandIn(port, callId);
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+    });
+    ws.send(
+      JSON.stringify({
+        type: "session.start",
+        callId,
+        threadId: "thread-si",
+        caller: { aadId: "aad-1", displayName: "Alice", tenantId: "tenant-1" },
+      }),
+    );
+    await waitFor(() => receivedSession !== undefined);
+    expect(receivedSession?.callId).toBe(callId);
 
     ws.close();
   });
