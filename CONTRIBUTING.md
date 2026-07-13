@@ -46,6 +46,22 @@ Publishing to npm is automated (`.github/workflows/publish.yml`): bump the versi
 GitHub Release, and CI runs `npm publish --access public --provenance` (supply-chain attestation).
 Keep the `version` in `package.json` and any version references in the docs consistent.
 
+## Publisher verification (ClawHub org-verified badge)
+
+Some listings on [ClawHub](https://clawhub.ai) show an **org-verified** badge next to the publisher.
+Earning it is a one-time **account/ownership action for a Komaa maintainer**, not a code change, so it
+cannot be done through a pull request. A maintainer with owner access needs to:
+
+1. Claim the `@komaa` publisher on ClawHub and link it to the `komaa-com` GitHub organization (this
+   proves the listing is published by the org that owns the source repo).
+2. Verify ownership of the `komaa.com` domain via ClawHub's DNS/TXT challenge (this is what turns the
+   badge from "linked" to "verified").
+3. Publish under the verified `@komaa` npm scope with provenance, which release CI already does
+   (`npm publish --access public --provenance`).
+
+Once the org is verified on ClawHub, the badge appears on this plugin's listing automatically. Track
+current requirements in ClawHub's publisher settings, as the exact challenge steps can change.
+
 ## Documentation and the leak policy
 
 The StandIn media bridge is a hosted service; **its internal implementation is not public**. When you
