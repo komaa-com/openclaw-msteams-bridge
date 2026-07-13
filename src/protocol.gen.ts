@@ -348,6 +348,46 @@ export interface DisplayImageMessage {
 }
 
 /**
+ * Plugin -> worker (EXPERIMENTAL, avatar video relay). One frame of a continuous bot-tile video
+ * stream, JPEG-compressed. The worker decodes it, scales it to its tile, and shows the LATEST
+ * frame; if no new frame arrives within its stall window (~750 ms) it reverts to the rendered
+ * avatar. No lifecycle handshake: the first frames start the takeover, silence ends it.
+ * Latest-wins: the worker keeps no queue, and senders MUST drop (not buffer) frames under
+ * backpressure, like hot-path audio. Additive/best-effort: an older worker ignores it and keeps
+ * rendering its avatar.
+ */
+export interface DisplayFrameMessage {
+  type: "display.frame";
+  /**
+   * Monotonic frame sequence number; the worker drops frames older than the newest seen.
+   */
+  seq: number;
+  /**
+   * Capture timestamp in ms on the SENDER's media timeline - the same timeline the sender stamps on
+   * its outbound audio.frame messages. Used for A/V skew measurement and the worker's max-fps
+   * ceiling, not for scheduling.
+   */
+  ts: number;
+  /**
+   * Frame encoding; senders send 'image/jpeg'. PNG is legal to decode but too large at rate.
+   */
+  mime: string;
+  /**
+   * Base64 image bytes. Senders should target <= 40 KB raw per frame; the worker rejects frames
+   * above 256 KB base64.
+   */
+  dataBase64: string;
+  /**
+   * Source pixel width (informational; the worker scales to its tile regardless).
+   */
+  width?: number | null;
+  /**
+   * Source pixel height (informational).
+   */
+  height?: number | null;
+}
+
+/**
  * Plugin -> worker heartbeat response, echoing the ping timestamp.
  */
 export interface PongMessage {
@@ -367,4 +407,5 @@ export type OutboundMessage =
   | ExpressionMessage
   | SpeechMarksMessage
   | DisplayImageMessage
+  | DisplayFrameMessage
   | PongMessage;
