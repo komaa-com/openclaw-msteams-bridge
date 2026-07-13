@@ -18,11 +18,13 @@ vendored runtime, no trusted-plugin privileges required.
 
 ## Three pillars
 
-| Pillar | The agent... | In the call |
-|---|---|---|
-| **Perception** | sees you | Reads inbound camera and screen-share (VBSS) frames. It can `look_at_screen` on demand, auto-attaches a keyframe each turn in streaming mode, and keeps a continuous ambient view in realtime mode. In meetings, frames are attributed to the participant who sent them, and vision spend is capped per call. |
-| **Dialogue** | talks with you | Holds a natural spoken conversation, either realtime speech-to-speech or a streaming STT to agent to TTS pipeline. It supports barge-in and deterministic verbal interrupts, a "speak only when addressed" gate for group calls, DTMF/IVR entry, bilingual English and Arabic, and greeting attendees by name from the roster. |
-| **Rendering** | is seen by you | Appears as a lip-synced avatar tile. The plugin emits expression cues (happy, sad, surprised), viseme lip-sync driven by speech marks, and `show_to_caller` image overlays; the hosted StandIn bridge draws them into the video the caller sees. |
+| Pillar | The agent | What it does in the call |
+|:--|:--|:--|
+| **Perception** | sees you | Reads camera and screen-share (VBSS) frames: `look_at_screen` on demand, a keyframe per turn in streaming mode, an ambient view in realtime mode. Frames are attributed per participant and vision spend is capped per call. |
+| **Dialogue** | talks with you | Holds a spoken conversation - realtime speech-to-speech or a streaming STT to agent to TTS pipeline. Barge-in, verbal interrupts, a "speak only when addressed" gate, DTMF entry, English and Arabic, and greeting attendees by name. |
+| **Rendering** | is seen by you | Appears as a lip-synced avatar tile. Emits expression cues, viseme lip-sync, and `show_to_caller` overlays, which the hosted StandIn bridge draws into the video the caller sees. |
+
+Details of each capability follow below.
 
 ## Capabilities
 
@@ -76,17 +78,29 @@ set those up first:
 
 ## Install
 
-One-line installer (detects OpenClaw, installs and configures the plugin):
+Do these in order. Steps 1 and 2 are prerequisites (see [Getting started](#getting-started) above);
+this plugin is step 3.
+
+1. **OpenClaw is installed and running** (host `>= 2026.6.10`).
+2. **Microsoft Teams is added as a channel** (bot app + credentials).
+3. **Install this plugin**, then restart the gateway so it loads:
+
+   ```bash
+   openclaw plugins install npm:@komaa/openclaw-msteams-bridge
+   openclaw gateway restart
+   ```
+
+4. **Configure it** under `plugins.entries."msteams-voice".config` - at minimum set `sharedSecret`
+   (to match StandIn), `inboundPolicy`, and your provider key. See [Configuration](#configuration)
+   and [Security](#security) below. The server refuses to start until `sharedSecret` is set.
+5. **Connect StandIn** to the plugin's WebSocket (start in the
+   [sandbox](https://standin.komaa.com/sandbox)) and place a test call.
+
+Prefer a guided setup? The one-line installer detects your OpenClaw install and walks you through
+steps 3 and 4 (mode, shared secret, provider key), applying the secure defaults for you:
 
 ```bash
 curl -fsSL https://standin.komaa.com/install.sh | bash
-```
-
-Or install the plugin manually, then restart the gateway:
-
-```bash
-openclaw plugins install npm:@komaa/openclaw-msteams-bridge
-openclaw gateway restart
 ```
 
 Also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/openclaw-msteams-bridge`
@@ -182,6 +196,25 @@ gating, DTMF, and vision all work in streaming mode too.
   "defaultMode": "notify"
 }
 ```
+
+## Security
+
+The plugin ships with **secure defaults**, and the recommendation is simple: keep them. Each option
+below states its safe default and why it is safe. You only relax a default when your deployment
+genuinely needs it, and only in the narrow way described.
+
+| Option | Safe default | Why it is safe | When to change it |
+|:--|:--|:--|:--|
+| `sharedSecret` | none (fails closed) | The media WebSocket authenticates every connection with a replay-proof HMAC handshake keyed on this secret. With no secret the server refuses to start, so a misconfig can never expose an unauthenticated port. A non-string value coerces to empty and also fails closed. | Always set it, to a strong random value that matches your StandIn dashboard. Prefer an OpenClaw secret reference over a literal in config. |
+| `inboundPolicy` | unset = deny all | Inbound calls are rejected until you name a policy, so the agent never answers an unknown caller by default. | Set `allowlist` and list trusted callers in `allowFrom` (by AAD object id or phone number). Reserve `open` for throwaway sandbox testing only. |
+| `requireRecordingStatus` | `true` | Media is held until Teams reports recording is active, so the agent never sees or hears the call before participants have the recording indicator. This keeps you on the right side of Teams' notice expectations. | Leave it on. Only disable for a controlled test where no real participants are present. |
+| `bindAddress` | `127.0.0.1` (loopback) | The WebSocket listens on localhost only, so it is unreachable from other hosts by default. | Widen to `0.0.0.0` only when the StandIn bridge runs on a different host, and only on a trusted or VPN-only interface behind your firewall. The HMAC handshake still guards it, but do not expose the port to the open internet. |
+| `realtime.toolPolicy` | `none` | The voice model cannot invoke any agent tools, so a caller cannot drive tools by voice unless you opt in. | Use `safe-read-only` to allow read-only tools. Reserve `owner` (full tool access) for calls you have restricted to trusted owners via `inboundPolicy`. |
+| Installer | applies the above | The one-line installer configures these secure defaults for you rather than leaving them blank. | If your policy forbids piping a script to a shell, download and read `install.sh` first, then run it, or follow the manual [Install](#install) steps. |
+
+In short: set a strong `sharedSecret`, keep `inboundPolicy` restrictive with an explicit `allowFrom`,
+leave `requireRecordingStatus` on, keep `bindAddress` as tight as your topology allows, and only
+raise `toolPolicy` for callers you trust.
 
 ## Key reference
 
