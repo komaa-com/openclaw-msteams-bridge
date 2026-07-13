@@ -348,24 +348,20 @@ export interface DisplayImageMessage {
 }
 
 /**
- * Plugin -> worker (EXPERIMENTAL, avatar video relay). One frame of a continuous bot-tile video
- * stream, JPEG-compressed. The worker decodes it, scales it to its tile, and shows the LATEST
- * frame; if no new frame arrives within its stall window (~750 ms) it reverts to the rendered
- * avatar. No lifecycle handshake: the first frames start the takeover, silence ends it.
- * Latest-wins: the worker keeps no queue, and senders MUST drop (not buffer) frames under
- * backpressure, like hot-path audio. Additive/best-effort: an older worker ignores it and keeps
- * rendering its avatar.
+ * Plugin -> worker (experimental). One frame of a continuous avatar-video stream onto the bot tile,
+ * JPEG-compressed. Latest-wins: only the newest frame matters, and senders MUST drop (not buffer)
+ * frames under backpressure, like hot-path audio. No lifecycle handshake: the first frames start
+ * the stream, silence ends it. Additive/best-effort: older peers ignore it.
  */
 export interface DisplayFrameMessage {
   type: "display.frame";
   /**
-   * Monotonic frame sequence number; the worker drops frames older than the newest seen.
+   * Monotonic frame sequence number; out-of-order and duplicate frames are dropped.
    */
   seq: number;
   /**
    * Capture timestamp in ms on the SENDER's media timeline - the same timeline the sender stamps on
-   * its outbound audio.frame messages. Used for A/V skew measurement and the worker's max-fps
-   * ceiling, not for scheduling.
+   * its outbound audio.frame messages. Used for A/V skew measurement, not for scheduling.
    */
   ts: number;
   /**
@@ -373,12 +369,12 @@ export interface DisplayFrameMessage {
    */
   mime: string;
   /**
-   * Base64 image bytes. Senders should target <= 40 KB raw per frame; the worker rejects frames
-   * above 256 KB base64.
+   * Base64 image bytes. Senders should target <= 40 KB raw per frame; oversized frames are
+   * rejected.
    */
   dataBase64: string;
   /**
-   * Source pixel width (informational; the worker scales to its tile regardless).
+   * Source pixel width (informational; receivers scale as needed).
    */
   width?: number | null;
   /**
