@@ -348,6 +348,43 @@ export interface DisplayImageMessage {
 }
 
 /**
+ * Plugin -> worker (experimental). One frame of a continuous avatar-video stream onto the bot tile,
+ * JPEG-compressed. Latest-wins: only the newest frame matters, and senders MUST drop (not buffer)
+ * frames under backpressure, like hot-path audio. No lifecycle handshake: the first frames start
+ * the stream, silence ends it. Additive/best-effort: older peers ignore it.
+ */
+export interface DisplayFrameMessage {
+  type: "display.frame";
+  /**
+   * Monotonic frame sequence number; out-of-order and duplicate frames are dropped.
+   */
+  seq: number;
+  /**
+   * Capture timestamp in ms on the SENDER's media timeline - the same timeline the sender stamps on
+   * its outbound audio.frame messages, so the video and audio streams carry one shared clock. Not a
+   * scheduling deadline.
+   */
+  ts: number;
+  /**
+   * Frame encoding; senders send 'image/jpeg'.
+   */
+  mime: string;
+  /**
+   * Base64-encoded image bytes. Senders SHOULD keep frames small (target <= 40 KB raw per frame)
+   * and MUST drop rather than buffer under backpressure.
+   */
+  dataBase64: string;
+  /**
+   * Source pixel width (informational).
+   */
+  width?: number | null;
+  /**
+   * Source pixel height (informational).
+   */
+  height?: number | null;
+}
+
+/**
  * Plugin -> worker heartbeat response, echoing the ping timestamp.
  */
 export interface PongMessage {
@@ -367,4 +404,5 @@ export type OutboundMessage =
   | ExpressionMessage
   | SpeechMarksMessage
   | DisplayImageMessage
+  | DisplayFrameMessage
   | PongMessage;
