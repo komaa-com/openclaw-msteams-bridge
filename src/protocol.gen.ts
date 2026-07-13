@@ -361,20 +361,21 @@ export interface DisplayFrameMessage {
   seq: number;
   /**
    * Capture timestamp in ms on the SENDER's media timeline - the same timeline the sender stamps on
-   * its outbound audio.frame messages. Used for A/V skew measurement, not for scheduling.
+   * its outbound audio.frame messages, so the video and audio streams carry one shared clock. Not a
+   * scheduling deadline.
    */
   ts: number;
   /**
-   * Frame encoding; senders send 'image/jpeg'. PNG is legal to decode but too large at rate.
+   * Frame encoding; senders send 'image/jpeg'.
    */
   mime: string;
   /**
-   * Base64 image bytes. Senders should target <= 40 KB raw per frame; oversized frames are
-   * rejected.
+   * Base64-encoded image bytes. Senders SHOULD keep frames small (target <= 40 KB raw per frame)
+   * and MUST drop rather than buffer under backpressure.
    */
   dataBase64: string;
   /**
-   * Source pixel width (informational; receivers scale as needed).
+   * Source pixel width (informational).
    */
   width?: number | null;
   /**
