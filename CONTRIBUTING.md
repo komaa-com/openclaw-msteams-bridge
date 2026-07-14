@@ -46,21 +46,30 @@ Publishing to npm is automated (`.github/workflows/publish.yml`): bump the versi
 GitHub Release, and CI runs `npm publish --access public --provenance` (supply-chain attestation).
 Keep the `version` in `package.json` and any version references in the docs consistent.
 
-## Publisher verification (ClawHub org-verified badge)
+## Publisher verification (ClawHub trusted publishing)
 
-Some listings on [ClawHub](https://clawhub.ai) show an **org-verified** badge next to the publisher.
-Earning it is a one-time **account/ownership action for a Komaa maintainer**, not a code change, so it
-cannot be done through a pull request. A maintainer with owner access needs to:
+Some listings on [ClawHub](https://clawhub.ai) show a **verified/trusted** badge next to the publisher.
+ClawHub earns it through **namespace claim + trusted publishing over GitHub Actions OIDC** (the same
+model as PyPI trusted publishing) — there is **no DNS/domain challenge**. It's a one-time
+**account/ownership action for a Komaa maintainer**, not a code change, so it can't be done through a PR.
+A maintainer with owner access:
 
-1. Claim the `@komaa` publisher on ClawHub and link it to the `komaa-com` GitHub organization (this
-   proves the listing is published by the org that owns the source repo).
-2. Verify ownership of the `komaa.com` domain via ClawHub's DNS/TXT challenge (this is what turns the
-   badge from "linked" to "verified").
-3. Publish under the verified `@komaa` npm scope with provenance, which release CI already does
-   (`npm publish --access public --provenance`).
+1. **Claim the `@komaa` namespace** on ClawHub and link it to the `komaa-com` GitHub org (proves the
+   listing is published by the org that owns the source repo).
+2. **Seed an initial publish** the normal way once (`clawhub package publish`, manual/token-authed) —
+   trusted publishing can only be configured on a package that already exists.
+3. **Register this repo+workflow as the trusted publisher** (the OIDC claim must match repo + workflow
+   filename exactly):
+   ```bash
+   clawhub package trusted-publisher set @komaa/openclaw-msteams-bridge \
+     --repository komaa-com/openclaw-msteams-bridge \
+     --workflow-filename publish.yml
+   ```
+4. Publish with provenance from CI — release already does `npm publish --access public --provenance`,
+   and the publish job needs `permissions: id-token: write` for the OIDC token mint.
 
-Once the org is verified on ClawHub, the badge appears on this plugin's listing automatically. Track
-current requirements in ClawHub's publisher settings, as the exact challenge steps can change.
+Note: tag-push releases still need a stored token; only `workflow_dispatch` publishes are fully
+secretless once `id-token: write` is available. Track exact commands in ClawHub's docs, as the CLI can change.
 
 ## Documentation and the leak policy
 
