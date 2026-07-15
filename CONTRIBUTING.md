@@ -42,39 +42,9 @@ hand-edit `dist/` (it is regenerated).
 
 ## Releases
 
-Publishing to npm is automated (`.github/workflows/publish.yml`): bump the version, tag it / cut a
-GitHub Release, and CI runs `npm publish --access public --provenance` (supply-chain attestation).
-Keep the `version` in `package.json` and any version references in the docs consistent.
+Publishing is by version tag: bump `version` in `package.json`, tag `vX.Y.Z` matching it, and push
+the tag. The `publish.yml` workflow runs `prepublishOnly` (build) and publishes to npm with provenance.
+Only a maintainer cuts releases; a contributor's merged PR never publishes on its own.
 
-## Publisher verification (ClawHub trusted publishing)
+Bugs and feature requests: [GitHub issues](https://github.com/komaa-com/openclaw-msteams-bridge/issues).
 
-Some listings on [ClawHub](https://clawhub.ai) show a **verified/trusted** badge next to the publisher.
-ClawHub earns it through **namespace claim + trusted publishing over GitHub Actions OIDC** (the same
-model as PyPI trusted publishing) — there is **no DNS/domain challenge**. It's a one-time
-**account/ownership action for a Komaa maintainer**, not a code change, so it can't be done through a PR.
-A maintainer with owner access:
-
-1. **Claim the `@komaa` namespace** on ClawHub and link it to the `komaa-com` GitHub org (proves the
-   listing is published by the org that owns the source repo).
-2. **Seed an initial publish** the normal way once (`clawhub package publish`, manual/token-authed) —
-   trusted publishing can only be configured on a package that already exists.
-3. **Register this repo+workflow as the trusted publisher** (the OIDC claim must match repo + workflow
-   filename exactly):
-   ```bash
-   clawhub package trusted-publisher set @komaa/openclaw-msteams-bridge \
-     --repository komaa-com/openclaw-msteams-bridge \
-     --workflow-filename publish.yml
-   ```
-4. Publish with provenance from CI — release already does `npm publish --access public --provenance`,
-   and the publish job needs `permissions: id-token: write` for the OIDC token mint.
-
-Note: tag-push releases still need a stored token; only `workflow_dispatch` publishes are fully
-secretless once `id-token: write` is available. Track exact commands in ClawHub's docs, as the CLI can change.
-
-## Documentation and the leak policy
-
-The StandIn media bridge is a hosted service; **its internal implementation is not public**. When you
-write docs, comments, or examples, describe only the client side and the wire contract. Refer to the
-counterpart as "the StandIn media bridge" and never document how it produces Teams media, what it runs
-on, or any internal component, source file, or codegen behind it. If you need bridge behavior to
-explain something, describe it through the observable wire protocol only.
