@@ -30,8 +30,11 @@ On the upgrade request, StandIn sends:
 
 | Header | Value |
 |---|---|
-| `x-openclawteamsbridge-timestamp` | the signing timestamp, in **milliseconds** (Unix epoch) |
-| `x-openclawteamsbridge-signature` | the signature (hex) |
+| `x-standin-timestamp` | the signing timestamp, in **milliseconds** (Unix epoch) |
+| `x-standin-signature` | the signature (hex) |
+
+The legacy header names `x-openclawteamsbridge-timestamp` / `x-openclawteamsbridge-signature` are
+still accepted for backward compatibility; new integrations should send `x-standin-*`.
 
 The signature is:
 
@@ -42,8 +45,8 @@ HMAC-SHA256(sharedSecret, "{timestampMs}.{callId}")   # hex
 Example:
 
 ```
-x-openclawteamsbridge-timestamp: 1720598400000
-x-openclawteamsbridge-signature: 9f8c...   (hex digest of "1720598400000.abc123")
+x-standin-timestamp: 1720598400000
+x-standin-signature: 9f8c...   (hex digest of "1720598400000.abc123")
 ```
 
 Verification order: header presence, timestamp parse + window, constant-time signature compare
