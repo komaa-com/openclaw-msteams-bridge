@@ -3,38 +3,22 @@ import { inferEmotion } from "./expression.js";
 import { MSTEAMS_PCM_SAMPLE_RATE_HZ, } from "./msteams-media-stream.js";
 import { chunkAudio } from "./telephony-audio.js";
 import { estimateVisemes, visemesFromAlignment } from "./viseme-estimate.js";
-/** PCM 16 kHz, 16-bit mono — the wire format both directions of the Teams bridge. */
 const MSTEAMS_SAMPLE_RATE_HZ = MSTEAMS_PCM_SAMPLE_RATE_HZ;
 const FRAME_DURATION_MS = 20;
 const BYTES_PER_SAMPLE = 2;
-/** 16000 Hz * 0.02 s * 2 bytes = 640 bytes per 20 ms mono frame. */
 const FRAME_BYTES = (MSTEAMS_SAMPLE_RATE_HZ / 1000) * FRAME_DURATION_MS * BYTES_PER_SAMPLE;
-/**
- * Synthesize `text` and stream it to the worker as 20 ms / 640-byte PCM frames, cueing the avatar's
- * emotion and viseme timeline just ahead of the audio. Supersedes any in-flight playback for the call
- * (barge-in), and throws if the worker socket closes mid-playback so the caller (manager.speak)
- * finalizes the turn instead of advancing seq/timestamps and reporting the audio as delivered.
- */
 export async function playTtsToCall(deps, state, text) {
-    // Supersede any in-flight playback for this call (e.g. rapid responses).
     state.ttsAbort?.abort();
     const abort = new AbortController();
     state.ttsAbort = abort;
     state.turnId += 1;
-    // CVI Phase 6b: cue the avatar's emotion from the reply text before audio starts, so the face
-    // shapes its mouth (smile/frown/surprise) as it begins talking. Best-effort — the worker ignores
-    // an unknown tag, and a failed send must never block playback.
     try {
         const emotion = inferEmotion(text);
         deps.logger?.debug?.(`msteams-voice: expression cue '${emotion}' for ${state.providerCallId}`);
         state.session.send({ type: "expression", emotion });
     }
     catch {
-        // non-fatal: expression is a cosmetic cue
     }
-    // msteams-tts.ts synthesizes and resamples to PCM 16 kHz mono. Prefer the timing-aware path
-    // so providers that return character alignment (ElevenLabs with-timestamps) drive real viseme
-    // timing; providers without it return audio-only and we estimate below.
     const synthesis = deps.ttsProvider.synthesizePcm16kWithTiming
         ? await deps.ttsProvider.synthesizePcm16kWithTiming(text)
         : { pcm16k: await deps.ttsProvider.synthesizePcm16k(text) };
@@ -45,11 +29,6 @@ export async function playTtsToCall(deps, state, text) {
     if (pcm16k.length === 0) {
         throw new Error("playTts: TTS produced no audio");
     }
-    // CVI Phase 5: send a viseme timeline just ahead of the audio. Real per-character timing from
-    // the provider's alignment when available; otherwise an even-spread estimate from the text and
-    // audio duration. A viseme-capable worker layers these as coarse mouth shapes
-    // (open/wide/round/closed) over its RMS-driven openness; an older worker ignores the message and
-    // stays RMS-only. Best-effort/cosmetic either way.
     try {
         const alignment = synthesis.alignment;
         let marks = alignment
@@ -65,28 +44,18 @@ export async function playTtsToCall(deps, state, text) {
         }
     }
     catch {
-        // non-fatal: viseme marks are a cosmetic lip-shape hint
     }
     await streamPcmFrames(deps, state, pcm16k, abort.signal);
     if (state.ttsAbort === abort) {
         state.ttsAbort = null;
     }
 }
-/**
- * Chunk PCM into 20 ms / 640-byte frames and send them to the worker with drift-corrected pacing,
- * mirroring Twilio's `playTtsViaStream`. Uses an absolute clock so cumulative scheduling jitter does
- * not accumulate.
- */
 async function streamPcmFrames(deps, state, pcm, signal) {
     let nextFrameDueAt = Date.now() + FRAME_DURATION_MS;
     for (const frame of chunkAudio(pcm, FRAME_BYTES)) {
         if (signal.aborted) {
             return;
         }
-        // The worker socket can close mid-playback (caller hangs up between frames). `session.send`
-        // drops the frame silently and returns false rather than throwing, so make the failure visible:
-        // abort playback so playTts/speak finalize the turn instead of advancing seq/timestamps and
-        // reporting the audio as delivered on a dead socket.
         const delivered = state.session.send({
             type: "audio.frame",
             seq: state.outboundSeq,

@@ -27,7 +27,7 @@ const INTERRUPT_PHRASES = new Set([
   "one second",
   "one sec",
   "give me a second",
-  // Arabic (bilingual #19): the deterministic cut must work in both call languages — the model
+  // Arabic (bilingual): the deterministic cut must work in both call languages — the model
   // mirrors Arabic, so the interrupt layer has to as well. Whole-utterance matching plus the
   // normalizer's tashkeel stripping keep these as conservative as the English set.
   "توقف", // stop
@@ -68,7 +68,7 @@ function normalizeWords(text: string | undefined): string[] {
       // Combining marks (Arabic tashkeel, accents) and the Arabic tatweel attach INSIDE a word —
       // delete them outright so "تَوَقَّف" normalizes to "توقف" instead of splitting apart.
       .replace(/[\p{M}ـ]/gu, "")
-      // Letters in ANY script survive (bilingual #19 — an Arabic "توقف" must cut as instantly as
+      // Letters in ANY script survive (bilingual — an Arabic "توقف" must cut as instantly as
       // "stop"; same \p{L} approach as group-call-gate.ts). Everything else separates words.
       .replace(/[^\p{L}\s]/gu, " ")
       .split(/\s+/)

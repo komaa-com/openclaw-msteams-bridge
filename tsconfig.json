@@ -6,6 +6,7 @@
     "lib": ["ES2023"],
     "strict": true,
     "declaration": false,
+    "removeComments": true,
     "outDir": "dist",
     "rootDir": "src",
     "skipLibCheck": true,

@@ -1,17 +1,6 @@
-/**
- * Microsoft Teams TTS adapter.
- *
- * The Teams bridge consumes raw PCM 16 kHz, 16-bit mono LE audio, whereas the
- * shared telephony TTS path (`telephony-tts.ts`) emits 8 kHz mu-law for Twilio
- * Media Streams. To keep upstream files untouched, the msteams-specific
- * behavior — synthesize raw PCM, then resample to 16 kHz — lives here. It
- * reuses the upstream host TTS runtime (`TelephonyTtsRuntime.textToSpeechTelephony`)
- * and the SDK resampler instead of duplicating synthesis logic.
- */
 import { resamplePcm } from "openclaw/plugin-sdk/realtime-voice";
 import { deepMergeDefined } from "./deep-merge.js";
 import { MSTEAMS_PCM_SAMPLE_RATE_HZ } from "./msteams-media-stream.js";
-/** Teams wire format: PCM 16 kHz, 16-bit mono, little-endian. */
 export const MSTEAMS_TTS_SAMPLE_RATE_HZ = MSTEAMS_PCM_SAMPLE_RATE_HZ;
 export function createMsteamsTtsProvider(params) {
     const { coreConfig, ttsOverride, runtime, logger } = params;
@@ -27,7 +16,6 @@ export function createMsteamsTtsProvider(params) {
                 : `${result.fallbackFrom} -> ${result.provider}`;
             logger?.warn?.(`[msteams-voice] TTS fallback used from=${result.fallbackFrom} to=${result.provider} attempts=${attemptedChain}`);
         }
-        // Alignment is wall-clock seconds, so it stays valid across the resample below.
         const pcm16k = result.sampleRate === MSTEAMS_TTS_SAMPLE_RATE_HZ
             ? result.audioBuffer
             : resamplePcm(result.audioBuffer, result.sampleRate, MSTEAMS_TTS_SAMPLE_RATE_HZ);
@@ -38,14 +26,11 @@ export function createMsteamsTtsProvider(params) {
         synthesizePcm16kWithTiming,
     };
 }
-/** Layer the plugin `tts` override on top of the core `messages.tts` config. */
 function applyTtsOverride(coreConfig, override) {
     if (!override) {
         return coreConfig;
     }
     const base = coreConfig.messages?.tts;
-    // Merge the override onto the host messages.tts. (The standalone plugin's config is already
-    // validated by openclaw.plugin.json's configSchema at load, so no extra schema re-parse here.)
     const merged = (base ? deepMergeDefined(base, override) : override);
     return {
         ...coreConfig,

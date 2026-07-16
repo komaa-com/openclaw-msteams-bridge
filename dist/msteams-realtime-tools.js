@@ -1,10 +1,3 @@
-/**
- * The msteams realtime bridge's tool surface: the realtime-tool definitions the model sees
- * (background task / look_at_screen / show_to_caller / post_meeting_minutes), the system prompts
- * for their consult runs, and the canned spoken results (refusals / acks). Pure declarations — the
- * handlers live in msteams-realtime.ts. Split out so the bridge file holds behavior, not ~200
- * lines of declarative surface.
- */
 export const MSTEAMS_REALTIME_CONSULT_SYSTEM_PROMPT = [
     "You are the configured OpenClaw agent receiving delegated requests from a live Microsoft Teams voice call.",
     "Act on behalf of the caller using the normal available tools when the caller asks you to do work.",
@@ -18,7 +11,6 @@ export const MSTEAMS_REALTIME_LOOK_SYSTEM_PROMPT = [
     "Read on-screen text verbatim when asked. Be concise and speakable (1-2 sentences);",
     "if the image is unclear or the thing asked about is not visible, say so briefly.",
 ].join(" ");
-/** Tool the realtime model calls to hand a long-running task to the background agent. */
 export const MSTEAMS_AGENT_TASK_TOOL_NAME = "openclaw_agent_task";
 export const MSTEAMS_AGENT_TASK_TOOL = {
     type: "function",
@@ -46,7 +38,6 @@ export const MSTEAMS_AGENT_TASK_TOOL = {
         required: ["task"],
     },
 };
-/** Tool the realtime model calls to "see" what the caller is showing (camera / screen-share). */
 export const MSTEAMS_LOOK_TOOL_NAME = "look_at_screen";
 export const MSTEAMS_LOOK_TOOL = {
     type: "function",
@@ -79,7 +70,6 @@ export const MSTEAMS_LOOK_TOOL = {
         required: ["question"],
     },
 };
-/** Tool: post minutes of the call so far to Teams chat, on request ("/summarize" by voice). */
 export const MSTEAMS_MINUTES_TOOL_NAME = "post_meeting_minutes";
 export const MSTEAMS_MINUTES_TOOL = {
     type: "function",
@@ -111,7 +101,6 @@ export const MSTEAMS_SHOW_TOOL = {
         required: ["request"],
     },
 };
-/** System prompt for the show_to_caller consult: produce ONE image; the bridge displays it on the tile. */
 export const MSTEAMS_REALTIME_SHOW_SYSTEM_PROMPT = "The caller is on a live video call and asked to SEE something. Produce exactly ONE image to show " +
     "them — take a screenshot of your screen, or generate/fetch the requested image — using your tools. " +
     "If the image is a web page, you MUST START the browser FIRST (open/start it, then navigate to the " +
@@ -121,36 +110,21 @@ export const MSTEAMS_REALTIME_SHOW_SYSTEM_PROMPT = "The caller is on a live vide
     "brief spoken sentence describing what you're showing. If a tool fails (e.g. the browser cannot be " +
     "started or a profile is attach-only), return ONE plain spoken sentence stating exactly what went " +
     'wrong (e.g. "I couldn\'t start the browser") — never reply with a generic "I can\'t share".';
-/** Returned when look_at_screen is over the per-call vision budget (cost cap). */
 export const MSTEAMS_LOOK_BUDGETED = {
     text: "I've been looking quite a lot in the last minute — give me a few seconds and ask again.",
 };
-/** Returned when the caller asks the agent to look but no video frame has arrived yet. */
 export const MSTEAMS_LOOK_NO_FRAME = {
     text: "I can't see anything yet — make sure your camera or screen-share is on. It can take a few seconds after you start sharing; then ask again.",
 };
-/** Spoken acknowledgement returned to the model when a background task is accepted. */
 export const MSTEAMS_ASYNC_TASK_ACK = {
     text: "Got it — I'm on it and I'll message you on Microsoft Teams when it's done.",
 };
-/** Acknowledgement when the caller asked to be called back (deliverVia: "call"). */
 export const MSTEAMS_ASYNC_TASK_ACK_CALL = {
     text: "Got it — I'm on it and I'll call you back on Microsoft Teams when it's done.",
 };
-/**
- * Returned to the model when a background task is requested but the caller has no
- * AAD object id — there is no Teams chat to deliver the result to, so the task is
- * refused rather than acknowledging a delivery that cannot happen. The model
- * should offer to answer on the call instead.
- */
 export const MSTEAMS_ASYNC_TASK_NO_TARGET = {
     text: "I can't run that in the background — I don't have a Teams chat to send the result to. I can work on it right now on the call instead.",
 };
-/**
- * Returned to the model when the agent is asked to act but recording is not yet
- * active. The agent must not process/persist call audio before Graph
- * `updateRecordingStatus` (Media Access API), so consult + task are refused.
- */
 export const MSTEAMS_RECORDING_BLOCKED = {
     text: "I can't act on that yet — call recording isn't active. Please make sure recording is on and ask again.",
 };

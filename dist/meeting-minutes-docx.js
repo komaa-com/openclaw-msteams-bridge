@@ -1,15 +1,4 @@
-/**
- * Deterministic OOXML (.docx) meeting-minutes builder.
- *
- * The end-of-call recap previously asked the model to hand-write an HTML `.doc`, which was neither a
- * real Word document nor deterministic. This builds a minimal but valid OOXML `.docx` entirely in
- * code from (a) the agent's structured summary sections and (b) the speaker-prefixed transcript, so
- * per-speaker attribution is exact and reproducible. We assemble the four fixed parts by hand and zip
- * them with `jszip` (already a dependency — see `src/logging/diagnostic-support-bundle.ts`); the
- * heavier `docx`/`officegen` packages are intentionally avoided.
- */
 const DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-/** XML-escape text for safe inclusion in an OOXML run. */
 function escapeXml(value) {
     return value
         .replace(/&/g, "&amp;")
@@ -18,27 +7,22 @@ function escapeXml(value) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&apos;");
 }
-/** A normal-weight paragraph. `xml:space="preserve"` keeps leading/trailing spaces intact. */
 function paragraph(text) {
     return `<w:p><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
 }
-/** A bold heading paragraph (no style part needed — bold run + larger size is enough for Word). */
 function heading(text) {
     return (`<w:p><w:pPr><w:spacing w:before="200" w:after="80"/></w:pPr>` +
         `<w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr>` +
         `<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`);
 }
-/** A document title paragraph (largest). */
 function title(text) {
     return (`<w:p><w:pPr><w:spacing w:after="120"/></w:pPr>` +
         `<w:r><w:rPr><w:b/><w:sz w:val="40"/></w:rPr>` +
         `<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`);
 }
-/** A bullet-style paragraph (rendered with a leading "• " — no numbering part needed). */
 function bullet(text) {
     return paragraph(`• ${text}`);
 }
-/** Build the `word/document.xml` body from the structured input. */
 function buildDocumentXml(input) {
     const assistantLabel = input.assistantLabel ?? "Assistant";
     const callerLabel = input.callerLabel ?? "Caller";
@@ -57,9 +41,6 @@ function buildDocumentXml(input) {
             parts.push(bullet(item));
         }
     }
-    // Attributed transcript: rendered deterministically from the speaker-prefixed turns. Caller turns
-    // already carry a "<Name>: " prefix from the unmixed-audio attribution, so we keep them verbatim;
-    // un-prefixed caller turns fall back to the generic caller label, and assistant turns are labelled.
     parts.push(heading("Attributed transcript"));
     for (const turn of input.transcript) {
         const text = turn.text.trim();
@@ -70,7 +51,6 @@ function buildDocumentXml(input) {
             parts.push(paragraph(`${assistantLabel}: ${text}`));
         }
         else if (/^[^\s:][^:]*:\s/.test(text)) {
-            // Already speaker-prefixed (e.g. "Sara: …") — keep the exact attribution.
             parts.push(paragraph(text));
         }
         else {
@@ -96,12 +76,7 @@ const ROOT_RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` 
     `</Relationships>`;
 const DOCUMENT_RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
-/** MIME type for a `.docx` (also mapped in `packages/media-core/src/mime.ts`). */
 export const MINUTES_DOCX_MIME = DOCX_CONTENT_TYPE;
-/**
- * Build a minimal valid OOXML `.docx` as a Buffer. The bytes are produced entirely in code, so the
- * document — including per-speaker attribution — is deterministic for a given input.
- */
 export async function buildMinutesDocx(input) {
     const { default: JSZip } = await import("jszip");
     const zip = new JSZip();

@@ -46,7 +46,7 @@ describe("estimateVisemes", () => {
     }
   });
 
-  it("maps Arabic graphemes to viseme classes — bilingual #19, not RMS-only", () => {
+  it("maps Arabic graphemes to viseme classes — bilingual", () => {
     // "مرحبا" (marhaba): م(21 closed) ر(13) ح(12) ب(21) ا(2 open)
     const marks = estimateVisemes("مرحبا", 1000);
     expect(marks.map((m) => m.visemeId)).toEqual([21, 13, 12, 21, 2]);
@@ -84,7 +84,7 @@ describe("visemesFromAlignment", () => {
     expect(visemesFromAlignment(["1", "o"], [0, 0.5, 0.9])).toEqual([{ tMs: 500, visemeId: 8 }]);
   });
 
-  it("maps Arabic alignment characters via the same shared map (bilingual #19)", () => {
+  it("maps Arabic alignment characters via the same shared map (bilingual)", () => {
     expect(visemesFromAlignment(["م", "ا"], [0.1, 0.3])).toEqual([
       { tMs: 100, visemeId: 21 },
       { tMs: 300, visemeId: 2 },

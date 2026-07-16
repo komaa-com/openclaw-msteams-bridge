@@ -1,11 +1,10 @@
 /**
- * CVI Phase 6b — avatar expression cues.
+ * Avatar expression cues.
  *
- * Infers a coarse emotion from the assistant's reply text so the msteams worker can shape the
- * avatar's mouth (smile / frown / surprised "O"). Deliberately a cheap, dependency-free lexical
- * heuristic: it runs on every turn with no extra model call or latency, only nudges the rendered
- * face (audio is untouched), and a "neutral" result is always safe. The worker maps the tag to a
- * mouth shape and ignores anything it doesn't recognise.
+ * Infers a coarse emotion tag from the assistant's reply text and sends it on the wire as a cue for
+ * a receiver's avatar. Deliberately a cheap, dependency-free lexical heuristic: it runs on every turn
+ * with no extra model call or latency, is cosmetic only (audio is untouched), and a "neutral" result
+ * is always safe. Best-effort: a receiver that doesn't recognise the tag ignores it.
  */
 
 export type AvatarEmotion = "neutral" | "happy" | "sad" | "surprised";

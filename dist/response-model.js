@@ -1,5 +1,3 @@
-// Resolves the model used for text response generation.
-/** Resolve provider/model fields from explicit voice config or agent defaults. */
 export function resolveVoiceResponseModel(params) {
     const modelRef = params.voiceConfig.responseModel ??
         `${params.agentRuntime.defaults.provider}/${params.agentRuntime.defaults.model}`;

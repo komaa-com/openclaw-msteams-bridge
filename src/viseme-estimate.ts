@@ -1,11 +1,11 @@
 /**
- * CVI Phase 5 (spike) — cheap text → approximate viseme timeline.
+ * Cheap text → approximate viseme timeline.
  *
- * Proves the speech.marks → worker lip-shape pipeline end-to-end with NO TTS-provider change: it maps
+ * Emits a viseme timeline on the `speech.marks` wire message with NO TTS-provider change: it maps
  * the assistant's reply text grapheme-by-grapheme to coarse Azure viseme ids (the Microsoft 0–21 set)
- * and spreads them evenly across the known synthesized-audio duration. Crude on purpose — the full pass
- * swaps this for real Azure `visemeReceived` events. The worker maps these ids to mouth shapes and
- * blends them over the RMS openness, so even rough timing reads as "the mouth changes shape per sound".
+ * and spreads them evenly across the known synthesized-audio duration. Crude on purpose — a full pass
+ * could source these from real Azure viseme events instead. Best-effort: a viseme-capable receiver can
+ * use the timeline for lip-sync, and any receiver that doesn't understand the message ignores it.
  */
 
 import type { SpeechMark } from "./protocol.gen.js";
@@ -16,9 +16,9 @@ export type VisemeMark = SpeechMark;
 /**
  * Coarse grapheme → Azure viseme id (the Microsoft viseme set, 0–21: 0 = silence, the rest are mouth
  * shapes grouped by phoneme — vowels, diphthongs, and consonant classes). Vowels carry the visible
- * shape; consonants approximate. The worker maps these ids to a small set of drawn mouth shapes.
- * Covers Latin AND Arabic graphemes (bilingual #19) — without the Arabic rows an Arabic reply fell
- * back to RMS-only lip sync. Ref: Azure Speech "Viseme ID" table (mstts viseme events).
+ * shape; consonants approximate. Covers Latin AND Arabic graphemes (bilingual) — without the Arabic
+ * rows an Arabic reply carries no viseme ids on the wire. Ref: Azure Speech "Viseme ID" table (mstts
+ * viseme events).
  */
 const CHAR_VISEME: Readonly<Record<string, number>> = {
   a: 2, // ɑ (open)

@@ -1,8 +1,5 @@
-// Voice Call helper module supports utils behavior.
 import os from "node:os";
 import path from "node:path";
-// Small path helpers shared by setup and runtime flows.
-/** Resolve user input paths, including "~" against the current OS home. */
 export function resolveUserPath(input) {
     const trimmed = input.trim();
     if (!trimmed) {
@@ -14,10 +11,6 @@ export function resolveUserPath(input) {
     }
     return path.resolve(trimmed);
 }
-/**
- * Read a trimmed, non-empty string argument from a tool-call args object (the realtime model passes
- * tool args as an arbitrary object). Returns undefined if absent, not a string, or blank.
- */
 export function readArgText(args, key) {
     if (!args || typeof args !== "object" || Array.isArray(args)) {
         return undefined;
