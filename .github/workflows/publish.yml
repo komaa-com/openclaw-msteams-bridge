@@ -48,3 +48,17 @@ jobs:
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Also publish to ClawHub via OIDC trusted publishing (a trusted publisher is configured for this
+      # repo + workflow `publish.yml`, so no token is needed — the id-token:write permission above supplies
+      # the OIDC credential). Without this step ClawHub silently fell behind npm (it does NOT auto-sync).
+      # best-effort: a ClawHub-side hiccup must never fail an already-successful npm release; the manual
+      # fallback is `clawhub package publish . --manual-override-reason "<why>"` from a maintainer machine.
+      - name: Publish to ClawHub (OIDC trusted publishing)
+        if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
+        run: |
+          npm i -g clawhub
+          clawhub package publish . \
+            --source-repo komaa-com/openclaw-msteams-bridge \
+            --source-ref "$GITHUB_REF_NAME"
