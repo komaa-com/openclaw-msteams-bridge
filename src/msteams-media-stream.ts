@@ -553,10 +553,17 @@ export class MsteamsMediaStream {
   private sendTo(callId: string, message: unknown): boolean {
     const ws = this.sessions.get(callId);
     if (ws && ws.readyState === WebSocket.OPEN) {
-      // Backpressure: a slow/stalled worker must not let the outbound buffer grow without bound.
-      if (ws.bufferedAmount > MAX_OUTBOUND_BUFFER_BYTES) {
+      // Backpressure: shed ONLY realtime frames (audio.frame, and display.frame =
+      // avatar-relay video) when the outbound buffer is large. Control/one-shot
+      // frames (assistant.cancel, session.end, expression, display.image, pong,
+      // speech.marks) must NOT be dropped — dropping a cancel or an image the model
+      // was told succeeded desyncs the call. Mirrors the standalone bridges'
+      // droppable/undroppable split (BRIDGE-11).
+      const type = (message as { type?: unknown } | null)?.type;
+      const droppable = type === "audio.frame" || type === "display.frame";
+      if (droppable && ws.bufferedAmount > MAX_OUTBOUND_BUFFER_BYTES) {
         this.config.logger?.warn(
-          `MsteamsMediaStream: dropping frame for ${callId} — send buffer backpressure (${ws.bufferedAmount} bytes)`,
+          `MsteamsMediaStream: dropping ${String(type)} for ${callId} — send buffer backpressure (${ws.bufferedAmount} bytes)`,
         );
         return false;
       }

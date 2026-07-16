@@ -310,8 +310,10 @@ export class MsteamsMediaStream {
     sendTo(callId, message) {
         const ws = this.sessions.get(callId);
         if (ws && ws.readyState === WebSocket.OPEN) {
-            if (ws.bufferedAmount > MAX_OUTBOUND_BUFFER_BYTES) {
-                this.config.logger?.warn(`MsteamsMediaStream: dropping frame for ${callId} — send buffer backpressure (${ws.bufferedAmount} bytes)`);
+            const type = message?.type;
+            const droppable = type === "audio.frame" || type === "display.frame";
+            if (droppable && ws.bufferedAmount > MAX_OUTBOUND_BUFFER_BYTES) {
+                this.config.logger?.warn(`MsteamsMediaStream: dropping ${String(type)} for ${callId} — send buffer backpressure (${ws.bufferedAmount} bytes)`);
                 return false;
             }
             ws.send(JSON.stringify(message));
