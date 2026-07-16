@@ -283,9 +283,9 @@ export interface AssistantCancelMessage {
 }
 
 /**
- * Plugin -> worker (CVI Phase 6b). Hint the emotion the avatar should express on its video tile.
- * Additive and best-effort: an older worker ignores it; unknown values fall back to neutral.
- * Affects only the rendered face, never audio.
+ * Plugin -> worker. Hint the emotion the avatar should express on the bot's video tile. Additive
+ * and best-effort: a receiver that does not implement it ignores it; unknown values fall back to
+ * neutral. Affects only the video tile, never audio.
  */
 export interface ExpressionMessage {
   type: "expression";
@@ -296,10 +296,9 @@ export interface ExpressionMessage {
 }
 
 /**
- * Plugin -> worker (CVI Phase 5). Viseme timing for one TTS utterance. The worker maps tMs onto the
- * same baseTicks timeline the audio uses and shapes the avatar mouth per viseme, blended with the
- * RMS openness. Additive/best-effort: an older worker ignores it, and the avatar falls back to
- * RMS-only lip-sync.
+ * Plugin -> worker. Viseme timeline for one TTS utterance: each mark is a (tMs, visemeId) pair on
+ * the utterance's audio timeline, used to drive lip-sync. Additive/best-effort: a receiver that
+ * does not implement it ignores the message.
  */
 export interface SpeechMarksMessage {
   type: "speech.marks";
@@ -314,9 +313,9 @@ export interface SpeechMarksMessage {
 }
 
 /**
- * Plugin -> worker (CVI Phase 8, assistant visual sharing). Show the caller an image on the bot's
- * outbound video tile for a few seconds, then return to the avatar. Additive/best-effort: an older
- * worker ignores it; the avatar keeps rendering.
+ * Plugin -> worker. Show the caller an image on the bot's outbound video tile for a few seconds,
+ * then return to the avatar. Additive/best-effort: a receiver that does not implement it ignores
+ * it.
  */
 export interface DisplayImageMessage {
   type: "display.image";

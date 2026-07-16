@@ -1,6 +1,3 @@
-// Resolve the raw plugin config (api.pluginConfig, validated against openclaw.plugin.json's
-// configSchema) into (a) the runtime/media settings and (b) the `MsteamsVoiceConfig` the CVI bridge
-// reads. Boundary adapter — tolerant casts on untyped raw input.
 export function resolvePluginConfig(rawInput) {
     const c = rawInput ?? {};
     const r = c.realtime ?? {};
@@ -10,10 +7,6 @@ export function resolvePluginConfig(rawInput) {
             port: Number(c.port ?? 9442),
             bindAddress: c.bindAddress,
             path: String(c.path ?? "/voice/msteams/stream"),
-            // Only accept a STRING secret. The manifest allows an object (secret-input reference) form; if the host
-            // ever passes an UNRESOLVED object (e.g. an env descriptor whose var is unset), String({}) would yield the
-            // literal "[object Object]" — a non-empty, guessable secret that the fail-closed check in index.ts would
-            // accept. Coerce a non-string to "" so it fails CLOSED (server refuses to start) instead.
             sharedSecret: typeof c.sharedSecret === "string" ? c.sharedSecret : "",
         },
         outbound: c.outbound,
@@ -42,7 +35,6 @@ export function resolvePluginConfig(rawInput) {
                 suppressInputDuringPlayback: r.suppressInputDuringPlayback,
                 echoSuppressionWindowMs: r.echoSuppressionWindowMs,
                 echoBargeInRms: r.echoBargeInRms,
-                // Default fast-context off; shape comes from the SDK type.
                 fastContext: (r.fastContext ?? {
                     enabled: false,
                     timeoutMs: 800,
@@ -52,9 +44,6 @@ export function resolvePluginConfig(rawInput) {
                 }),
             },
             stt: c.stt,
-            // Manifest exposes these flat (own plugin namespace); build the nested `msteams` object the
-            // CVI bridge reads (config.msteams.*). A top-level `msteams` key would be rejected by the
-            // manifest's additionalProperties:false.
             msteams: {
                 requireRecordingStatus: c.requireRecordingStatus,
                 groupCall: c.groupCall,

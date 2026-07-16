@@ -1,9 +1,3 @@
-// @komaa/openclaw-msteams-bridge — plugin entry (self-contained Teams CVI voice).
-//
-// Registers a host-managed background service so the runtime's lifecycle (start on boot, stop on
-// shutdown/reload) is wired by OpenClaw — this is the teardown hook. On start the service brings up
-// the MsteamsVoiceRuntime (Teams media WS server, CallLifecycle, per-call bridge); on stop it tears
-// it all down (closes calls, stops the lifecycle reaper, closes the WS server).
 import { definePluginEntry } from "openclaw/plugin-sdk/core";
 import { MsteamsVoiceRuntime } from "./msteams-runtime.js";
 import { resolvePluginConfig } from "./plugin-config.js";
@@ -27,7 +21,6 @@ export default definePluginEntry({
                 runtime = new MsteamsVoiceRuntime(api, cfg);
                 await runtime.start();
             },
-            // Teardown: host calls stop() on shutdown/reload → close calls, stop reaper, close WS server.
             stop: async () => {
                 await runtime?.stop();
                 runtime = undefined;

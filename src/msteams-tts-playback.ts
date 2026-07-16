@@ -53,9 +53,9 @@ export async function playTtsToCall(
   state.ttsAbort = abort;
   state.turnId += 1;
 
-  // CVI Phase 6b: cue the avatar's emotion from the reply text before audio starts, so the face
-  // shapes its mouth (smile/frown/surprise) as it begins talking. Best-effort — the worker ignores
-  // an unknown tag, and a failed send must never block playback.
+  // Cue the avatar's emotion from the reply text before audio starts, sent on the wire ahead of
+  // playback. Best-effort — a receiver ignores an unknown tag, and a failed send must never block
+  // playback.
   try {
     const emotion = inferEmotion(text);
     deps.logger?.debug?.(
@@ -80,11 +80,10 @@ export async function playTtsToCall(
     throw new Error("playTts: TTS produced no audio");
   }
 
-  // CVI Phase 5: send a viseme timeline just ahead of the audio. Real per-character timing from
+  // Send a viseme timeline on the wire just ahead of the audio. Real per-character timing from
   // the provider's alignment when available; otherwise an even-spread estimate from the text and
-  // audio duration. A viseme-capable worker layers these as coarse mouth shapes
-  // (open/wide/round/closed) over its RMS-driven openness; an older worker ignores the message and
-  // stays RMS-only. Best-effort/cosmetic either way.
+  // audio duration. Best-effort/cosmetic: a viseme-capable receiver can use the timeline for
+  // lip-sync, and any receiver that doesn't understand the message ignores it.
   try {
     const alignment = synthesis.alignment;
     let marks = alignment

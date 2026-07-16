@@ -1,5 +1,5 @@
 /**
- * Per-call vision spend cap (CVI #4). Vision-model calls (look_at_screen, streaming frame attach,
+ * Per-call vision spend cap. Vision-model calls (look_at_screen, streaming frame attach,
  * future proactive captioning) are the dominant cost of "continuous perception", so bound them with
  * a simple sliding 60-second window per call. `maxPerMinute <= 0` means unlimited.
  *

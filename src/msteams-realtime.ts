@@ -204,7 +204,7 @@ export function toTileCaption(text: string | undefined): string | undefined {
 }
 
 /**
- * CVI Phase 4 — backstop interval for the ambient vision poll. The primary trigger is now
+ * Backstop interval for the ambient vision poll. The primary trigger is now
  * {@link MsteamsRealtimeCall.notifyInboundFrame}, pushed on scene change as frames arrive; this timer
  * just catches anything missed. Only fires when the frame changed and the vision budget allows, so a
  * static screen costs nothing; the budget (`maxVisionPerMinute`) is the real cap on a changing screen.
@@ -731,8 +731,8 @@ export function createMsteamsRealtimeCall(params: {
       ) {
         lastAddressedAt = Date.now();
       }
-      // CVI Phase 6b: cue emotion as EARLY as possible — on the FIRST assistant transcript chunk of a
-      // turn (partial or final), not only the final — so the face isn't neutral while a happy/sad reply
+      // Cue emotion as EARLY as possible — on the FIRST assistant transcript chunk of a
+      // turn (partial or final), not only the final — so the cue isn't stale while a happy/sad reply
       // is already being spoken. De-duped on the inferred emotion so unchanged cues aren't spammed, and
       // it self-corrects if later text shifts the emotion (e.g. "sorry … but that's great!").
       if (role === "assistant" && !closed && !thinking) {
@@ -825,7 +825,7 @@ export function createMsteamsRealtimeCall(params: {
   });
 
   /**
-   * CVI Phase 4: push the latest inbound frame into the realtime session as ambient context so the
+   * Push the latest inbound frame into the realtime session as ambient context so the
    * model is continuously visually aware — not only when the caller invokes `look_at_screen`. Skips
    * when nothing changed, before recording is active, or when over the vision budget. No forced
    * response: the model uses the frame on its next natural turn.
@@ -899,7 +899,7 @@ export function createMsteamsRealtimeCall(params: {
   }
 
   /**
-   * CVI Phase 6c: while a tool keeps the caller waiting (consult / look / show), cue a "thinking" face
+   * While a tool keeps the caller waiting (consult / look / show), cue a "thinking" expression
    * and suppress the reply-emotion cue so it persists; cleared when the result lands, after which the
    * result speech re-cues the real emotion.
    */
@@ -1252,7 +1252,7 @@ export function createMsteamsRealtimeCall(params: {
   }
 
   /**
-   * show_to_caller (CVI Phase 8): run the agent to PRODUCE an image (screenshot / generated image) and
+   * show_to_caller: run the agent to PRODUCE an image (screenshot / generated image) and
    * display it on the bot's video tile. Reuses the consult path; the produced trusted-local media is
    * read and sent as `display.image`. The agent is told not to also message it to chat.
    */
@@ -1471,7 +1471,7 @@ export function createMsteamsRealtimeCall(params: {
 
       // Step 3 — DELIVER via the existing message tool on the LOCKED delivery context: send the
       // authored minutes body, attaching the prebuilt .docx (when available) as the media param. The
-      // model performs only the mechanical send; it does not author the document or pick a recipient.
+      // model only performs the mechanical send; it does not author the document or pick a recipient.
       const bodyForSend = summaryText || "Meeting minutes are attached.";
       const mediaInstruction = docxPath
         ? `Attach the local file at this absolute path as the message tool's media parameter on the ` +

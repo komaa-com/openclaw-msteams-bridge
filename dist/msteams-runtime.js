@@ -1,10 +1,3 @@
-// MsteamsVoiceRuntime, self-contained orchestration for the standalone plugin: a full msteams
-// provider and call-manager. Owns the Teams media WebSocket, drives CallLifecycle, and
-// bridges each call to the realtime voice model via createMsteamsRealtimeCall.
-//
-// Scope: realtime speech-to-speech (inbound + outbound call-backs via worker place-call) and the
-// streaming STT→agent→TTS path. Still out of scope: getCallStatus as a VoiceCallProvider — not
-// needed for a Teams realtime assistant and would re-introduce the heavier provider surface.
 import { consultRealtimeVoiceAgent, resolveConfiguredRealtimeVoiceProvider, resolveRealtimeVoiceAgentConsultToolsAllow, } from "openclaw/plugin-sdk/realtime-voice";
 import { getRealtimeTranscriptionProvider, listRealtimeTranscriptionProviders, } from "openclaw/plugin-sdk/realtime-transcription";
 import { resolveConfiguredCapabilityProvider } from "openclaw/plugin-sdk/provider-selection-runtime";
@@ -24,7 +17,6 @@ import { createMsteamsTtsProvider } from "./msteams-tts.js";
 import { MsteamsVisionStore } from "./msteams-vision-store.js";
 import { resolveVoiceResponseModel } from "./response-model.js";
 import { VisionBudget } from "./vision-budget.js";
-/** Default no-answer guard for a placed outbound call (overridable via outbound.answerTimeoutMs). */
 const OUTBOUND_ANSWER_TIMEOUT_DEFAULT_MS = 120_000;
 export class MsteamsVoiceRuntime {
     api;
@@ -36,15 +28,10 @@ export class MsteamsVoiceRuntime {
     calls = new Map();
     log;
     realtime;
-    /** Resolved streaming STT provider (mode:"streaming"); undefined → file-based STT fallback. */
     transcription;
-    /** Selected voice path; finalized in start() once the realtime provider is resolved. */
     mode = "realtime";
-    /** Lazily-built TTS provider for the streaming path (api.runtime.tts). */
     ttsProvider;
-    /** Monotonic suffix for streaming STT temp-file names. */
     sttSeq = 0;
-    /** Calls we placed via the worker, awaiting their media WS session.start to attach. */
     pendingOutbound = new Map();
     pendingOutboundTimers = new Map();
     constructor(api, cfg) {
@@ -61,10 +48,6 @@ export class MsteamsVoiceRuntime {
         this.vision = new MsteamsVisionStore(() => this.cfg.voice.msteams?.maxVisionPerMinute ?? 30);
         this.vision.setBudget(this.visionBudget);
         this.lifecycle = new CallLifecycle({
-            // In-memory keyed store for call records. api.runtime.state.openSyncKeyedStore is gated to
-            // trusted (bundled/official) plugins, which a third-party npm/ClawHub install is not. Call
-            // records are ephemeral — a gateway restart drops live media calls anyway — so an in-process
-            // Map is sufficient and keeps the plugin installable as an untrusted plugin.
             openSyncKeyedStore: (_name) => {
                 const m = new Map();
                 return {
@@ -84,10 +67,6 @@ export class MsteamsVoiceRuntime {
             maxConcurrentCalls: cfg.limits.maxConcurrentCalls,
             maxDurationMs: cfg.limits.maxDurationMs,
             staleCallReaperMs: cfg.limits.staleCallReaperMs,
-            // The reaper only ends the lifecycle record; run the SAME runtime teardown as a user hangup so
-            // the reaped call's media + realtime sockets actually close (H7: no zombie, no maxConcurrentCalls
-            // bypass). Pass the reason so the Teams worker session is closed too (the call is still live,
-            // unlike a caller-driven hangup where the session is already closing).
             onReap: (callId, reason) => this.disposeCall(callId, reason),
         });
         this.media = new MsteamsMediaStream({
@@ -106,7 +85,6 @@ export class MsteamsVoiceRuntime {
             onRecordingStatus: (i) => this.calls.get(i.callId)?.setRecordingActive(i.status === "active"),
             onDtmf: (i) => this.calls.get(i.callId)?.notifyDtmf(i.digit),
             onParticipants: (i) => this.calls.get(i.callId)?.setHumanCount(i.count),
-            // H4: the worker asks the agent to speak a line (e.g. a goodbye) in its own realtime voice.
             onAssistantSay: (i) => this.calls.get(i.callId)?.say(i.text),
         });
     }
@@ -115,15 +93,9 @@ export class MsteamsVoiceRuntime {
             configuredProviderId: this.cfg.voice.realtime.provider,
             providerConfigs: this.cfg.voice.realtime.providers,
             cfg: this.api.config,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         });
-        // "realtime" when a realtime provider resolved (or explicitly configured), else "streaming".
         this.mode =
             this.cfg.voice.mode ?? (this.realtime?.provider ? "realtime" : "streaming");
-        // Fail-LOUD at startup (mirror Hermes cli.py's fail-fast): if the operator explicitly set
-        // mode:"realtime" but no provider resolved, start() would otherwise log a healthy
-        // "started (mode=realtime)" and then reject EVERY inbound call with "realtime-unavailable" (the
-        // #1 silent-first-call class). Name the configured provider so the missing key is obvious.
         if (this.mode === "realtime" && !this.realtime?.provider) {
             const providerId = this.cfg.voice.realtime.provider;
             this.log.warn(`[msteams-voice] mode is "realtime" but no realtime voice provider resolved` +
@@ -150,12 +122,6 @@ export class MsteamsVoiceRuntime {
         this.lifecycle.stop();
         await this.media.stop();
     }
-    /**
-     * Place an outbound Teams call to a user (AAD object id, optionally "user:"-prefixed) via the
-     * worker. `mode` "notify" instructs the model to deliver `message` and end; "conversation" starts a
-     * full realtime conversation. A no-answer timer finalizes the call if it never connects back
-     * (declined/offline → effectively voicemail/no-answer). Returns the worker call id.
-     */
     async placeCall(to, opts) {
         const ob = this.cfg.outbound;
         if (!ob?.enabled)
@@ -171,7 +137,6 @@ export class MsteamsVoiceRuntime {
             throw new Error("msteams-voice: target userObjectId (to) is required");
         if (this.lifecycle.activeCount() >= this.cfg.limits.maxConcurrentCalls)
             throw new Error("msteams-voice: max concurrent calls reached; not placing outbound call");
-        // HMAC over `${timestampMs}.${userObjectId}` — same scheme as the media WS handshake.
         const timestampMs = Date.now();
         const signature = createHmac("sha256", this.cfg.media.sharedSecret)
             .update(`${timestampMs}.${userObjectId}`)
@@ -183,8 +148,6 @@ export class MsteamsVoiceRuntime {
                 method: "POST",
                 headers: {
                     "content-type": "application/json",
-                    // Both header pairs during the X-StandIn-* transition: old workers verify
-                    // only the legacy names, new ones prefer the StandIn names.
                     "x-standin-timestamp": String(timestampMs),
                     "x-standin-signature": signature,
                     "x-openclawteamsbridge-timestamp": String(timestampMs),
@@ -192,7 +155,6 @@ export class MsteamsVoiceRuntime {
                 },
                 body: JSON.stringify({ userObjectId, tenantId: ob.tenantId }),
             },
-            // The worker is operator-configured trusted infra, often on loopback → permit private network.
             policy: { allowedHostnames: [new URL(url).hostname], allowPrivateNetwork: true },
         });
         let workerCallId;
@@ -231,24 +193,15 @@ export class MsteamsVoiceRuntime {
         this.pendingOutbound.delete(callId);
         this.clearOutboundTimer(callId);
         this.log.warn(`[msteams-voice] outbound call ${callId} not answered within timeout; finalizing (no-answer/voicemail)`);
-        // H7a: the call may still be RINGING on the Teams worker side, and an unanswered outbound never
-        // got a threadId (so DELETE /Calls?threadId can't reach it). Best-effort cancel it by callId via
-        // the worker's cancel-by-callId endpoint so the callee stops ringing. Fire-and-forget: a late
-        // answer is still denied in onSessionStart, and a cancel failure must never break finalization.
         void this.cancelRingingOutbound(callId);
         this.lifecycle.end(callId, "no-answer");
     }
-    /**
-     * H7a: cancel a ringing/active outbound call by its worker callId (DELETE /api/calls/{callId}),
-     * signed exactly like {@link placeCall} (HMAC-SHA256 over `${timestampMs}.${callId}`). Best-effort:
-     * logs and swallows every failure (never throws) — the outbound is already being finalized locally.
-     */
     async cancelRingingOutbound(callId) {
         const ob = this.cfg.outbound;
         const workerBaseUrl = ob?.workerBaseUrl;
         const sharedSecret = this.cfg.media.sharedSecret;
         if (!workerBaseUrl || !sharedSecret)
-            return; // outbound cancel not configured — nothing to do
+            return;
         try {
             const timestampMs = Date.now();
             const signature = createHmac("sha256", sharedSecret)
@@ -266,7 +219,6 @@ export class MsteamsVoiceRuntime {
                         "x-openclawteamsbridge-signature": signature,
                     },
                 },
-                // Same trust posture as placeCall: operator-configured worker, often on loopback.
                 policy: { allowedHostnames: [new URL(url).hostname], allowPrivateNetwork: true },
             });
             try {
@@ -291,23 +243,15 @@ export class MsteamsVoiceRuntime {
             clearTimeout(t);
         this.pendingOutboundTimers.delete(callId);
     }
-    /**
-     * Query the current status of a call (state + whether it has reached a terminal state).
-     * Returns undefined for an unknown call id. Note: OpenClaw exposes no provider-status registration
-     * hook for non-channel plugins, so this is surfaced as a runtime method (callable by an embedding
-     * host or a future admin/tool surface) rather than a registered VoiceCallProvider.getCallStatus.
-     */
     getCallStatus(callId) {
         return this.lifecycle.getStatus(callId);
     }
     onSessionStart(session) {
-        // Realtime mode requires a resolved provider; streaming mode does not.
         if (this.mode === "realtime" && !this.realtime?.provider) {
             this.log.error("[msteams-voice] no realtime voice provider resolved — rejecting call");
             session.close("realtime-unavailable");
             return;
         }
-        // Outbound: a call we placed via the worker has connected back (media WS attached).
         const pending = this.pendingOutbound.get(session.callId);
         if (pending) {
             this.pendingOutbound.delete(session.callId);
@@ -319,10 +263,6 @@ export class MsteamsVoiceRuntime {
             this.calls.set(session.callId, this.createCall(session, greeting));
             return;
         }
-        // A late answer to an outbound call whose answer-timeout already fired: the pending entry is
-        // gone and the lifecycle record is a terminal outbound. Without this guard it falls through to
-        // the inbound branch and is evaluated against inbound policy using the CALLEE's id — the wrong
-        // reject/greeting. Deny the late media attach instead of mis-routing it.
         const prior = this.lifecycle.getStatus(session.callId);
         if (prior?.isTerminal) {
             const rec = this.lifecycle.getRecord(session.callId);
@@ -331,7 +271,6 @@ export class MsteamsVoiceRuntime {
             session.close(rec?.direction === "outbound" ? "answer-timeout" : "already-ended");
             return;
         }
-        // Inbound: enforce caller policy before accepting.
         const from = session.caller?.aadId ?? "";
         if (!isInboundCallAllowed(this.cfg.voice.inboundPolicy, this.cfg.voice.allowFrom, from)) {
             this.log.warn(`[msteams-voice] ${describeInboundRejection(this.cfg.voice.inboundPolicy, from)}`);
@@ -352,12 +291,9 @@ export class MsteamsVoiceRuntime {
             session.close("busy");
             return;
         }
-        // Inbound is active as soon as the bridge connects; mark answered so the
-        // unanswered-call reaper doesn't kill it (maxDuration still applies).
         this.lifecycle.answer(session.callId);
         this.calls.set(session.callId, this.createCall(session, this.cfg.voice.inboundGreeting));
     }
-    /** Build the call handle for the selected voice path (realtime speech-to-speech vs streaming). */
     createCall(session, greeting) {
         if (this.mode === "streaming") {
             return createMsteamsStreamingCall({ session, deps: this.buildStreamingDeps(session, greeting) });
@@ -378,7 +314,6 @@ export class MsteamsVoiceRuntime {
         }
         return this.ttsProvider;
     }
-    /** Consult session key, honoring sessionScope (mirrors the realtime path). */
     streamingSessionKey(session) {
         const scope = this.cfg.voice.sessionScope;
         if (scope === "per-call")
@@ -387,11 +322,6 @@ export class MsteamsVoiceRuntime {
             return `msteams:${session.threadId || session.callId}`;
         return `msteams:${session.caller?.aadId || session.callId}`;
     }
-    /**
-     * Resolve a streaming STT provider (mode:"streaming"). Auto-selects from the host's configured
-     * realtime transcription providers when `stt.provider` is omitted; leaves `this.transcription`
-     * undefined (→ file-based STT fallback) when none resolve.
-     */
     resolveTranscriptionProvider() {
         const cfg = this.api.config;
         const res = resolveConfiguredCapabilityProvider({
@@ -417,7 +347,6 @@ export class MsteamsVoiceRuntime {
         const agentRuntime = this.api.runtime.agent;
         const transcription = this.transcription;
         return {
-            // Preferred: a live streaming STT session (lower latency) when a provider resolved.
             ...(transcription
                 ? {
                     createTranscriptionSession: (callbacks) => transcription.provider.createSession({
@@ -427,7 +356,6 @@ export class MsteamsVoiceRuntime {
                     }),
                 }
                 : {}),
-            // Fallback: VAD-segmented utterance → temp WAV → file STT (used when no provider resolved).
             transcribe: async (pcm16k) => {
                 const wav = pcmToWav(pcm16k, MSTEAMS_PCM_SAMPLE_RATE_HZ);
                 const tmp = path.join(os.tmpdir(), `msteams-voice-${session.callId}-${this.sttSeq++}.wav`);
@@ -491,9 +419,7 @@ export class MsteamsVoiceRuntime {
     }
     buildDeps(session, provider, greetingInstructions) {
         return {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             provider: provider,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             providerConfig: this.realtime?.providerConfig,
             cfg: this.api.config,
             instructions: this.cfg.voice.realtime.instructions,
@@ -515,29 +441,17 @@ export class MsteamsVoiceRuntime {
         };
     }
     onSessionEnd(info) {
-        // Caller-driven hangup: the Teams worker session is already closing, so tear down locally
-        // (close() with no reason) and end the lifecycle record.
         this.disposeCall(info.callId);
         this.lifecycle.end(info.callId, "hangup-user");
     }
-    /**
-     * Drop every per-call resource: the media/realtime bridge, the outbound bookkeeping, and the
-     * retained vision frames. Shared by a caller hangup ({@link onSessionEnd}) and the reaper's onReap
-     * hook so a reaped call is torn down exactly like a hangup instead of leaking a zombie socket.
-     * `closeReason` is forwarded to the bridge's close(): pass a reason (reaper) to ALSO close the
-     * Teams worker session; omit it (caller hangup) when the session is already closing.
-     */
     disposeCall(callId, closeReason) {
         this.pendingOutbound.delete(callId);
         this.clearOutboundTimer(callId);
         this.calls.get(callId)?.close(closeReason);
         this.calls.delete(callId);
-        // Release the per-call vision frames (latest + keyframe history, ~1-2 MB/call). These were never
-        // released outside tests, leaking for the process lifetime on every completed call.
         this.vision.release(callId);
     }
 }
-/** Wrap raw PCM (16-bit mono LE) in a minimal WAV container so file-based STT can read it. */
 function pcmToWav(pcm, sampleRate) {
     const numChannels = 1;
     const bitsPerSample = 16;
@@ -549,7 +463,7 @@ function pcmToWav(pcm, sampleRate) {
     header.write("WAVE", 8);
     header.write("fmt ", 12);
     header.writeUInt32LE(16, 16);
-    header.writeUInt16LE(1, 20); // PCM
+    header.writeUInt16LE(1, 20);
     header.writeUInt16LE(numChannels, 22);
     header.writeUInt32LE(sampleRate, 24);
     header.writeUInt32LE(byteRate, 28);

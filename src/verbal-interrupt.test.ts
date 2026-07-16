@@ -52,7 +52,7 @@ describe("isVerbalInterrupt", () => {
     }
   });
 
-  it("matches Arabic interrupts — bilingual #19, the cut must work in both call languages", () => {
+  it("matches Arabic interrupts — bilingual, the cut must work in both call languages", () => {
     for (const text of [
       "توقف", // stop
       "تَوَقَّف!", // stop, with tashkeel + punctuation

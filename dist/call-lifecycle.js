@@ -1,15 +1,4 @@
-// Call-lifecycle coordinator — the ONLY substantial hand-written glue (DESIGN.md).
-//
-// The call-lifecycle coordination a Teams-only realtime plugin needs:
-//  - in-memory active-call registry
-//  - state machine + transitions (initiate/answer/end)
-//  - a keyed record store (in-memory; call state is ephemeral — a gateway restart drops live calls)
-//  - getStatus, stale-call reaping, max-concurrency
-//
-// Decoupled from openclaw by design: the store/log/clock come in via LifecycleRuntime, so this is
-// unit-testable with a fake store + clock, and the runtime supplies an in-memory Map-backed store.
 import { TERMINAL_STATES, } from "./types.js";
-/** Cap retained transcript entries per call so a long meeting can't grow a record unbounded. */
 const MAX_TRANSCRIPT_ENTRIES = 200;
 const REAPER_CHECK_INTERVAL_MS = 15_000;
 const STORE_NAME = "msteams-voice/calls";
@@ -39,7 +28,6 @@ export class CallLifecycle {
         this.store = rt.openSyncKeyedStore(STORE_NAME);
         this.rehydrate();
     }
-    /** Load non-terminal records persisted before a restart back into the active registry. */
     rehydrate() {
         for (const key of this.store.keys()) {
             const rec = this.store.get(key);
@@ -48,7 +36,6 @@ export class CallLifecycle {
             this.calls.set(rec.callId, rec);
         }
     }
-    /** Start the stale-call reaper (no-op if neither timeout is configured). */
     start() {
         if (this.reaper)
             return;
@@ -56,7 +43,6 @@ export class CallLifecycle {
             return;
         const set = this.rt.setInterval ?? ((fn, ms) => setInterval(fn, ms));
         this.reaper = set(() => this.reapStale(), REAPER_CHECK_INTERVAL_MS);
-        // Don't keep the process alive just for the reaper.
         this.reaper?.unref?.();
     }
     stop() {
@@ -64,7 +50,6 @@ export class CallLifecycle {
             (this.rt.clearInterval ?? clearInterval)(this.reaper);
         this.reaper = undefined;
     }
-    /** Register a placed/received call. Throws MaxConcurrentCallsError if over the limit. */
     initiate(params) {
         if (this.calls.has(params.callId)) {
             return this.calls.get(params.callId);
@@ -87,7 +72,6 @@ export class CallLifecycle {
         this.persist(rec);
         return rec;
     }
-    /** Mark a call answered (callee picked up / Teams recording active). */
     answer(callId) {
         const rec = this.calls.get(callId);
         if (!rec || TERMINAL_STATES.has(rec.state))
@@ -98,7 +82,6 @@ export class CallLifecycle {
         this.transition(rec, "active");
         this.persist(rec);
     }
-    /** End a call. Idempotent — a second call after a terminal state is a no-op. */
     end(callId, reason) {
         const rec = this.calls.get(callId) ?? this.store.get(callId);
         if (!rec || TERMINAL_STATES.has(rec.state))
@@ -131,7 +114,6 @@ export class CallLifecycle {
         }
         this.persist(rec);
     }
-    /** End calls that never answered (staleCallReaperMs) or exceeded maxDurationMs. */
     reapStale() {
         const now = this.rt.now();
         for (const rec of [...this.calls.values()]) {
@@ -146,8 +128,6 @@ export class CallLifecycle {
             if (unanswered) {
                 this.rt.log.info(`msteams-voice: reaping unanswered call ${rec.callId}`);
                 this.end(rec.callId, "no-answer");
-                // Signal the owner to tear down the live bridge too (see onReap): end() alone forgets the
-                // record but leaves the media/realtime sockets open.
                 this.opts.onReap?.(rec.callId, "no-answer");
             }
             else if (overDuration) {
@@ -157,7 +137,6 @@ export class CallLifecycle {
             }
         }
     }
-    // --- internals ---
     transition(rec, next) {
         if (rec.state === next)
             return;
