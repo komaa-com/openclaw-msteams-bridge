@@ -10,6 +10,21 @@ const MAX_INBOUND_PAYLOAD_BYTES = 2 * 1024 * 1024;
 const DEFAULT_MAX_CONNECTIONS = 64;
 const DEFAULT_MAX_CONNECTIONS_PER_IP = 8;
 const DEFAULT_PRE_START_TIMEOUT_MS = 10_000;
+const HEARTBEAT_INTERVAL_MS = 30_000;
+export function heartbeatSweep(clients) {
+    for (const ws of clients) {
+        if (ws.isAlive === false) {
+            ws.terminate();
+            continue;
+        }
+        ws.isAlive = false;
+        try {
+            ws.ping();
+        }
+        catch {
+        }
+    }
+}
 const MAX_OUTBOUND_BUFFER_BYTES = 1 * 1024 * 1024;
 export class MsteamsMediaStream {
     config;
@@ -23,6 +38,7 @@ export class MsteamsMediaStream {
     connectionsByIp = new Map();
     server;
     wss;
+    heartbeat;
     constructor(config) {
         this.config = config;
         this.hmacWindowMs = config.hmacWindowMs ?? DEFAULT_HMAC_WINDOW_MS;
@@ -54,11 +70,20 @@ export class MsteamsMediaStream {
         });
         this.server = server;
         this.wss = wss;
+        const heartbeat = setInterval(() => {
+            heartbeatSweep(wss.clients);
+        }, HEARTBEAT_INTERVAL_MS);
+        heartbeat.unref?.();
+        this.heartbeat = heartbeat;
         this.config.logger?.info(`MsteamsMediaStream listening host=${this.config.bindAddress ?? DEFAULT_BIND_ADDRESS} port=${this.config.port} path=${this.config.path}`);
     }
     async stop() {
         if (!this.server) {
             return;
+        }
+        if (this.heartbeat) {
+            clearInterval(this.heartbeat);
+            this.heartbeat = undefined;
         }
         for (const ws of this.sessions.values()) {
             try {
@@ -168,6 +193,11 @@ export class MsteamsMediaStream {
         }
         this.connectionMeta.set(callId, { ip, started: false, ended: false, preStartTimer });
         this.config.logger?.info(`MsteamsMediaStream: connection open ${callId}`);
+        const live = ws;
+        live.isAlive = true;
+        ws.on("pong", () => {
+            live.isAlive = true;
+        });
         ws.on("message", (data) => this.handleMessage(callId, data));
         ws.on("close", () => {
             const meta = this.connectionMeta.get(callId);

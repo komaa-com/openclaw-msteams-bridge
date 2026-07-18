@@ -141,6 +141,36 @@ const MAX_INBOUND_PAYLOAD_BYTES = 2 * 1024 * 1024;
 const DEFAULT_MAX_CONNECTIONS = 64;
 const DEFAULT_MAX_CONNECTIONS_PER_IP = 8;
 const DEFAULT_PRE_START_TIMEOUT_MS = 10_000;
+// Protocol-level WebSocket ping interval. A caller that dies UNCLEANLY (pod killed, network drop) never sends a
+// TCP FIN, so `ws` fires no "close" event and the session — plus its maxConcurrentCalls slot — leaks until the
+// far slower call reaper. Ping every client each interval; a client that missed the previous ping (isAlive still
+// false) is terminated, which fires "close" → onSessionEnd → the concurrency slot frees. The .NET caller's
+// ClientWebSocket auto-replies to protocol pings, so a healthy call always stays alive.
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
+/** A ws-like socket for the heartbeat sweep (subset of `ws` used here; keeps the sweep unit-testable). */
+export interface HeartbeatSocket {
+  isAlive?: boolean;
+  terminate(): void;
+  ping(): void;
+}
+
+/** One heartbeat sweep over the connected clients: terminate any that missed the previous ping (isAlive still
+ * false → dead caller), otherwise mark not-alive and ping (the pong handler flips it back). Exported for tests. */
+export function heartbeatSweep(clients: Iterable<HeartbeatSocket>): void {
+  for (const ws of clients) {
+    if (ws.isAlive === false) {
+      ws.terminate(); // fires "close" → onSessionEnd → the concurrency slot frees
+      continue;
+    }
+    ws.isAlive = false;
+    try {
+      ws.ping();
+    } catch {
+      // best-effort; a socket erroring on ping is torn down on the next sweep
+    }
+  }
+}
 
 /**
  * Backpressure bound on a single call's OUTBOUND send buffer. Audio egress (sendTo) is
@@ -172,6 +202,7 @@ export class MsteamsMediaStream {
   private readonly connectionsByIp = new Map<string, number>();
   private server?: http.Server;
   private wss?: WebSocketServer;
+  private heartbeat?: ReturnType<typeof setInterval>;
 
   constructor(config: MsteamsMediaStreamConfig) {
     this.config = config;
@@ -209,6 +240,15 @@ export class MsteamsMediaStream {
 
     this.server = server;
     this.wss = wss;
+
+    // Heartbeat: terminate dead sockets so their maxConcurrentCalls slot frees promptly (the canonical `ws`
+    // pattern). Without it, a caller that dies uncleanly leaks a session until the call reaper's maxDuration.
+    const heartbeat = setInterval(() => {
+      heartbeatSweep(wss.clients as unknown as Iterable<HeartbeatSocket>);
+    }, HEARTBEAT_INTERVAL_MS);
+    (heartbeat as { unref?: () => void }).unref?.(); // don't keep the process alive just for the heartbeat
+    this.heartbeat = heartbeat;
+
     this.config.logger?.info(
       `MsteamsMediaStream listening host=${this.config.bindAddress ?? DEFAULT_BIND_ADDRESS} port=${this.config.port} path=${this.config.path}`,
     );
@@ -217,6 +257,11 @@ export class MsteamsMediaStream {
   async stop(): Promise<void> {
     if (!this.server) {
       return;
+    }
+
+    if (this.heartbeat) {
+      clearInterval(this.heartbeat);
+      this.heartbeat = undefined;
     }
 
     for (const ws of this.sessions.values()) {
@@ -381,6 +426,14 @@ export class MsteamsMediaStream {
     }
     this.connectionMeta.set(callId, { ip, started: false, ended: false, preStartTimer });
     this.config.logger?.info(`MsteamsMediaStream: connection open ${callId}`);
+
+    // Heartbeat liveness: mark alive on connect + on every protocol pong. The interval in start() pings each
+    // client and terminates any that didn't pong since the last sweep (dead caller), freeing its concurrency slot.
+    const live = ws as WebSocket & { isAlive?: boolean };
+    live.isAlive = true;
+    ws.on("pong", () => {
+      live.isAlive = true;
+    });
 
     ws.on("message", (data) => this.handleMessage(callId, data));
     ws.on("close", () => {
