@@ -221,9 +221,9 @@ export class MsteamsMediaStream {
     const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_INBOUND_PAYLOAD_BYTES });
 
     server.on("upgrade", (request, socket, head) => {
-      // The raw socket can error at any point in the pre-WS window (port scanners
-      // connect, send garbage, then RST). Without a listener that surfaces as an
-      // unhandled 'error' event and takes down the whole gateway process.
+      // Give the raw socket an error handler for the window before the WebSocket
+      // exists (a peer may connect then drop mid-handshake), so a stray socket
+      // error stays contained rather than surfacing as an unhandled 'error' event.
       socket.on("error", () => {
         socket.destroy();
       });

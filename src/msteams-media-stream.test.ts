@@ -500,9 +500,9 @@ describe("MsteamsMediaStream", () => {
     const port = randomPort();
     server = await startServer({ port });
 
-    // Scanner behavior: send the upgrade request then slam the connection shut. The
-    // reject write then races a dead socket; without an 'error' listener that is an
-    // unhandled event that would take the process down.
+    // A peer that starts an upgrade then drops the connection mid-handshake: the
+    // server must absorb it quietly and keep serving (a liveness guard; the raw
+    // socket also carries its own error handler so a stray error stays contained).
     const net = await import("node:net");
     await new Promise<void>((resolve) => {
       const sock = net.connect(port, "127.0.0.1", () => {
