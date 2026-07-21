@@ -429,6 +429,113 @@ describe("MsteamsMediaStream", () => {
     expect(outcome).not.toBe("open");
   });
 
+  it("404s a path that only prefix-matches (exact segment, not startsWith)", async () => {
+    const port = randomPort();
+    server = await startServer({ port });
+
+    // "/voice/msteams/streamX/..." must be a 404 (wrong endpoint), not fall through
+    // to the HMAC check and read as a confusing 401.
+    const callId = "call-prefix";
+    const ts = Date.now();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}X/${callId}`, {
+      headers: {
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": signHmac(SECRET, ts, callId),
+      },
+    });
+    const status = await new Promise<number>((resolve, reject) => {
+      ws.once("unexpected-response", (_req, res) => resolve(res.statusCode ?? 0));
+      ws.once("open", () => reject(new Error("connection should have been rejected")));
+      ws.once("error", () => resolve(0)); // some ws versions surface only 'error'
+    });
+    if (status !== 0) {
+      expect(status).toBe(404);
+    }
+  });
+
+  it("survives a malformed absolute-form request-target (new URL would throw)", async () => {
+    const port = randomPort();
+    server = await startServer({ port });
+
+    // A scanner's request line like "GET http://[ HTTP/1.1" reaches the upgrade
+    // handler with request.url = "http://[", which new URL() throws on. The server
+    // must answer 400 and keep running, not crash the whole gateway process.
+    const net = await import("node:net");
+    const reply = await new Promise<string>((resolve) => {
+      const sock = net.connect(port, "127.0.0.1", () => {
+        sock.write(
+          "GET http://[ HTTP/1.1\r\n" +
+            "Host: 127.0.0.1\r\n" +
+            "Connection: Upgrade\r\n" +
+            "Upgrade: websocket\r\n" +
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+            "Sec-WebSocket-Version: 13\r\n\r\n",
+        );
+      });
+      let buf = "";
+      sock.on("data", (d) => {
+        buf += d.toString();
+      });
+      sock.on("close", () => resolve(buf));
+      sock.on("error", () => resolve(buf));
+      setTimeout(() => {
+        sock.destroy();
+        resolve(buf);
+      }, 1500);
+    });
+    expect(reply).toContain("400");
+
+    // The server must still accept a valid handshake afterwards.
+    const callId = "call-after-malformed";
+    const ws = openAuthedStandIn(port, callId);
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+      ws.once("unexpected-response", () => reject(new Error("rejected")));
+    });
+    ws.close();
+  });
+
+  it("survives a peer that starts an upgrade and immediately destroys the socket", async () => {
+    const port = randomPort();
+    server = await startServer({ port });
+
+    // A peer that starts an upgrade then drops the connection mid-handshake: the
+    // server must absorb it quietly and keep serving (a liveness guard; the raw
+    // socket also carries its own error handler so a stray error stays contained).
+    const net = await import("node:net");
+    await new Promise<void>((resolve) => {
+      const sock = net.connect(port, "127.0.0.1", () => {
+        sock.write(
+          `GET ${PATH}/call-rst HTTP/1.1\r\n` +
+            "Host: 127.0.0.1\r\n" +
+            "Connection: Upgrade\r\n" +
+            "Upgrade: websocket\r\n" +
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+            "Sec-WebSocket-Version: 13\r\n\r\n",
+          () => {
+            sock.destroy(); // no HMAC headers -> server writes a 401 into a dead socket
+            resolve();
+          },
+        );
+      });
+      sock.on("error", () => resolve());
+    });
+    // Give the reject write a beat to race the destroyed socket, then prove liveness.
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 100);
+    });
+
+    const callId = "call-after-rst";
+    const ws = openAuthedStandIn(port, callId);
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+      ws.once("unexpected-response", () => reject(new Error("rejected")));
+    });
+    ws.close();
+  });
+
   it("decodes audio.frame and emits via onAudioFrame", async () => {
     const port = randomPort();
     const received: Array<{ callId: string; seq: number; payload: Buffer }> = [];

@@ -53,7 +53,16 @@ export class MsteamsMediaStream {
         const server = http.createServer();
         const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_INBOUND_PAYLOAD_BYTES });
         server.on("upgrade", (request, socket, head) => {
-            this.handleUpgrade(request, socket, head, wss);
+            socket.on("error", () => {
+                socket.destroy();
+            });
+            try {
+                this.handleUpgrade(request, socket, head, wss);
+            }
+            catch (error) {
+                this.config.logger?.warn(`MsteamsMediaStream: rejecting upgrade — unparseable request (${String(error)})`);
+                this.rejectUpgrade(socket, 400, "Bad Request");
+            }
         });
         await new Promise((resolve, reject) => {
             const onError = (err) => {
@@ -111,8 +120,15 @@ export class MsteamsMediaStream {
         return this.sessions.size;
     }
     handleUpgrade(request, socket, head, wss) {
-        const url = new URL(request.url ?? "", "http://localhost");
-        if (!url.pathname.startsWith(this.config.path)) {
+        let url;
+        try {
+            url = new URL(request.url ?? "", "http://localhost");
+        }
+        catch {
+            this.rejectUpgrade(socket, 400, "Bad Request");
+            return;
+        }
+        if (url.pathname !== this.config.path && !url.pathname.startsWith(this.config.path + "/")) {
             this.rejectUpgrade(socket, 404, "Not Found");
             return;
         }
@@ -369,7 +385,9 @@ export class MsteamsMediaStream {
         this.cleanupConnection(callId);
     }
     rejectUpgrade(socket, code, reason) {
-        socket.write(`HTTP/1.1 ${code} ${reason}\r\nConnection: close\r\n\r\n`);
+        if (!socket.destroyed) {
+            socket.write(`HTTP/1.1 ${code} ${reason}\r\nConnection: close\r\n\r\n`);
+        }
         socket.destroy();
     }
 }

@@ -221,7 +221,22 @@ export class MsteamsMediaStream {
     const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_INBOUND_PAYLOAD_BYTES });
 
     server.on("upgrade", (request, socket, head) => {
-      this.handleUpgrade(request, socket, head, wss);
+      // Give the raw socket an error handler for the window before the WebSocket
+      // exists (a peer may connect then drop mid-handshake), so a stray socket
+      // error stays contained rather than surfacing as an unhandled 'error' event.
+      socket.on("error", () => {
+        socket.destroy();
+      });
+      // Backstop: nothing thrown while vetting an (unauthenticated) upgrade may
+      // escape into the event loop - a malformed request must never crash the host.
+      try {
+        this.handleUpgrade(request, socket, head, wss);
+      } catch (error) {
+        this.config.logger?.warn(
+          `MsteamsMediaStream: rejecting upgrade — unparseable request (${String(error)})`,
+        );
+        this.rejectUpgrade(socket, 400, "Bad Request");
+      }
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -301,9 +316,20 @@ export class MsteamsMediaStream {
     head: Buffer,
     wss: WebSocketServer,
   ): void {
-    const url = new URL(request.url ?? "", "http://localhost");
+    // request.url is attacker-controlled and may be an invalid absolute-form
+    // request-target (e.g. "GET http://[ HTTP/1.1" from a scanner): new URL()
+    // throws on those, so parse defensively instead of crashing the gateway.
+    let url: URL;
+    try {
+      url = new URL(request.url ?? "", "http://localhost");
+    } catch {
+      this.rejectUpgrade(socket, 400, "Bad Request");
+      return;
+    }
 
-    if (!url.pathname.startsWith(this.config.path)) {
+    // Exact segment match, not a loose prefix: "/voice/msteams/streamX" must 404
+    // here rather than fall through and confusingly 401 at the HMAC check.
+    if (url.pathname !== this.config.path && !url.pathname.startsWith(this.config.path + "/")) {
       this.rejectUpgrade(socket, 404, "Not Found");
       return;
     }
@@ -651,7 +677,11 @@ export class MsteamsMediaStream {
   }
 
   private rejectUpgrade(socket: Duplex, code: number, reason: string): void {
-    socket.write(`HTTP/1.1 ${code} ${reason}\r\nConnection: close\r\n\r\n`);
+    // The peer may already have torn the socket down (scanner RST): writing to a
+    // destroyed stream raises an async error, so only write while it is alive.
+    if (!socket.destroyed) {
+      socket.write(`HTTP/1.1 ${code} ${reason}\r\nConnection: close\r\n\r\n`);
+    }
     socket.destroy();
   }
 }
