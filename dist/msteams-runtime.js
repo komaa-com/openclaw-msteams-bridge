@@ -1,3 +1,4 @@
+import { fetchAttachmentImages, ManagedChatServer } from "./managed-chat.js";
 import { consultRealtimeVoiceAgent, resolveConfiguredRealtimeVoiceProvider, resolveRealtimeVoiceAgentConsultToolsAllow, } from "openclaw/plugin-sdk/realtime-voice";
 import { getRealtimeTranscriptionProvider, listRealtimeTranscriptionProviders, } from "openclaw/plugin-sdk/realtime-transcription";
 import { resolveConfiguredCapabilityProvider } from "openclaw/plugin-sdk/provider-selection-runtime";
@@ -34,6 +35,7 @@ export class MsteamsVoiceRuntime {
     sttSeq = 0;
     pendingOutbound = new Map();
     pendingOutboundTimers = new Map();
+    managedChat;
     constructor(api, cfg) {
         this.api = api;
         this.cfg = cfg;
@@ -109,6 +111,17 @@ export class MsteamsVoiceRuntime {
             this.resolveTranscriptionProvider();
         this.lifecycle.start();
         await this.media.start();
+        if (this.cfg.managedChat.configuredWithoutSecret) {
+            this.log.warn("[msteams-voice] managedChat.enabled is set but chatSecret is empty - managed chat is OFF. " +
+                "Paste the chat secret from the StandIn portal's connection wizard.");
+        }
+        if (this.cfg.managedChat.enabled) {
+            this.managedChat = new ManagedChatServer(this.cfg.managedChat, {
+                respond: (message) => this.respondToManagedChat(message),
+                log: this.log,
+            });
+            await this.managedChat.start();
+        }
         this.log.info(`[msteams-voice] started (mode=${this.mode})`);
     }
     async stop() {
@@ -121,6 +134,43 @@ export class MsteamsVoiceRuntime {
         this.calls.clear();
         this.lifecycle.stop();
         await this.media.stop();
+        await this.managedChat?.stop();
+        this.managedChat = undefined;
+    }
+    async respondToManagedChat(message) {
+        const cfg = this.api.config;
+        const attachmentNote = (message.attachments ?? [])
+            .map((a) => a.relayable === false
+            ? `[attachment not relayed: ${a.name ?? a.kind}]`
+            : `[attachment ${a.kind}: ${a.name ?? "unnamed"} at ${a.url}]`)
+            .join("\n");
+        const question = [message.text, attachmentNote].filter(Boolean).join("\n");
+        const images = await fetchAttachmentImages(message.attachments);
+        if (images.length) {
+            this.log.info(`[msteams-chat] attaching ${images.length} image(s) to the consult (ignored by hosts without consult image support)`);
+        }
+        const result = await consultRealtimeVoiceAgent({
+            cfg,
+            agentRuntime: this.api.runtime.agent,
+            ...(images.length ? { images } : {}),
+            logger: { warn: (m) => this.log.warn(m) },
+            ...(this.cfg.voice.agentId ? { agentId: this.cfg.voice.agentId } : {}),
+            sessionKey: `msteams-chat:${message.tenantId}:${message.conversationId}`,
+            messageProvider: "msteams",
+            lane: "chat",
+            runIdPrefix: "msteams-chat",
+            args: { question },
+            transcript: [],
+            surface: "Microsoft Teams chat (StandIn managed)",
+            userLabel: message.sender.displayName ?? "User",
+            assistantLabel: "Agent",
+            extraSystemPrompt: "You are answering in a Microsoft Teams text chat as the user's AI teammate (StandIn). " +
+                "Write normal chat messages: Teams-flavored markdown is fine, match the length the question " +
+                "deserves, and there is no text-to-speech constraint. If asked, be clear that you are an AI " +
+                "assistant. Attachments are described in the message text; images may be attached directly.",
+            fallbackText: "",
+        });
+        return result.text;
     }
     async placeCall(to, opts) {
         const ob = this.cfg.outbound;
