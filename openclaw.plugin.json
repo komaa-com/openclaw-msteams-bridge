@@ -230,6 +230,10 @@
           "expected": "string"
         },
         {
+          "path": "managedChat.chatSecret",
+          "expected": "string"
+        },
+        {
           "path": "realtime.providers.*.apiKey",
           "expected": "string"
         },
