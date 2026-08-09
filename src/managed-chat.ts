@@ -1,4 +1,4 @@
-// StandIn MANAGED chat mode (MANAGED-BOT-TIER.md 4.8, protocol/chat-schema.yaml).
+// StandIn managed chat mode (wire contract: protocol/chat-schema.yaml).
 //
 // On the managed tier the customer does NOT own a Teams bot: StandIn's gateway terminates Bot
 // Framework and speaks the normalized chat protocol to this agent instead. This module is that
@@ -20,7 +20,7 @@ export const SCHEMA_VERSION = 1;
 
 export interface ManagedChatConfig {
   enabled: boolean;
-  /** Review A6: enabled:true with no chatSecret - resolved disabled, but the runtime warns loudly. */
+  /** enabled:true with no chatSecret - resolved disabled, but the runtime warns loudly. */
   configuredWithoutSecret?: boolean;
   port: number;
   bindAddress?: string;
@@ -105,7 +105,7 @@ export function parseInbound(body: string): { ok: true; message: ManagedInbound 
       sender,
       attachments: Array.isArray(m.attachments) ? (m.attachments as ManagedInbound["attachments"]) : undefined,
       locale: typeof m.locale === "string" ? m.locale : undefined,
-      // Additive v1 field (protocol sync, go-live pass): the submit payload of an agent card's
+      // Additive v1 field: the submit payload of an agent card's
       // Action.Submit button. text is EMPTY on these messages - without carrying the payload through,
       // a button press became an empty agent turn ("I didn't catch that").
       cardAction: typeof m.cardAction === "object" && m.cardAction !== null ? (m.cardAction as Record<string, unknown>) : undefined,
@@ -175,7 +175,7 @@ export async function fetchAttachmentImages(
   for (const a of attachments ?? []) {
     if (a.kind !== "image" || a.relayable === false || !a.url) continue;
     try {
-      // Review A6: bounded and redirect-refusing - the URL is gateway-signed and same-host, so a
+      // Bounded and redirect-refusing - the URL is gateway-signed and same-host, so a
       // redirect means something is off; following it would re-open the SSRF door the signing closed.
       const res = await fetchFn(a.url, { signal: AbortSignal.timeout(10_000), redirect: "error" });
       if (!res.ok) continue;
@@ -204,7 +204,7 @@ export interface ManagedChatDeps {
 export class ManagedChatServer {
   private server?: http.Server;
   private readonly seen = new SeenActivities();
-  /** Per-conversation processing chains (review P0-4): the schema promises per-conversation ORDERING,
+  /** Per-conversation processing chains: the schema promises per-conversation ORDERING,
    * and independent tasks per message let replies overtake each other. Each conversation's turns run
    * strictly sequentially; different conversations still run concurrently. Entries are cleaned when
    * their chain drains so idle conversations cost nothing. */
@@ -240,7 +240,7 @@ export class ManagedChatServer {
       res.writeHead(404).end();
       return;
     }
-    // Bounded read BEFORE any auth work (review P0-4): an unauthenticated peer must not make us buffer
+    // Bounded read BEFORE any auth work: an unauthenticated peer must not make us buffer
     // an arbitrary body. 1 MB comfortably fits any relay payload (attachments travel by REFERENCE).
     const maxBody = 1024 * 1024;
     const declared = Number(req.headers["content-length"]);
@@ -295,7 +295,7 @@ export class ManagedChatServer {
     });
   }
 
-  /** Re-review P2: serialization makes a HUNG turn wedge its whole conversation forever (every later
+  /** Serialization would make a HUNG turn wedge its whole conversation forever (every later
    * message chains behind it, and the chain entry never drains). Every turn is therefore bounded: a
    * turn that exceeds the budget fails like any other error, the user hears about it, and the chain
    * moves on. Generous, because agent turns legitimately run long. */
@@ -309,7 +309,7 @@ export class ManagedChatServer {
       if (text.trim().length > 0) {
         await this.postReply(buildReply(message, text));
       } else {
-        // Review A6: an empty consult answer must not read as the bot ignoring the user - after the
+        // An empty consult answer must not read as the bot ignoring the user - after the
         // typing indicator, silence looks exactly like a hang. Say so, as an error-kind reply.
         this.deps.log.warn("msteams managed chat: agent returned an empty answer");
         await this.postReply(
@@ -324,7 +324,7 @@ export class ManagedChatServer {
     }
   }
 
-  /** Review A1: the reply leg retries a bounded number of times - the idempotencyKey (activityId:kind)
+  /** The reply leg retries a bounded number of times - the idempotencyKey (activityId:kind)
    * makes a duplicate arrival a silent gateway-side drop, so retrying is safe, and without it one
    * transient gateway blip ate a finished agent turn. Typing indicators never retry (ephemeral). */
   static readonly REPLY_ATTEMPTS = 3;
@@ -346,7 +346,7 @@ export class ManagedChatServer {
             "x-standin-signature": signature,
           },
           body,
-          // Re-review P2: an unbounded reply POST wedges the conversation chain exactly like a hung turn.
+          // An unbounded reply POST would wedge the conversation chain exactly like a hung turn.
           signal: AbortSignal.timeout(30_000),
         });
         if (res.ok) return;
@@ -385,7 +385,7 @@ export function resolveManagedChatConfig(raw: unknown): ManagedChatConfig {
   const c = (raw ?? {}) as Record<string, unknown>;
   const chatSecret = typeof c.chatSecret === "string" ? c.chatSecret : "";
   return {
-    // Review A6: enabled-with-no-secret resolves DISABLED (fail closed) but is flagged so the runtime
+    // enabled-with-no-secret resolves DISABLED (fail closed) but is flagged so the runtime
     // can warn at startup - the operator asked for chat and would otherwise get silence.
     configuredWithoutSecret: c.enabled === true && chatSecret.length === 0,
     enabled: c.enabled === true && chatSecret.length > 0,

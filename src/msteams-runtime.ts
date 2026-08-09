@@ -79,7 +79,7 @@ export class MsteamsVoiceRuntime {
     { to: string; message?: string; mode: PlaceCallMode }
   >();
   private readonly pendingOutboundTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** StandIn managed tier chat endpoint (MANAGED-BOT-TIER.md 4.8); undefined unless configured. */
+  /** StandIn managed chat endpoint (protocol/chat-schema.yaml); undefined unless configured. */
   private managedChat?: ManagedChatServer;
 
   constructor(
@@ -181,7 +181,7 @@ export class MsteamsVoiceRuntime {
     this.lifecycle.start();
     await this.media.start();
     if (this.cfg.managedChat.configuredWithoutSecret) {
-      // Review A6: same fail-LOUD posture as the realtime-provider check above - the operator set
+      // Same fail-LOUD posture as the realtime-provider check above - the operator set
       // managedChat.enabled and would otherwise get a silently dead chat surface.
       this.log.warn(
         "[msteams-voice] managedChat.enabled is set but chatSecret is empty - managed chat is OFF. " +
@@ -237,7 +237,7 @@ export class MsteamsVoiceRuntime {
     // text names every attachment either way).
     const images = await fetchAttachmentImages(message.attachments);
     if (images.length) {
-      // Review A2: the images param is ADDITIVE - openclaw hosts up to 2026.6.10 type the consult
+      // The images param is ADDITIVE - openclaw hosts up to 2026.6.10 type the consult
       // without it, and a host that ignores it answers from the attachment NOTE alone. The log line
       // is the tell when verifying a host upgrade.
       this.log.info(`[msteams-chat] attaching ${images.length} image(s) to the consult (ignored by hosts without consult image support)`);
@@ -257,7 +257,7 @@ export class MsteamsVoiceRuntime {
       surface: "Microsoft Teams chat (StandIn managed)",
       userLabel: message.sender.displayName ?? "User",
       assistantLabel: "Agent",
-      // Review A6: the consult's default framing is a VOICE sidebar ("answer briefly, you are being
+      // The consult's default framing is a VOICE sidebar ("answer briefly, you are being
       // read aloud"); this is a persistent text chat - markdown renders, brevity is not a constraint,
       // and D12 self-disclosure applies.
       extraSystemPrompt:

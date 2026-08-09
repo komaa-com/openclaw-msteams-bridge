@@ -8,7 +8,7 @@ import { resolveManagedChatConfig, type ManagedChatConfig } from "./managed-chat
 export interface ResolvedPluginConfig {
   enabled: boolean;
   media: { port: number; bindAddress?: string; path: string; sharedSecret: string };
-  /** StandIn managed tier chat lane (MANAGED-BOT-TIER.md 4.8). Disabled by default; BYO voice is untouched. */
+  /** StandIn managed chat lane (protocol/chat-schema.yaml). Disabled by default; BYO voice is untouched. */
   managedChat: ManagedChatConfig;
   outbound?: {
     enabled?: boolean;

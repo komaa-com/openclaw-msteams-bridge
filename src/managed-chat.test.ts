@@ -1,4 +1,4 @@
-// StandIn managed chat mode (MANAGED-BOT-TIER.md 4.8): the agent side of the normalized chat relay.
+// StandIn managed chat mode: the agent side of the normalized chat relay (protocol/chat-schema.yaml).
 // The HMAC KAT is the SAME vector pinned in @standin/bridge-hmac (TS), the gateway's LinkTokensTests
 // (C#), and the media-bridge callers — four independent implementations, one set of bytes.
 
@@ -272,7 +272,7 @@ describe("the server end to end", () => {
   });
 
   it("turns in ONE conversation run sequentially; different conversations run concurrently", async () => {
-    // Review P0-4: the schema promises per-conversation ordering - replies must not overtake each other.
+    // The schema promises per-conversation ordering - replies must not overtake each other.
     const events: string[] = [];
     const gates = new Map<string, () => void>();
     const { port } = await startServer({
