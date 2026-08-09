@@ -23,6 +23,10 @@
       "path": {
         "type": "string"
       },
+      "secret": {
+        "type": "string",
+        "description": "The single StandIn connection secret - covers calling AND chat. Paste the value from the StandIn portal; per-lane sharedSecret/messagesSecret override it when set."
+      },
       "sharedSecret": {
         "type": [
           "string",
@@ -230,6 +234,10 @@
   "configContracts": {
     "secretInputs": {
       "paths": [
+        {
+          "path": "secret",
+          "expected": "string"
+        },
         {
           "path": "sharedSecret",
           "expected": "string"
