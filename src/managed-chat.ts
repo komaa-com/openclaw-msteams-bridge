@@ -194,6 +194,11 @@ export interface ManagedChatDeps {
 export class ManagedChatServer {
   private server?: http.Server;
   private readonly seen = new SeenActivities();
+  /** Per-conversation processing chains (review P0-4): the schema promises per-conversation ORDERING,
+   * and independent tasks per message let replies overtake each other. Each conversation's turns run
+   * strictly sequentially; different conversations still run concurrently. Entries are cleaned when
+   * their chain drains so idle conversations cost nothing. */
+  private readonly chains = new Map<string, Promise<void>>();
 
   constructor(
     private readonly cfg: ManagedChatConfig,
@@ -225,8 +230,25 @@ export class ManagedChatServer {
       res.writeHead(404).end();
       return;
     }
+    // Bounded read BEFORE any auth work (review P0-4): an unauthenticated peer must not make us buffer
+    // an arbitrary body. 1 MB comfortably fits any relay payload (attachments travel by REFERENCE).
+    const maxBody = 1024 * 1024;
+    const declared = Number(req.headers["content-length"]);
+    if (Number.isFinite(declared) && declared > maxBody) {
+      res.writeHead(413).end();
+      return;
+    }
     const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(chunk as Buffer);
+    let received = 0;
+    for await (const chunk of req) {
+      received += (chunk as Buffer).length;
+      if (received > maxBody) {
+        res.writeHead(413).end();
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk as Buffer);
+    }
     const body = Buffer.concat(chunks).toString("utf8");
 
     const ts = header(req, "x-standin-timestamp");
@@ -248,7 +270,18 @@ export class ManagedChatServer {
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
     if (!fresh) return;
 
-    void this.processAsync(parsed.message);
+    this.enqueueTurn(parsed.message);
+  }
+
+  /** Chain the turn behind the conversation's previous one (ordering); see `chains`. */
+  private enqueueTurn(message: ManagedInbound): void {
+    const key = `${message.tenantId}:${message.conversationId}`;
+    const prev = this.chains.get(key) ?? Promise.resolve();
+    const next = prev.then(() => this.processAsync(message)).catch(() => undefined);
+    this.chains.set(key, next);
+    void next.finally(() => {
+      if (this.chains.get(key) === next) this.chains.delete(key);
+    });
   }
 
   private async processAsync(message: ManagedInbound): Promise<void> {

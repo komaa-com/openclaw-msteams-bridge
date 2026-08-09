@@ -271,6 +271,49 @@ describe("the server end to end", () => {
     expect(consulted).toBe(0);
   });
 
+  it("turns in ONE conversation run sequentially; different conversations run concurrently", async () => {
+    // Review P0-4: the schema promises per-conversation ordering - replies must not overtake each other.
+    const events: string[] = [];
+    const gates = new Map<string, () => void>();
+    const { port } = await startServer({
+      respond: async (m) => {
+        events.push(`start:${m.activityId}`);
+        await new Promise<void>((r) => gates.set(m.activityId, r));
+        events.push(`end:${m.activityId}`);
+        return "";
+      },
+    });
+    const msg = (conv: string, id: string) =>
+      JSON.stringify({ tenantId: "t1", conversationId: conv, activityId: id, scope: "personal", sender: {}, text: "x" });
+
+    await post(port, msg("c1", "a1"));
+    await post(port, msg("c1", "a2"));
+    await post(port, msg("c2", "b1"));
+    await new Promise((r) => setTimeout(r, 80));
+
+    // a2 must NOT have started while a1 holds the gate; b1 (another conversation) runs concurrently.
+    expect(events).toContain("start:a1");
+    expect(events).toContain("start:b1");
+    expect(events).not.toContain("start:a2");
+
+    gates.get("a1")!();
+    await new Promise((r) => setTimeout(r, 80));
+    expect(events).toContain("end:a1");
+    expect(events).toContain("start:a2");
+    gates.get("a2")?.();
+    gates.get("b1")?.();
+    await new Promise((r) => setTimeout(r, 40));
+  });
+
+  it("rejects oversized bodies before running any agent turn", async () => {
+    let turns = 0;
+    const { port } = await startServer({ respond: async () => { turns++; return "x"; } });
+    const big = JSON.stringify({ tenantId: "t1", conversationId: "c1", activityId: "big", text: "y".repeat(1_100_000) });
+    const res = await post(port, big);
+    expect(res.status).toBe(413);
+    expect(turns).toBe(0);
+  });
+
   it("a redelivered activity ACKs but does not run a second agent turn", async () => {
     let consulted = 0;
     const { port } = await startServer({ respond: async () => { consulted++; return "x"; } });
