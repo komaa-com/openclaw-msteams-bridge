@@ -8,6 +8,7 @@
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
+import { ManagedChatServer, type ManagedInbound } from "./managed-chat.js";
 import {
   consultRealtimeVoiceAgent,
   resolveConfiguredRealtimeVoiceProvider,
@@ -78,6 +79,8 @@ export class MsteamsVoiceRuntime {
     { to: string; message?: string; mode: PlaceCallMode }
   >();
   private readonly pendingOutboundTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** StandIn managed tier chat endpoint (MANAGED-BOT-TIER.md 4.8); undefined unless configured. */
+  private managedChat?: ManagedChatServer;
 
   constructor(
     private readonly api: OpenClawPluginApi,
@@ -177,6 +180,13 @@ export class MsteamsVoiceRuntime {
     if (this.mode === "streaming") this.resolveTranscriptionProvider();
     this.lifecycle.start();
     await this.media.start();
+    if (this.cfg.managedChat.enabled) {
+      this.managedChat = new ManagedChatServer(this.cfg.managedChat, {
+        respond: (message) => this.respondToManagedChat(message),
+        log: this.log,
+      });
+      await this.managedChat.start();
+    }
     this.log.info(`[msteams-voice] started (mode=${this.mode})`);
   }
 
@@ -188,6 +198,43 @@ export class MsteamsVoiceRuntime {
     this.calls.clear();
     this.lifecycle.stop();
     await this.media.stop();
+    await this.managedChat?.stop();
+    this.managedChat = undefined;
+  }
+
+  /**
+   * One agent turn for a managed-chat message (4.8): the same embedded consult the voice paths use,
+   * on a per-conversation session key so a Teams chat keeps its context across messages. The consult
+   * runs isolated from voice calls; attachments arrive by reference (the message text names them -
+   * fetching them into the turn is a follow-up).
+   */
+  private async respondToManagedChat(message: ManagedInbound): Promise<string> {
+    const cfg = this.api.config as unknown as OpenClawConfig;
+    const attachmentNote = (message.attachments ?? [])
+      .map((a) =>
+        a.relayable === false
+          ? `[attachment not relayed: ${a.name ?? a.kind}]`
+          : `[attachment ${a.kind}: ${a.name ?? "unnamed"} at ${a.url}]`,
+      )
+      .join("\n");
+    const question = [message.text, attachmentNote].filter(Boolean).join("\n");
+    const result = await consultRealtimeVoiceAgent({
+      cfg,
+      agentRuntime: this.api.runtime.agent,
+      logger: { warn: (m: string) => this.log.warn(m) },
+      ...(this.cfg.voice.agentId ? { agentId: this.cfg.voice.agentId } : {}),
+      sessionKey: `msteams-chat:${message.tenantId}:${message.conversationId}`,
+      messageProvider: "msteams",
+      lane: "chat",
+      runIdPrefix: "msteams-chat",
+      args: { question },
+      transcript: [],
+      surface: "Microsoft Teams chat (StandIn managed)",
+      userLabel: message.sender.displayName ?? "User",
+      assistantLabel: "Agent",
+      fallbackText: "",
+    });
+    return result.text;
   }
 
   /**

@@ -3,10 +3,13 @@
 // reads. Boundary adapter — tolerant casts on untyped raw input.
 
 import type { MsteamsVoiceConfig } from "./config.js";
+import { resolveManagedChatConfig, type ManagedChatConfig } from "./managed-chat.js";
 
 export interface ResolvedPluginConfig {
   enabled: boolean;
   media: { port: number; bindAddress?: string; path: string; sharedSecret: string };
+  /** StandIn managed tier chat lane (MANAGED-BOT-TIER.md 4.8). Disabled by default; BYO voice is untouched. */
+  managedChat: ManagedChatConfig;
   outbound?: {
     enabled?: boolean;
     workerBaseUrl?: string;
@@ -36,6 +39,7 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       // accept. Coerce a non-string to "" so it fails CLOSED (server refuses to start) instead.
       sharedSecret: typeof c.sharedSecret === "string" ? c.sharedSecret : "",
     },
+    managedChat: resolveManagedChatConfig(c.managedChat),
     outbound: c.outbound,
     limits: {
       maxConcurrentCalls: Number(c.maxConcurrentCalls ?? 4),

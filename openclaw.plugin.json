@@ -186,6 +186,39 @@
             "minimum": 0
           }
         }
+      },
+      "managedChat": {
+        "type": "object",
+        "description": "StandIn managed tier chat lane (agent side of the normalized chat relay). Leave unset for BYO deployments - voice is unaffected either way.",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Turn the managed chat endpoint on (also requires chatSecret)."
+          },
+          "port": {
+            "type": "number",
+            "description": "HTTP port for the managed chat endpoint (default 9444)."
+          },
+          "bindAddress": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "POST path (default /managed/chat)."
+          },
+          "chatSecret": {
+            "type": [
+              "string",
+              "object"
+            ],
+            "description": "The binding's CHAT HMAC key from the StandIn portal (separate from the voice sharedSecret)."
+          },
+          "gatewayReplyUrl": {
+            "type": "string",
+            "description": "The StandIn gateway reply endpoint (default https://teams.standin.komaa.com/api/chat/reply)."
+          }
+        }
       }
     }
   },
