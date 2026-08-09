@@ -284,11 +284,17 @@ export class ManagedChatServer {
     });
   }
 
+  /** Re-review P2: serialization makes a HUNG turn wedge its whole conversation forever (every later
+   * message chains behind it, and the chain entry never drains). Every turn is therefore bounded: a
+   * turn that exceeds the budget fails like any other error, the user hears about it, and the chain
+   * moves on. Generous, because agent turns legitimately run long. */
+  static readonly TURN_TIMEOUT_MS = 5 * 60 * 1000;
+
   private async processAsync(message: ManagedInbound): Promise<void> {
     // Typing while the agent thinks — best-effort, ephemeral by design.
     await this.postReply(buildReply(message, "", "typing")).catch(() => undefined);
     try {
-      const text = await this.deps.respond(message);
+      const text = await withTimeout(this.deps.respond(message), ManagedChatServer.TURN_TIMEOUT_MS, "agent turn");
       if (text.trim().length > 0) {
         await this.postReply(buildReply(message, text));
       }
@@ -312,11 +318,25 @@ export class ManagedChatServer {
         "x-standin-signature": signature,
       },
       body,
+      // Re-review P2: an unbounded reply POST wedges the conversation chain exactly like a hung turn.
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
       this.deps.log.warn(`msteams managed chat: gateway reply -> HTTP ${res.status}`);
     }
   }
+}
+
+/** Reject after ms; the underlying promise keeps running (we cannot cancel the agent) but the chain
+ * stops waiting on it — a wedged conversation beats a cancelled-mid-tool-use agent turn either way. */
+function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
 }
 
 function header(req: http.IncomingMessage, name: string): string | undefined {
