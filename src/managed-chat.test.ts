@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildReply,
+  fetchAttachmentImages,
   computeBridgeSignature,
   ManagedChatServer,
   parseInbound,
@@ -159,6 +160,34 @@ describe("schema drift (protocol/chat-schema.yaml is the source of truth)", () =
   it("the schema constants this module hardcodes match the schema copy", () => {
     expect(schema).toContain("name: SCHEMA_VERSION\n    value: 1");
     expect(schema).toContain(`value: ${REPLAY_WINDOW_MS}`);
+  });
+});
+
+describe("attachment image fetch (4.7 agent-side leg)", () => {
+  const img = (over: Record<string, unknown> = {}) => ({
+    kind: "image", name: "shot.png", url: "https://gw.test/api/chat/attachment/a1?e=1&s=x",
+    contentType: "image/png", relayable: true, ...over,
+  });
+  const fakeFetch = (bytes: number, status = 200) =>
+    (async () => new Response(new Uint8Array(bytes), { status, headers: { "content-type": "image/png" } })) as unknown as typeof fetch;
+
+  it("fetches relayable images into base64 consult images", async () => {
+    const images = await fetchAttachmentImages([img()], { fetchFn: fakeFetch(16) });
+    expect(images).toHaveLength(1);
+    expect(images[0].mimeType).toBe("image/png");
+    expect(Buffer.from(images[0].data, "base64")).toHaveLength(16);
+  });
+
+  it("skips files, unrelayable, missing urls, failures, and oversize - never throws", async () => {
+    expect(await fetchAttachmentImages([img({ kind: "file" })], { fetchFn: fakeFetch(16) })).toHaveLength(0);
+    expect(await fetchAttachmentImages([img({ relayable: false })], { fetchFn: fakeFetch(16) })).toHaveLength(0);
+    expect(await fetchAttachmentImages([img({ url: undefined })], { fetchFn: fakeFetch(16) })).toHaveLength(0);
+    expect(await fetchAttachmentImages([img()], { fetchFn: fakeFetch(16, 404) })).toHaveLength(0);
+    expect(await fetchAttachmentImages([img()], { fetchFn: fakeFetch(64, 200), maxBytes: 32 })).toHaveLength(0);
+    expect(
+      await fetchAttachmentImages([img()], { fetchFn: (async () => { throw new Error("net"); }) as unknown as typeof fetch }),
+    ).toHaveLength(0);
+    expect(await fetchAttachmentImages(undefined, { fetchFn: fakeFetch(16) })).toHaveLength(0);
   });
 });
 

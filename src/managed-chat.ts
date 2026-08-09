@@ -144,6 +144,44 @@ export function buildReply(
 
 // ── the server ────────────────────────────────────────────────────────────────────────────────────
 
+/** An image fetched from the gateway's signed URL, ready for the agent consult. */
+export interface FetchedImage {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
+/**
+ * Fetch RELAYABLE IMAGE attachments from their gateway-signed URLs into consult images (4.7: "the
+ * agent fetches within the reference TTL"). Images only - the consult accepts images, and files are
+ * still named in the turn text. Size-capped and best-effort per attachment: one bad fetch drops that
+ * image, never the turn.
+ */
+export async function fetchAttachmentImages(
+  attachments: ManagedInbound["attachments"],
+  opts?: { fetchFn?: typeof fetch; maxBytes?: number },
+): Promise<FetchedImage[]> {
+  const fetchFn = opts?.fetchFn ?? fetch;
+  const maxBytes = opts?.maxBytes ?? 4 * 1024 * 1024;
+  const images: FetchedImage[] = [];
+  for (const a of attachments ?? []) {
+    if (a.kind !== "image" || a.relayable === false || !a.url) continue;
+    try {
+      const res = await fetchFn(a.url);
+      if (!res.ok) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length === 0 || buf.length > maxBytes) continue;
+      const mime = (a as { contentType?: string }).contentType
+        ?? res.headers.get("content-type")
+        ?? "image/png";
+      images.push({ type: "image", data: buf.toString("base64"), mimeType: mime });
+    } catch {
+      // Best-effort: the turn still runs; the text names the attachment either way.
+    }
+  }
+  return images;
+}
+
 export interface ManagedChatDeps {
   /** Run one agent turn for an inbound message; returns the reply text. */
   respond: (message: ManagedInbound) => Promise<string>;

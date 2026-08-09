@@ -8,7 +8,7 @@
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
-import { ManagedChatServer, type ManagedInbound } from "./managed-chat.js";
+import { fetchAttachmentImages, ManagedChatServer, type ManagedInbound } from "./managed-chat.js";
 import {
   consultRealtimeVoiceAgent,
   resolveConfiguredRealtimeVoiceProvider,
@@ -218,9 +218,14 @@ export class MsteamsVoiceRuntime {
       )
       .join("\n");
     const question = [message.text, attachmentNote].filter(Boolean).join("\n");
+    // 4.7's agent-side leg: fetch relayable images from their gateway-signed URLs into the consult, so
+    // the agent SEES a pasted screenshot instead of reading a URL it cannot open (best-effort; the
+    // text names every attachment either way).
+    const images = await fetchAttachmentImages(message.attachments);
     const result = await consultRealtimeVoiceAgent({
       cfg,
       agentRuntime: this.api.runtime.agent,
+      ...(images.length ? { images } : {}),
       logger: { warn: (m: string) => this.log.warn(m) },
       ...(this.cfg.voice.agentId ? { agentId: this.cfg.voice.agentId } : {}),
       sessionKey: `msteams-chat:${message.tenantId}:${message.conversationId}`,
