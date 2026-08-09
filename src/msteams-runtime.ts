@@ -180,6 +180,14 @@ export class MsteamsVoiceRuntime {
     if (this.mode === "streaming") this.resolveTranscriptionProvider();
     this.lifecycle.start();
     await this.media.start();
+    if (this.cfg.managedChat.configuredWithoutSecret) {
+      // Review A6: same fail-LOUD posture as the realtime-provider check above - the operator set
+      // managedChat.enabled and would otherwise get a silently dead chat surface.
+      this.log.warn(
+        "[msteams-voice] managedChat.enabled is set but chatSecret is empty - managed chat is OFF. " +
+          "Paste the chat secret from the StandIn portal's connection wizard.",
+      );
+    }
     if (this.cfg.managedChat.enabled) {
       this.managedChat = new ManagedChatServer(this.cfg.managedChat, {
         respond: (message) => this.respondToManagedChat(message),
@@ -222,6 +230,12 @@ export class MsteamsVoiceRuntime {
     // the agent SEES a pasted screenshot instead of reading a URL it cannot open (best-effort; the
     // text names every attachment either way).
     const images = await fetchAttachmentImages(message.attachments);
+    if (images.length) {
+      // Review A2: the images param is ADDITIVE - openclaw hosts up to 2026.6.10 type the consult
+      // without it, and a host that ignores it answers from the attachment NOTE alone. The log line
+      // is the tell when verifying a host upgrade.
+      this.log.info(`[msteams-chat] attaching ${images.length} image(s) to the consult (ignored by hosts without consult image support)`);
+    }
     const result = await consultRealtimeVoiceAgent({
       cfg,
       agentRuntime: this.api.runtime.agent,
@@ -237,6 +251,14 @@ export class MsteamsVoiceRuntime {
       surface: "Microsoft Teams chat (StandIn managed)",
       userLabel: message.sender.displayName ?? "User",
       assistantLabel: "Agent",
+      // Review A6: the consult's default framing is a VOICE sidebar ("answer briefly, you are being
+      // read aloud"); this is a persistent text chat - markdown renders, brevity is not a constraint,
+      // and D12 self-disclosure applies.
+      extraSystemPrompt:
+        "You are answering in a Microsoft Teams text chat as the user's AI teammate (StandIn). " +
+        "Write normal chat messages: Teams-flavored markdown is fine, match the length the question " +
+        "deserves, and there is no text-to-speech constraint. If asked, be clear that you are an AI " +
+        "assistant. Attachments are described in the message text; images may be attached directly.",
       fallbackText: "",
     });
     return result.text;

@@ -20,6 +20,8 @@ export const SCHEMA_VERSION = 1;
 
 export interface ManagedChatConfig {
   enabled: boolean;
+  /** Review A6: enabled:true with no chatSecret - resolved disabled, but the runtime warns loudly. */
+  configuredWithoutSecret?: boolean;
   port: number;
   bindAddress?: string;
   path: string;
@@ -167,7 +169,9 @@ export async function fetchAttachmentImages(
   for (const a of attachments ?? []) {
     if (a.kind !== "image" || a.relayable === false || !a.url) continue;
     try {
-      const res = await fetchFn(a.url);
+      // Review A6: bounded and redirect-refusing - the URL is gateway-signed and same-host, so a
+      // redirect means something is off; following it would re-open the SSRF door the signing closed.
+      const res = await fetchFn(a.url, { signal: AbortSignal.timeout(10_000), redirect: "error" });
       if (!res.ok) continue;
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.length === 0 || buf.length > maxBytes) continue;
@@ -297,6 +301,13 @@ export class ManagedChatServer {
       const text = await withTimeout(this.deps.respond(message), ManagedChatServer.TURN_TIMEOUT_MS, "agent turn");
       if (text.trim().length > 0) {
         await this.postReply(buildReply(message, text));
+      } else {
+        // Review A6: an empty consult answer must not read as the bot ignoring the user - after the
+        // typing indicator, silence looks exactly like a hang. Say so, as an error-kind reply.
+        this.deps.log.warn("msteams managed chat: agent returned an empty answer");
+        await this.postReply(
+          buildReply(message, "I couldn't come up with an answer to that — try rephrasing, or ask something else.", "error"),
+        );
       }
     } catch (err) {
       this.deps.log.error(`msteams managed chat: agent turn failed: ${String(err)}`);
@@ -306,23 +317,40 @@ export class ManagedChatServer {
     }
   }
 
+  /** Review A1: the reply leg retries a bounded number of times - the idempotencyKey (activityId:kind)
+   * makes a duplicate arrival a silent gateway-side drop, so retrying is safe, and without it one
+   * transient gateway blip ate a finished agent turn. Typing indicators never retry (ephemeral). */
+  static readonly REPLY_ATTEMPTS = 3;
+
   private async postReply(reply: Record<string, unknown>): Promise<void> {
     const body = JSON.stringify(reply);
-    const { timestamp, signature } = signBridge(this.cfg.chatSecret, body, this.deps.nowMs?.() ?? Date.now());
     const fetchFn = this.deps.fetchFn ?? fetch;
-    const res = await fetchFn(this.cfg.gatewayReplyUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-standin-timestamp": timestamp,
-        "x-standin-signature": signature,
-      },
-      body,
-      // Re-review P2: an unbounded reply POST wedges the conversation chain exactly like a hung turn.
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!res.ok) {
-      this.deps.log.warn(`msteams managed chat: gateway reply -> HTTP ${res.status}`);
+    const attempts = reply.kind === "typing" ? 1 : ManagedChatServer.REPLY_ATTEMPTS;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      // Fresh signature per attempt: a retry after backoff must not replay a stale timestamp into
+      // the gateway's +/-5min window edge.
+      const { timestamp, signature } = signBridge(this.cfg.chatSecret, body, this.deps.nowMs?.() ?? Date.now());
+      try {
+        const res = await fetchFn(this.cfg.gatewayReplyUrl, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-standin-timestamp": timestamp,
+            "x-standin-signature": signature,
+          },
+          body,
+          // Re-review P2: an unbounded reply POST wedges the conversation chain exactly like a hung turn.
+          signal: AbortSignal.timeout(30_000),
+        });
+        if (res.ok) return;
+        // 5xx/429 are retryable; anything else 4xx is OUR bug (rejected card, bad payload) - retrying
+        // re-sends the same bytes and cannot succeed.
+        this.deps.log.warn(`msteams managed chat: gateway reply -> HTTP ${res.status} (attempt ${attempt}/${attempts})`);
+        if (res.status < 500 && res.status !== 429) return;
+      } catch (err) {
+        this.deps.log.warn(`msteams managed chat: gateway reply failed: ${String(err)} (attempt ${attempt}/${attempts})`);
+      }
+      if (attempt < attempts) await new Promise((r) => setTimeout(r, 1000 * 4 ** (attempt - 1)));
     }
   }
 }
@@ -350,6 +378,9 @@ export function resolveManagedChatConfig(raw: unknown): ManagedChatConfig {
   const c = (raw ?? {}) as Record<string, unknown>;
   const chatSecret = typeof c.chatSecret === "string" ? c.chatSecret : "";
   return {
+    // Review A6: enabled-with-no-secret resolves DISABLED (fail closed) but is flagged so the runtime
+    // can warn at startup - the operator asked for chat and would otherwise get silence.
+    configuredWithoutSecret: c.enabled === true && chatSecret.length === 0,
     enabled: c.enabled === true && chatSecret.length > 0,
     port: Number(c.port ?? 9444),
     bindAddress: typeof c.bindAddress === "string" ? c.bindAddress : undefined,
