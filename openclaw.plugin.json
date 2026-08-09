@@ -1,6 +1,6 @@
 {
   "id": "msteams-voice",
-  "name": "Microsoft Teams Voice (CVI)",
+  "name": "Teams Call by StandIn",
   "description": "Turn a Microsoft Teams call into a real two-way video conversation: the agent sees your camera and screen-share, talks in real time (speech-to-speech or streaming STT to agent to TTS), and appears as a lip-synced avatar. Vision, meeting recap, outbound call-backs, wake-phrase etiquette, HMAC-secured media bridge.",
   "activation": {
     "onStartup": true
@@ -187,9 +187,9 @@
           }
         }
       },
-      "managedChat": {
+      "managedBot": {
         "type": "object",
-        "description": "StandIn managed tier chat lane (agent side of the normalized chat relay). Leave unset for BYO deployments - voice is unaffected either way.",
+        "description": "StandIn Managed Bot connection: StandIn provides the Teams bot, you connect this agent. Paste the chat secret from the StandIn portal; that alone turns the lane on. Leave unset for Bring-Your-Own-Azure-Bot deployments - voice is unaffected either way.",
         "additionalProperties": false,
         "properties": {
           "enabled": {
@@ -219,6 +219,11 @@
             "description": "The StandIn gateway reply endpoint (default https://teams.standin.komaa.com/api/chat/reply)."
           }
         }
+      },
+      "managedChat": {
+        "type": "object",
+        "description": "Deprecated alias for managedBot; still accepted. Prefer managedBot.",
+        "additionalProperties": true
       }
     }
   },
@@ -231,6 +236,10 @@
         },
         {
           "path": "managedChat.chatSecret",
+          "expected": "string"
+        },
+        {
+          "path": "managedBot.chatSecret",
           "expected": "string"
         },
         {

@@ -9,6 +9,8 @@ export interface ResolvedPluginConfig {
   enabled: boolean;
   media: { port: number; bindAddress?: string; path: string; sharedSecret: string };
   /** StandIn managed chat lane (protocol/chat-schema.yaml). Disabled by default; BYO voice is untouched. */
+  /** StandIn Managed Bot connection mode. Chat is one lane of it, hence `managedBot`, not
+   * `managedChat` - the voice lane of the same connection is configured by the fields above. */
   managedChat: ManagedChatConfig;
   outbound?: {
     enabled?: boolean;
@@ -39,7 +41,9 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       // accept. Coerce a non-string to "" so it fails CLOSED (server refuses to start) instead.
       sharedSecret: typeof c.sharedSecret === "string" ? c.sharedSecret : "",
     },
-    managedChat: resolveManagedChatConfig(c.managedChat),
+    // `managedBot` is the name; `managedChat` stays accepted so an early adopter's config keeps
+    // working (pre-1.0, but silently ignoring someone's existing block is not a trade worth making).
+    managedChat: resolveManagedChatConfig(c.managedBot ?? c.managedChat),
     outbound: c.outbound,
     limits: {
       maxConcurrentCalls: Number(c.maxConcurrentCalls ?? 4),

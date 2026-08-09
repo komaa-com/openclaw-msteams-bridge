@@ -48,8 +48,47 @@ Details of each capability follow below.
 
 ## Getting started
 
-This plugin adds **voice and video (CVI)** on top of OpenClaw's Microsoft Teams **chat** channel, so
-set those up first:
+There are two ways to connect this plugin to Teams. Pick one - they differ in who owns the Teams bot.
+
+### StandIn Managed Bot (recommended)
+
+StandIn provides the Teams bot. You install **StandIn** from the Teams Store, connect this agent in
+the StandIn portal, and paste one secret here. **No Azure bot registration, no App ID, no client
+secret, no endpoint configuration** - and chat and voice both arrive over the same connection.
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "msteams-voice": {
+        "config": {
+          "enabled": true,
+          "managedBot": {
+            // The chat secret from the StandIn portal. Pasting it turns the lane on -
+            // there is no separate enable flag to remember.
+            "chatSecret": { "env": "TEAMS_CALL_MANAGED_BOT_CHAT_SECRET" }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Bind address: the chat listener defaults to all interfaces (`0.0.0.0:9444`) because the StandIn
+gateway must reach it. If you reach your agent over a private network (Tailscale, VPN, a reverse
+proxy), set `managedBot.bindAddress` to that interface instead, or firewall the port - the HMAC keeps
+unauthenticated callers out, but an open port is still an open port.
+
+One agent instance serves **one** StandIn connection: the chat secret is a single value, scoped to
+one tenant binding. Serving several tenants means running several instances, each with its own
+secret. Never share one secret across tenants.
+
+### Bring your own Azure bot (advanced)
+
+You own the Microsoft Entra app, the client secret, and the Azure Bot resource. Choose this when you
+need the bot to live entirely inside your own tenant. This plugin then adds **voice and video (CVI)**
+on top of OpenClaw's Microsoft Teams **chat** channel, so set those up first:
 
 1. **Install OpenClaw** using the official docs at
    [docs.openclaw.ai](https://docs.openclaw.ai).

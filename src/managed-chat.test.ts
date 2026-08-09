@@ -122,12 +122,46 @@ describe("reply building", () => {
   });
 });
 
+describe("plugin config path (managedBot lands where the runtime reads it)", () => {
+  it("resolves managedBot through resolvePluginConfig, and still accepts the managedChat alias", async () => {
+    const { resolvePluginConfig } = await import("./plugin-config.js");
+    const viaNew = resolvePluginConfig({ sharedSecret: "v", managedBot: { chatSecret: "k" } });
+    expect(viaNew.managedChat.enabled).toBe(true);
+    expect(viaNew.managedChat.chatSecret).toBe("k");
+
+    const viaAlias = resolvePluginConfig({ sharedSecret: "v", managedChat: { chatSecret: "k" } });
+    expect(viaAlias.managedChat.enabled).toBe(true);
+
+    // managedBot wins when both are present - the alias must not shadow the real name.
+    const both = resolvePluginConfig({
+      sharedSecret: "v",
+      managedBot: { chatSecret: "new" },
+      managedChat: { chatSecret: "old" },
+    });
+    expect(both.managedChat.chatSecret).toBe("new");
+
+    // Unset = off, and the voice config is untouched either way.
+    expect(resolvePluginConfig({ sharedSecret: "v" }).managedChat.enabled).toBe(false);
+  });
+});
+
 describe("config resolution", () => {
   it("fails closed without a string chatSecret, exactly like the voice sharedSecret", () => {
     expect(resolveManagedChatConfig({ enabled: true, chatSecret: "k" }).enabled).toBe(true);
     expect(resolveManagedChatConfig({ enabled: true }).enabled).toBe(false);
     expect(resolveManagedChatConfig({ enabled: true, chatSecret: { env: "UNSET" } }).enabled).toBe(false);
     expect(resolveManagedChatConfig(undefined).enabled).toBe(false);
+  });
+
+  it("treats the SECRET as the switch, and an explicit enabled:false as the override", () => {
+    // Matches the Hermes bridge. Requiring `enabled: true` on top of the secret meant a user who
+    // followed the portal (which hands out a secret, not a flag) got a silently dead chat lane.
+    expect(resolveManagedChatConfig({ chatSecret: "k" }).enabled).toBe(true);
+    expect(resolveManagedChatConfig({ chatSecret: "k", enabled: false }).enabled).toBe(false);
+    // enabled:true with no secret stays OFF but is FLAGGED so the runtime can warn.
+    const bad = resolveManagedChatConfig({ enabled: true });
+    expect(bad.enabled).toBe(false);
+    expect(bad.configuredWithoutSecret).toBe(true);
   });
 
   it("carries sane defaults", () => {

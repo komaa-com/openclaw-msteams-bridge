@@ -379,16 +379,24 @@ function header(req: http.IncomingMessage, name: string): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
-/** Resolve the managed-chat block of the plugin config; disabled unless BOTH secrets of the lane are
- * present (an enabled endpoint without a verifiable key would accept nothing anyway — fail closed). */
+/**
+ * Resolve the managedBot block of the plugin config.
+ *
+ * ACTIVATION (matched with the Hermes bridge, deliberately): the SECRET is the switch.
+ *   - secret present            -> ON. A user who pastes the secret from the StandIn portal is done;
+ *                                  requiring a second `enabled: true` meant the natural onboarding
+ *                                  flow produced a silently dead chat lane.
+ *   - `enabled: false` present  -> OFF, even with a secret. An explicit off must win.
+ *   - `enabled: true`, no secret-> OFF (nothing could verify a request anyway) and FLAGGED, so the
+ *                                  runtime says so at startup instead of going quiet.
+ */
 export function resolveManagedChatConfig(raw: unknown): ManagedChatConfig {
   const c = (raw ?? {}) as Record<string, unknown>;
   const chatSecret = typeof c.chatSecret === "string" ? c.chatSecret : "";
+  const explicitlyOff = c.enabled === false;
   return {
-    // enabled-with-no-secret resolves DISABLED (fail closed) but is flagged so the runtime
-    // can warn at startup - the operator asked for chat and would otherwise get silence.
     configuredWithoutSecret: c.enabled === true && chatSecret.length === 0,
-    enabled: c.enabled === true && chatSecret.length > 0,
+    enabled: chatSecret.length > 0 && !explicitlyOff,
     port: Number(c.port ?? 9444),
     bindAddress: typeof c.bindAddress === "string" ? c.bindAddress : undefined,
     path: typeof c.path === "string" ? c.path : "/managed/chat",

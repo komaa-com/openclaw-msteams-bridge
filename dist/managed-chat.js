@@ -246,9 +246,10 @@ function header(req, name) {
 export function resolveManagedChatConfig(raw) {
     const c = (raw ?? {});
     const chatSecret = typeof c.chatSecret === "string" ? c.chatSecret : "";
+    const explicitlyOff = c.enabled === false;
     return {
         configuredWithoutSecret: c.enabled === true && chatSecret.length === 0,
-        enabled: c.enabled === true && chatSecret.length > 0,
+        enabled: chatSecret.length > 0 && !explicitlyOff,
         port: Number(c.port ?? 9444),
         bindAddress: typeof c.bindAddress === "string" ? c.bindAddress : undefined,
         path: typeof c.path === "string" ? c.path : "/managed/chat",

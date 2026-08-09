@@ -10,7 +10,7 @@ export function resolvePluginConfig(rawInput) {
             path: String(c.path ?? "/voice/msteams/stream"),
             sharedSecret: typeof c.sharedSecret === "string" ? c.sharedSecret : "",
         },
-        managedChat: resolveManagedChatConfig(c.managedChat),
+        managedChat: resolveManagedChatConfig(c.managedBot ?? c.managedChat),
         outbound: c.outbound,
         limits: {
             maxConcurrentCalls: Number(c.maxConcurrentCalls ?? 4),
