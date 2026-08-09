@@ -2,7 +2,6 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 export const REPLAY_WINDOW_MS = 300_000;
 export const SCHEMA_VERSION = 1;
-export const LEGACY_MESSAGES_PATH = "/managed/chat";
 export function signBridge(secret, body, nowMs = Date.now()) {
     const timestamp = String(nowMs);
     return { timestamp, signature: computeBridgeSignature(secret, timestamp, body) };
@@ -135,9 +134,7 @@ export class ManagedChatServer {
             await new Promise((resolve) => server.close(() => resolve()));
     }
     async handle(req, res) {
-        const requestPath = (req.url ?? "").split("?")[0];
-        const servedPaths = [this.cfg.path, LEGACY_MESSAGES_PATH];
-        if (req.method !== "POST" || !servedPaths.includes(requestPath)) {
+        if (req.method !== "POST" || (req.url ?? "").split("?")[0] !== this.cfg.path) {
             res.writeHead(404).end();
             return;
         }
