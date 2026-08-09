@@ -68,6 +68,13 @@ export const SessionStartSchema = z.object({
    * Lets the plugin correlate calls it initiated. Defaults to inbound when absent.
    */
   direction: CallDirectionSchema.optional(),
+  /**
+   * MANAGED only: the Microsoft tenant this call belongs to, so the plugin can post chat through
+   * the gateway during the call. Taken from the SIGNED route-grant scope, never a caller-supplied
+   * field - the plugin authorizes a chat send with it. Absent on BYO/free (one tenant, no gateway
+   * to post through).
+   */
+  tenantId: z.string().optional(),
 });
 
 /**
