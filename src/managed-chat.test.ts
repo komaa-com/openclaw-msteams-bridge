@@ -123,6 +123,21 @@ describe("reply building", () => {
 });
 
 describe("plugin config path (managedBot lands where the runtime reads it)", () => {
+  it("ONE `secret` fills both lanes; sharedSecret alone never opens the chat lane", async () => {
+    const { resolvePluginConfig } = await import("./plugin-config.js");
+    const one = resolvePluginConfig({ secret: "ONE" });
+    expect(one.media.sharedSecret).toBe("ONE");
+    expect(one.managedChat.enabled).toBe(true);
+    expect(one.managedChat.chatSecret).toBe("ONE");
+    // per-lane override wins
+    const ovr = resolvePluginConfig({ secret: "ONE", messagesSecret: "OVR" });
+    expect(ovr.managedChat.chatSecret).toBe("OVR");
+    // a voice-only deployment (sharedSecret, no secret) must NOT grow a chat listener on upgrade
+    const voiceOnly = resolvePluginConfig({ sharedSecret: "V" });
+    expect(voiceOnly.media.sharedSecret).toBe("V");
+    expect(voiceOnly.managedChat.enabled).toBe(false);
+  });
+
   it("resolves managedBot through resolvePluginConfig, and still accepts the managedChat alias", async () => {
     const { resolvePluginConfig } = await import("./plugin-config.js");
     const viaNew = resolvePluginConfig({ sharedSecret: "v", managedBot: { chatSecret: "k" } });

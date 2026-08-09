@@ -8,9 +8,14 @@ export function resolvePluginConfig(rawInput) {
             port: Number(c.port ?? 9442),
             bindAddress: c.bindAddress,
             path: String(c.path ?? "/voice/msteams/stream"),
-            sharedSecret: typeof c.sharedSecret === "string" ? c.sharedSecret : "",
+            sharedSecret: typeof c.sharedSecret === "string" && c.sharedSecret
+                ? c.sharedSecret
+                : typeof c.secret === "string"
+                    ? c.secret
+                    : "",
         },
-        managedChat: resolveManagedChatConfig(c.messagesSecret ? { chatSecret: c.messagesSecret, ...(c.managedBot ?? c.managedChat ?? {}) }
+        managedChat: resolveManagedChatConfig((c.messagesSecret ?? c.secret)
+            ? { chatSecret: c.messagesSecret ?? c.secret, ...(c.managedBot ?? c.managedChat ?? {}) }
             : (c.managedBot ?? c.managedChat)),
         outbound: c.outbound,
         limits: {

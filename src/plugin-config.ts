@@ -39,15 +39,24 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       // ever passes an UNRESOLVED object (e.g. an env descriptor whose var is unset), String({}) would yield the
       // literal "[object Object]" — a non-empty, guessable secret that the fail-closed check in index.ts would
       // accept. Coerce a non-string to "" so it fails CLOSED (server refuses to start) instead.
-      sharedSecret: typeof c.sharedSecret === "string" ? c.sharedSecret : "",
+      sharedSecret:
+        typeof c.sharedSecret === "string" && c.sharedSecret
+          ? c.sharedSecret
+          : typeof c.secret === "string"
+            ? c.secret
+            : "",
     },
     // `managedBot` is the name; `managedChat` stays accepted so an early adopter's config keeps
     // working (pre-1.0, but silently ignoring someone's existing block is not a trade worth making).
-    // `messagesSecret` pairs with the calling lane's `sharedSecret`; managedBot/managedChat blocks and
-    // `chatSecret` stay accepted so a deployed config keeps working.
+    // ONE secret serves both lanes (owner decision): `secret` fills sharedSecret AND the messages
+    // lane, so the portal hands out a single value and the user pastes it once. Per-lane keys
+    // (sharedSecret / messagesSecret) remain as overrides. Deliberately a NEW key rather than a
+    // fallback from sharedSecret - that would silently open the chat listener on every existing
+    // voice-only deployment at upgrade.
     managedChat: resolveManagedChatConfig(
-      c.messagesSecret ? { chatSecret: c.messagesSecret, ...(c.managedBot ?? c.managedChat ?? {}) }
-                       : (c.managedBot ?? c.managedChat),
+      (c.messagesSecret ?? c.secret)
+        ? { chatSecret: c.messagesSecret ?? c.secret, ...(c.managedBot ?? c.managedChat ?? {}) }
+        : (c.managedBot ?? c.managedChat),
     ),
     outbound: c.outbound,
     limits: {
