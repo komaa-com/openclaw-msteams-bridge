@@ -225,7 +225,13 @@ export class MsteamsVoiceRuntime {
           : `[attachment ${a.kind}: ${a.name ?? "unnamed"} at ${a.url}]`,
       )
       .join("\n");
-    const question = [message.text, attachmentNote].filter(Boolean).join("\n");
+    // Card submits arrive with EMPTY text and the payload in cardAction (protocol v1 additive field):
+    // fold the payload into the question so a button press is a meaningful turn, not "I didn't catch
+    // that". The agent authored the card, so its own field names give the payload meaning.
+    const cardActionNote = message.cardAction
+      ? `[card button pressed - submit payload: ${JSON.stringify(message.cardAction)}]`
+      : "";
+    const question = [message.text, cardActionNote, attachmentNote].filter(Boolean).join("\n");
     // 4.7's agent-side leg: fetch relayable images from their gateway-signed URLs into the consult, so
     // the agent SEES a pasted screenshot instead of reading a URL it cannot open (best-effort; the
     // text names every attachment either way).

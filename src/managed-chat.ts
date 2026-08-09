@@ -42,6 +42,8 @@ export interface ManagedInbound {
   sender: { aadObjectId?: string; displayName?: string; isGuest?: boolean; isLinkedOwner?: boolean };
   attachments?: Array<{ kind: string; name?: string; url?: string; relayable?: boolean }>;
   locale?: string;
+  /** Submit payload of an agent card's Action.Submit (additive v1; text is empty on these). */
+  cardAction?: Record<string, unknown>;
 }
 
 // ── bridge HMAC (identical construction to @standin/bridge-hmac; KAT-pinned in the tests) ─────────
@@ -103,6 +105,10 @@ export function parseInbound(body: string): { ok: true; message: ManagedInbound 
       sender,
       attachments: Array.isArray(m.attachments) ? (m.attachments as ManagedInbound["attachments"]) : undefined,
       locale: typeof m.locale === "string" ? m.locale : undefined,
+      // Additive v1 field (protocol sync, go-live pass): the submit payload of an agent card's
+      // Action.Submit button. text is EMPTY on these messages - without carrying the payload through,
+      // a button press became an empty agent turn ("I didn't catch that").
+      cardAction: typeof m.cardAction === "object" && m.cardAction !== null ? (m.cardAction as Record<string, unknown>) : undefined,
     },
   };
 }
@@ -270,7 +276,8 @@ export class ManagedChatServer {
 
     // ACK FIRST (the gateway's relay window is short; agent latency is not) — then process async.
     // A redelivered activity ACKs and does nothing: the first delivery's turn is already running.
-    const fresh = this.seen.markFirst(parsed.message.activityId);
+    const fresh = this.seen.markFirst(
+      `${parsed.message.tenantId}:${parsed.message.conversationId}:${parsed.message.activityId}`);
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
     if (!fresh) return;
 

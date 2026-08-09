@@ -144,7 +144,10 @@ export class MsteamsVoiceRuntime {
             ? `[attachment not relayed: ${a.name ?? a.kind}]`
             : `[attachment ${a.kind}: ${a.name ?? "unnamed"} at ${a.url}]`)
             .join("\n");
-        const question = [message.text, attachmentNote].filter(Boolean).join("\n");
+        const cardActionNote = message.cardAction
+            ? `[card button pressed - submit payload: ${JSON.stringify(message.cardAction)}]`
+            : "";
+        const question = [message.text, cardActionNote, attachmentNote].filter(Boolean).join("\n");
         const images = await fetchAttachmentImages(message.attachments);
         if (images.length) {
             this.log.info(`[msteams-chat] attaching ${images.length} image(s) to the consult (ignored by hosts without consult image support)`);

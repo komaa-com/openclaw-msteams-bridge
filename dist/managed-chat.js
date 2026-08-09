@@ -49,6 +49,7 @@ export function parseInbound(body) {
             sender,
             attachments: Array.isArray(m.attachments) ? m.attachments : undefined,
             locale: typeof m.locale === "string" ? m.locale : undefined,
+            cardAction: typeof m.cardAction === "object" && m.cardAction !== null ? m.cardAction : undefined,
         },
     };
 }
@@ -166,7 +167,7 @@ export class ManagedChatServer {
             res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: parsed.error }));
             return;
         }
-        const fresh = this.seen.markFirst(parsed.message.activityId);
+        const fresh = this.seen.markFirst(`${parsed.message.tenantId}:${parsed.message.conversationId}:${parsed.message.activityId}`);
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
         if (!fresh)
             return;
