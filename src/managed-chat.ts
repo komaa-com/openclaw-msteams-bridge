@@ -18,6 +18,9 @@ export const REPLAY_WINDOW_MS = 300_000;
 /** Value carried in every message's schemaVersion (chat-schema.yaml SCHEMA_VERSION). */
 export const SCHEMA_VERSION = 1;
 
+/** The path this lane served before the /msteams/messages rename; still accepted. */
+export const LEGACY_MESSAGES_PATH = "/managed/chat";
+
 export interface ManagedChatConfig {
   enabled: boolean;
   /** enabled:true with no chatSecret - resolved disabled, but the runtime warns loudly. */
@@ -236,7 +239,11 @@ export class ManagedChatServer {
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    if (req.method !== "POST" || (req.url ?? "").split("?")[0] !== this.cfg.path) {
+    // Accept the pre-rename path too: an agent deployed before /msteams/messages was the default is
+    // still addressed at /managed/chat by its StandIn connection, and an upgrade must not 404 it.
+    const requestPath = (req.url ?? "").split("?")[0];
+    const servedPaths = [this.cfg.path, LEGACY_MESSAGES_PATH];
+    if (req.method !== "POST" || !servedPaths.includes(requestPath)) {
       res.writeHead(404).end();
       return;
     }

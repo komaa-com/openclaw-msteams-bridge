@@ -296,7 +296,7 @@ describe("the server end to end", () => {
     let consulted = 0;
     const { port } = await startServer({ respond: async () => { consulted++; return "x"; } });
     expect((await post(port, inbound, false)).status).toBe(401);
-    const bad = await fetch(`http://127.0.0.1:${port}/managed/chat`, {
+    const bad = await fetch(`http://127.0.0.1:${port}/msteams/messages`, {
       method: "POST",
       headers: { "x-standin-timestamp": String(Date.now()), "x-standin-signature": "deadbeef" },
       body: inbound,
