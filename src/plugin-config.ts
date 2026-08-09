@@ -43,7 +43,12 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
     },
     // `managedBot` is the name; `managedChat` stays accepted so an early adopter's config keeps
     // working (pre-1.0, but silently ignoring someone's existing block is not a trade worth making).
-    managedChat: resolveManagedChatConfig(c.managedBot ?? c.managedChat),
+    // `messagesSecret` pairs with the calling lane's `sharedSecret`; managedBot/managedChat blocks and
+    // `chatSecret` stay accepted so a deployed config keeps working.
+    managedChat: resolveManagedChatConfig(
+      c.messagesSecret ? { chatSecret: c.messagesSecret, ...(c.managedBot ?? c.managedChat ?? {}) }
+                       : (c.managedBot ?? c.managedChat),
+    ),
     outbound: c.outbound,
     limits: {
       maxConcurrentCalls: Number(c.maxConcurrentCalls ?? 4),

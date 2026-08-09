@@ -167,7 +167,7 @@ describe("config resolution", () => {
   it("carries sane defaults", () => {
     const cfg = resolveManagedChatConfig({ enabled: true, chatSecret: "k" });
     expect(cfg.port).toBe(9444);
-    expect(cfg.path).toBe("/managed/chat");
+    expect(cfg.path).toBe("/msteams/messages");
     expect(cfg.gatewayReplyUrl).toContain("/api/chat/reply");
   });
 });
@@ -238,7 +238,7 @@ describe("the server end to end", () => {
     const replyDone = new Promise<void>((r) => { resolveReplyDone = r; });
     const port = 19_444 + Math.floor(Math.random() * 1000);
     const cfg = {
-      enabled: true, port, bindAddress: "127.0.0.1", path: "/managed/chat",
+      enabled: true, port, bindAddress: "127.0.0.1", path: "/msteams/messages",
       chatSecret: KAT_SECRET, gatewayReplyUrl: "https://gateway.test/api/chat/reply",
     };
     server = new ManagedChatServer(cfg, {
@@ -260,7 +260,7 @@ describe("the server end to end", () => {
     return { port, replies, replyDone };
   }
 
-  function post(port: number, body: string, sign = true, path = "/managed/chat") {
+  function post(port: number, body: string, sign = true, path = "/msteams/messages") {
     const { timestamp, signature } = signBridge(KAT_SECRET, body);
     return fetch(`http://127.0.0.1:${port}${path}`, {
       method: "POST",

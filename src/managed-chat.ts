@@ -399,7 +399,7 @@ export function resolveManagedChatConfig(raw: unknown): ManagedChatConfig {
     enabled: chatSecret.length > 0 && !explicitlyOff,
     port: Number(c.port ?? 9444),
     bindAddress: typeof c.bindAddress === "string" ? c.bindAddress : undefined,
-    path: typeof c.path === "string" ? c.path : "/managed/chat",
+    path: typeof c.path === "string" ? c.path : "/msteams/messages",
     chatSecret,
     gatewayReplyUrl:
       typeof c.gatewayReplyUrl === "string" && c.gatewayReplyUrl.length > 0
