@@ -42,10 +42,39 @@ like an inbound call.
 
 ## No answer, voicemail, and cancel
 
-- If no one answers within `answerTimeoutMs`, the attempt is finalized as **no-answer / voicemail**.
+- The StandIn worker reports the **real** terminal state as soon as it knows it, so a declined or busy
+  call finalizes immediately instead of waiting out `answerTimeoutMs`. See the outcome callback below.
+- If no outcome arrives, the attempt is finalized as **no-answer / voicemail** when `answerTimeoutMs`
+  expires. That timer is the fallback, not the primary path.
 - The plugin also best-effort **cancels the ringing** call so a late pickup does not strand the callee
   in a dead call.
 - A **late answer** (after the timeout) is declined cleanly.
+
+### The outcome callback
+
+StandIn POSTs the terminal state of a call you placed to the calling lane:
+
+```
+POST {calling path}/outcome/{callId}
+X-StandIn-Timestamp: <ms epoch>
+X-StandIn-Signature: HMAC-SHA256(secret, "{ts}.{callId}")
+
+{"outcome": "declined"}
+```
+
+- **Path**: under the calling prefix (default `/msteams/calling/outcome/{callId}`), because a tunnel
+  usually forwards only that prefix. No extra port or route to open.
+- **Auth**: the same HMAC contract as the WebSocket upgrade, over the **callId** - so a signature
+  captured for one call cannot be replayed against another, and the timestamp must be inside the
+  replay window.
+- **Body**: `outcome` is one of `answered`, `no-answer`, `declined`, `busy`, `failed`. `answered` is a
+  no-op: the media socket attaches and the call proceeds normally.
+- **Responses**: `200 {"ok": true}`; `401` on a bad signature or a stale timestamp; `400` on a
+  malformed body; `404` on any other path.
+
+Nothing to configure - the route is served whenever the calling lane is. Before this existed the
+plugin learned only "no answer", and only after its own timeout, so a declined call and an unanswered
+one were indistinguishable.
 
 ## Modes
 

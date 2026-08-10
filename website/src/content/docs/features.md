@@ -81,6 +81,12 @@ Exposed to the realtime voice agent, governed by `realtime.toolPolicy`
   mid-call.
 - **`.docx` minutes** - generated with per-person attribution.
 
+  On a StandIn **managed** connection the minutes are posted through the gateway as text: that hop
+  carries text and cards, not files, so the Word document is not attached and the message says so.
+  Bring-your-own-bot deployments post through your own Teams bot and still get the `.docx`. Background
+  task results take the same route for the same reason - a managed connection has no customer bot
+  credentials to send with, so before this they simply had nowhere to be delivered.
+
 ## Outbound call-backs
 
 Place a call, speak a result (`notify`) or hold a conversation (`conversation`), and hang up - with

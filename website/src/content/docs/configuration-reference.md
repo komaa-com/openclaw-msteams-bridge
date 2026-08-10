@@ -20,7 +20,7 @@ check these two first. See [Troubleshooting](/openclaw-msteams-bridge/troublesho
 |---|---|---|---|
 | `enabled` | bool | `true` | Master on/off. |
 | `port` | int (1-65535) | `9442` | WebSocket server port. |
-| `bindAddress` | string | `127.0.0.1` | Bind address. Use `0.0.0.0` so the hosted StandIn bridge can connect. |
+| `bindAddress` | string | `127.0.0.1` | Bind address for BOTH lanes. Loopback by default: the documented posture is a tunnel that terminates TLS publicly and proxies to loopback, so no port is exposed on your LAN. Use `0.0.0.0` only if the hosted bridge reaches the plugin directly. `messagesBindAddress` overrides the messages lane alone. |
 | `path` | string | `/msteams/calling` | WebSocket route; StandIn connects to `{path}/{callId}`. |
 | `sharedSecret` | string \| secret-ref | - | HMAC secret; **must match StandIn**. Fails closed - a non-string coerces to empty and rejects all handshakes. |
 | `requireRecordingStatus` | bool | `true` | Hold media processing until Teams reports recording is active. |
@@ -33,7 +33,7 @@ check these two first. See [Troubleshooting](/openclaw-msteams-bridge/troublesho
 | `maxDurationSeconds` | int | `0` (unlimited) | Hard cap on a single answered call's duration. |
 | `staleCallReaperSeconds` | int | `120` | Tear down calls that stop being serviced after this long. |
 | `maxVisionPerMinute` | int | - | Per-call vision spend cap. |
-| `meetingRecap` | bool | - | Post an end-of-call recap / minutes. |
+| `meetingRecap` | bool | - | Post an end-of-call recap / minutes. On a StandIn **managed** connection the minutes go through the gateway as TEXT: the reply protocol carries text and cards, not files, so the Word document is not attached (the message says so). Bring-your-own-bot deployments still get the `.docx`. |
 | `bilingual` | bool | - | Enable English/Arabic handling. |
 
 ## Managed Bot (the messages lane)
@@ -47,7 +47,7 @@ Set on the StandIn Managed Bot path. `secret` alone is enough; the rest are over
 | `messagesSecret` | Per-lane override for MESSAGES only |
 | `messagesPort` / `messagesPath` | Where the messages lane listens (default `9444`, `/msteams/messages`) |
 | `callingPort` / `path` | Where the calling lane listens (default `9442`, `/msteams/calling`). `port` is the older name for `callingPort` |
-| `gatewayReplyUrl` | Where replies are posted (default `https://teams.standin.komaa.com/api/chat/reply`); override only for a self-hosted StandIn |
+| `gatewayReplyUrl` | Where replies are posted (default `https://teams.standin.komaa.com/api/chat/reply`); override only for a self-hosted StandIn. Flat, like the other messages-lane keys - `managedBot.gatewayReplyUrl` is still read as the compatibility shape, and the flat key wins |
 
 The messages lane is enabled by the PRESENCE of a secret - there is no enable flag to remember. The
 `managedBot` block is still read as a compatibility shape for configs written before these flat keys.
@@ -114,10 +114,14 @@ These accept a literal string or an OpenClaw secret reference: `sharedSecret`,
         "config": {
           "enabled": true,
           "mode": "realtime",
-          "bindAddress": "0.0.0.0",
-          "port": 9442,
+          // Loopback + a tunnel is the documented posture; 0.0.0.0 only if StandIn reaches you directly.
+          "bindAddress": "127.0.0.1",
+          "callingPort": 9442,
+          "messagesPort": 9444,
           "path": "/msteams/calling",
-          "sharedSecret": "<same secret as in StandIn>",
+          // ONE connection secret from the StandIn portal, covering calling AND messages. BYO
+          // deployments set "sharedSecret" (calling only) instead.
+          "secret": "<the connection secret from StandIn>",
           "requireRecordingStatus": true,
           "inboundPolicy": "allowlist",
           "allowFrom": ["<caller AAD object id>"],
