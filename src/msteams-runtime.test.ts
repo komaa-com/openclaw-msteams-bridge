@@ -53,6 +53,46 @@ describe("MsteamsVoiceRuntime", () => {
     expect(() => new MsteamsVoiceRuntime(api, cfg)).not.toThrow();
   });
 
+  // The global post_chat_message tool resolves through postableCalls. That map was written only by the
+  // REALTIME path, so in streaming mode - the mode that needs the global tool, because it has no tool
+  // dispatch of its own - the tool was offered and answered "there is no active Teams call" every time.
+  // Registration moved to trackManagedCall, which runs for both modes.
+  it("registers a postable call in STREAMING mode, not only realtime", () => {
+    const api = fakeApi();
+    api.pluginConfig = {
+      ...api.pluginConfig,
+      mode: "streaming",
+      secret: "s3cret",
+      messagesPort: 0,
+      managedBot: { gatewayReplyUrl: "https://gw.example.com/api/chat/reply" },
+    };
+    const cfg = resolvePluginConfig(api.pluginConfig);
+    const runtime = new MsteamsVoiceRuntime(api, cfg) as unknown as {
+      trackManagedCall: (s: unknown, add: boolean) => void;
+      resolvePostableCall: () => { post?: unknown; error?: string };
+    };
+    const session = { callId: "call-1", threadId: "19:meeting@thread.v2", tenantId: "tenant-1" };
+
+    expect(runtime.resolvePostableCall().error).toBeTruthy();   // nothing live yet
+    runtime.trackManagedCall(session, true);
+    expect(runtime.resolvePostableCall().post).toBeTypeOf("function");
+    runtime.trackManagedCall(session, false);
+    expect(runtime.resolvePostableCall().error).toBeTruthy();   // and cleaned up on teardown
+  });
+
+  it("does not offer the tool for a 1:1 call, which has no chat thread", () => {
+    const api = fakeApi();
+    api.pluginConfig = { ...api.pluginConfig, secret: "s3cret", managedBot: { gatewayReplyUrl: "https://gw/x" } };
+    const cfg = resolvePluginConfig(api.pluginConfig);
+    const runtime = new MsteamsVoiceRuntime(api, cfg) as unknown as {
+      trackManagedCall: (s: unknown, add: boolean) => void;
+      resolvePostableCall: () => { post?: unknown; error?: string };
+    };
+    // The worker falls back to threadId = callId on a 1:1 call; Teams cannot address that.
+    runtime.trackManagedCall({ callId: "c2", threadId: "c2", tenantId: "tenant-1" }, true);
+    expect(runtime.resolvePostableCall().error).toBeTruthy();
+  });
+
   it("treats enabled:false as disabled", () => {
     const cfg = resolvePluginConfig({ enabled: false });
     expect(cfg.enabled).toBe(false);

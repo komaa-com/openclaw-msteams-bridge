@@ -630,12 +630,21 @@ export class MsteamsVoiceRuntime {
     const key = this.streamingSessionKey(session);
     if (add) {
       this.managedCallBySession.set(key, { tenantId, conversationId: session.threadId });
+      // ALSO register the poster the global tool resolves through. It used to be registered only by
+      // buildChatPoster, which runs on the realtime path alone - so in STREAMING mode the tool was
+      // offered and could never work: postableCalls was empty, and every call came back "there is no
+      // active Teams call with a chat to post into". Streaming is the mode that NEEDS the global tool,
+      // because it has no tool dispatch of its own. Registering here covers both modes, from the one
+      // place that already runs for both.
+      const poster = this.buildChatPoster(session);
+      if (poster) this.postableCalls.set(session.callId, { conversationId: session.threadId, post: poster });
       // Remember the key BY CALL ID: sessionScope can make the key per-thread or per-AAD, so it is not
       // derivable from a call id alone at teardown, and a stale entry would let a later consult in the
       // same scope post into a call that has ended.
       this.sessionKeyByCall.set(session.callId, key);
     } else {
       this.managedCallBySession.delete(key);
+      this.postableCalls.delete(session.callId);
     }
   }
 
@@ -658,8 +667,8 @@ export class MsteamsVoiceRuntime {
         // genuinely different posts in one call both go out.
         idempotencyKey: `call-${session.callId}-${createHash("sha256").update(text).digest("hex").slice(0, 12)}`,
       });
-    // Registered for the STREAMING path, whose agent reaches this through a global OpenClaw tool.
-    this.postableCalls.set(session.callId, { conversationId: session.threadId, post: poster });
+    // Registration into postableCalls lives in trackManagedCall, which runs for BOTH modes. Doing it
+    // here meant the global tool only ever saw realtime calls.
     return poster;
   }
 
