@@ -287,9 +287,10 @@ export class ManagedChatServer {
     }
     static TURN_TIMEOUT_MS = 5 * 60 * 1000;
     async processAsync(message) {
-        await this.postReply(buildReply(message, "", "typing")).catch(() => undefined);
+        const typing = this.postReply(buildReply(message, "", "typing")).catch(() => undefined);
         try {
             const text = await withTimeout(this.deps.respond(message), ManagedChatServer.TURN_TIMEOUT_MS, "agent turn");
+            await typing;
             if (text.trim().length > 0) {
                 await this.postReply(buildReply(message, text));
             }
@@ -311,6 +312,8 @@ export class ManagedChatServer {
         const fetchFn = this.deps.fetchFn ?? fetch;
         const attempts = reply.kind === "typing" ? 1 : ManagedChatServer.REPLY_ATTEMPTS;
         for (let attempt = 1; attempt <= attempts; attempt++) {
+            if (this.stopped)
+                return;
             const { timestamp, signature } = signBridge(this.cfg.chatSecret, body, this.deps.nowMs?.() ?? Date.now());
             try {
                 const res = await fetchFn(this.cfg.gatewayReplyUrl, {
@@ -355,7 +358,7 @@ export function resolveManagedChatConfig(raw) {
         configuredWithoutSecret: c.enabled === true && chatSecret.length === 0,
         enabled: chatSecret.length > 0 && !explicitlyOff,
         port: Number(c.port ?? 9444),
-        bindAddress: typeof c.bindAddress === "string" ? c.bindAddress : undefined,
+        bindAddress: typeof c.bindAddress === "string" ? c.bindAddress : "127.0.0.1",
         path: typeof c.path === "string" ? c.path : "/msteams/messages",
         chatSecret,
         gatewayReplyUrl: typeof c.gatewayReplyUrl === "string" && c.gatewayReplyUrl.length > 0

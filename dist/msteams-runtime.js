@@ -417,10 +417,14 @@ export class MsteamsVoiceRuntime {
         const key = this.streamingSessionKey(session);
         if (add) {
             this.managedCallBySession.set(key, { tenantId, conversationId: session.threadId });
+            const poster = this.buildChatPoster(session);
+            if (poster)
+                this.postableCalls.set(session.callId, { conversationId: session.threadId, post: poster });
             this.sessionKeyByCall.set(session.callId, key);
         }
         else {
             this.managedCallBySession.delete(key);
+            this.postableCalls.delete(session.callId);
         }
     }
     buildChatPoster(session) {
@@ -438,7 +442,6 @@ export class MsteamsVoiceRuntime {
             text,
             idempotencyKey: `call-${session.callId}-${createHash("sha256").update(text).digest("hex").slice(0, 12)}`,
         });
-        this.postableCalls.set(session.callId, { conversationId: session.threadId, post: poster });
         return poster;
     }
     resolvePostableCall() {
