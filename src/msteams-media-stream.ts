@@ -270,9 +270,26 @@ export class MsteamsMediaStream {
         res.writeHead(401).end();
         return;
       }
+      const raw = Buffer.concat(chunks);
+      // v1 signs the callId alone, so the outcome WORD - the only thing this request carries - rides
+      // unsigned. When the sender offers v2 it covers method, path and a hash of the body, and a
+      // present v2 MUST verify: falling back after a failed one would hand an attacker a downgrade.
+      const sigV2 = String(req.headers["x-standin-signature-v2"] ?? "");
+      if (sigV2) {
+        const bodyHash = crypto.createHash("sha256").update(raw).digest("hex");
+        const canonical = `POST\n${(url.split("?")[0] ?? "")}\n${bodyHash}`;
+        const expectedV2 = crypto
+          .createHmac("sha256", this.config.sharedSecret)
+          .update(`${tsNum}.${canonical}`)
+          .digest("hex");
+        if (!safeEqualSecret(sigV2.trim().toLowerCase(), expectedV2)) {
+          res.writeHead(401).end();
+          return;
+        }
+      }
       let outcome = "";
       try {
-        outcome = String((JSON.parse(Buffer.concat(chunks).toString("utf8")) as { outcome?: unknown })?.outcome ?? "");
+        outcome = String((JSON.parse(raw.toString("utf8")) as { outcome?: unknown })?.outcome ?? "");
       } catch {
         res.writeHead(400).end();
         return;

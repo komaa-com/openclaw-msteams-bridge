@@ -1127,7 +1127,42 @@ describe("worker call-outcome route", () => {
         "x-standin-signature": sign("call-1", ts),
       })).toBe(401);
 
-      expect(seen).toHaveLength(1);
+      // v2 covers the BODY, which v1 does not - so a tampered outcome word must be refused, and a
+      // correct v2 must still pass.
+      const canonical = (body: string, callId: string) =>
+        `POST\n${OUTCOME_PATH(callId)}\n${crypto.createHash("sha256").update(body).digest("hex")}`;
+      const signV2 = (body: string, callId: string, ts: number) =>
+        crypto.createHmac("sha256", SECRET).update(`${ts}.${canonical(body, callId)}`).digest("hex");
+
+      const ts2 = Date.now();
+      const good = JSON.stringify({ outcome: "busy" });
+      const res = await fetch(`http://127.0.0.1:${port}${OUTCOME_PATH("call-5")}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-standin-timestamp": String(ts2),
+          "x-standin-signature": sign("call-5", ts2),
+          "x-standin-signature-v2": signV2(good, "call-5", ts2),
+        },
+        body: good,
+      });
+      expect(res.status).toBe(200);
+      expect(seen).toHaveLength(2);
+
+      // Same v1 signature (it only covers the callId), body swapped: v1 alone cannot tell, v2 can.
+      const tampered = await fetch(`http://127.0.0.1:${port}${OUTCOME_PATH("call-6")}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-standin-timestamp": String(ts2),
+          "x-standin-signature": sign("call-6", ts2),
+          "x-standin-signature-v2": signV2(JSON.stringify({ outcome: "busy" }), "call-6", ts2),
+        },
+        body: JSON.stringify({ outcome: "failed" }),
+      });
+      expect(tampered.status).toBe(401);
+
+      expect(seen).toHaveLength(2);
     } finally {
       await server.stop();
     }
