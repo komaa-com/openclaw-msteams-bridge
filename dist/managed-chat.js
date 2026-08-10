@@ -85,26 +85,97 @@ export function buildReply(inbound, text, kind = "message") {
 export async function fetchAttachmentImages(attachments, opts) {
     const fetchFn = opts?.fetchFn ?? fetch;
     const maxBytes = opts?.maxBytes ?? 4 * 1024 * 1024;
+    const maxImages = opts?.maxImages ?? 4;
     const images = [];
     for (const a of attachments ?? []) {
+        if (images.length >= maxImages)
+            break;
         if (a.kind !== "image" || a.relayable === false || !a.url)
+            continue;
+        if (!originAllowed(a.url, opts?.gatewayOrigin))
             continue;
         try {
             const res = await fetchFn(a.url, { signal: AbortSignal.timeout(10_000), redirect: "error" });
             if (!res.ok)
                 continue;
-            const buf = Buffer.from(await res.arrayBuffer());
-            if (buf.length === 0 || buf.length > maxBytes)
+            const mime = String(a.contentType ?? res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+            if (!mime.startsWith("image/"))
                 continue;
-            const mime = a.contentType
-                ?? res.headers.get("content-type")
-                ?? "image/png";
+            const declared = Number(res.headers.get("content-length"));
+            if (Number.isFinite(declared) && declared > maxBytes)
+                continue;
+            const buf = await readCapped(res, maxBytes);
+            if (!buf || buf.length === 0)
+                continue;
             images.push({ type: "image", data: buf.toString("base64"), mimeType: mime });
         }
         catch {
         }
     }
     return images;
+}
+function originAllowed(url, gatewayOrigin) {
+    if (!gatewayOrigin)
+        return true;
+    try {
+        return new URL(url).origin === new URL(gatewayOrigin).origin;
+    }
+    catch {
+        return false;
+    }
+}
+async function readCapped(res, maxBytes) {
+    const body = res.body;
+    if (!body)
+        return null;
+    const reader = body.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done)
+                break;
+            if (!value)
+                continue;
+            total += value.byteLength;
+            if (total > maxBytes) {
+                await reader.cancel().catch(() => undefined);
+                return null;
+            }
+            chunks.push(value);
+        }
+    }
+    finally {
+        reader.releaseLock?.();
+    }
+    return Buffer.concat(chunks.map((c) => Buffer.from(c)), total);
+}
+export async function postManagedMessage(opts) {
+    const body = JSON.stringify({
+        tenantId: opts.tenantId,
+        conversationId: opts.conversationId,
+        text: opts.text,
+        kind: "message",
+        ...(opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}),
+    });
+    const { timestamp, signature } = signBridge(opts.chatSecret, body);
+    try {
+        const res = await (opts.fetchFn ?? fetch)(opts.gatewayReplyUrl, {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "x-standin-timestamp": timestamp,
+                "x-standin-signature": signature,
+            },
+            body,
+            signal: AbortSignal.timeout(20_000),
+        });
+        return res.ok;
+    }
+    catch {
+        return false;
+    }
 }
 export class ManagedChatServer {
     cfg;
@@ -118,7 +189,15 @@ export class ManagedChatServer {
     }
     async start() {
         const server = http.createServer((req, res) => {
-            void this.handle(req, res);
+            void this.handle(req, res).catch((err) => {
+                void err;
+                try {
+                    if (!res.headersSent)
+                        res.writeHead(400).end();
+                }
+                catch {
+                }
+            });
         });
         this.server = server;
         await new Promise((resolve, reject) => {
@@ -127,12 +206,23 @@ export class ManagedChatServer {
         });
         this.deps.log.info(`msteams managed chat: listening on ${this.cfg.bindAddress ?? "0.0.0.0"}:${this.cfg.port}${this.cfg.path}`);
     }
+    stopped = false;
     async stop() {
+        this.stopped = true;
         const server = this.server;
         this.server = undefined;
         if (server)
             await new Promise((resolve) => server.close(() => resolve()));
+        const inflight = [...this.chains.values()];
+        if (inflight.length > 0) {
+            await Promise.race([
+                Promise.allSettled(inflight),
+                new Promise((resolve) => setTimeout(resolve, ManagedChatServer.DRAIN_MS).unref?.()),
+            ]);
+        }
+        this.chains.clear();
     }
+    static DRAIN_MS = 5000;
     async handle(req, res) {
         if (req.method !== "POST" || (req.url ?? "").split("?")[0] !== this.cfg.path) {
             res.writeHead(404).end();
@@ -174,6 +264,8 @@ export class ManagedChatServer {
         this.enqueueTurn(parsed.message);
     }
     enqueueTurn(message) {
+        if (this.stopped)
+            return;
         const key = `${message.tenantId}:${message.conversationId}`;
         const prev = this.chains.get(key) ?? Promise.resolve();
         const next = prev.then(() => this.processAsync(message)).catch(() => undefined);
@@ -203,6 +295,8 @@ export class ManagedChatServer {
     }
     static REPLY_ATTEMPTS = 3;
     async postReply(reply) {
+        if (this.stopped)
+            return;
         const body = JSON.stringify(reply);
         const fetchFn = this.deps.fetchFn ?? fetch;
         const attempts = reply.kind === "typing" ? 1 : ManagedChatServer.REPLY_ATTEMPTS;

@@ -14,6 +14,7 @@ export const SessionStartSchema = z.object({
     }),
     recordingStatus: RecordingStatusSchema.optional(),
     direction: CallDirectionSchema.optional(),
+    tenantId: z.string().optional(),
 });
 export const SessionEndSchema = z.object({
     type: z.literal("session.end"),

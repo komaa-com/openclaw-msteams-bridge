@@ -282,6 +282,7 @@ export class MsteamsMediaStream {
                     this.config.onSessionStart?.({
                         callId,
                         threadId: parsed.threadId,
+                        tenantId: parsed.tenantId ?? undefined,
                         caller: {
                             aadId: blankToNull(parsed.caller.aadId),
                             displayName: blankToNull(parsed.caller.displayName),

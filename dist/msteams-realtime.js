@@ -10,7 +10,7 @@ import { isAddressed } from "./group-call-gate.js";
 import { pushOrQueueBridgeImage } from "./vision-consult.js";
 import { buildMinutesDocx } from "./meeting-minutes-docx.js";
 import { MSTEAMS_PCM_SAMPLE_RATE_HZ, } from "./msteams-media-stream.js";
-import { MSTEAMS_AGENT_TASK_TOOL, MSTEAMS_AGENT_TASK_TOOL_NAME, MSTEAMS_ASYNC_TASK_ACK, MSTEAMS_ASYNC_TASK_ACK_CALL, MSTEAMS_ASYNC_TASK_NO_TARGET, MSTEAMS_LOOK_BUDGETED, MSTEAMS_LOOK_NO_FRAME, MSTEAMS_LOOK_TOOL, MSTEAMS_LOOK_TOOL_NAME, MSTEAMS_MINUTES_TOOL, MSTEAMS_MINUTES_TOOL_NAME, MSTEAMS_REALTIME_CONSULT_SYSTEM_PROMPT, MSTEAMS_REALTIME_LOOK_SYSTEM_PROMPT, MSTEAMS_REALTIME_SHOW_SYSTEM_PROMPT, MSTEAMS_RECORDING_BLOCKED, MSTEAMS_SHOW_TOOL, MSTEAMS_SHOW_TOOL_NAME, } from "./msteams-realtime-tools.js";
+import { MSTEAMS_AGENT_TASK_TOOL, MSTEAMS_AGENT_TASK_TOOL_NAME, MSTEAMS_ASYNC_TASK_ACK, MSTEAMS_ASYNC_TASK_ACK_CALL, MSTEAMS_ASYNC_TASK_NO_TARGET, MSTEAMS_LOOK_BUDGETED, MSTEAMS_LOOK_NO_FRAME, MSTEAMS_LOOK_TOOL, MSTEAMS_LOOK_TOOL_NAME, MSTEAMS_MINUTES_TOOL, MSTEAMS_MINUTES_TOOL_NAME, MSTEAMS_POST_CHAT_TOOL, MSTEAMS_POST_CHAT_TOOL_NAME, MSTEAMS_REALTIME_CONSULT_SYSTEM_PROMPT, MSTEAMS_REALTIME_LOOK_SYSTEM_PROMPT, MSTEAMS_REALTIME_SHOW_SYSTEM_PROMPT, MSTEAMS_RECORDING_BLOCKED, MSTEAMS_SHOW_TOOL, MSTEAMS_SHOW_TOOL_NAME, } from "./msteams-realtime-tools.js";
 import { describeMsteamsVideoFrameOwner } from "./msteams-video-frame.js";
 import { resolveRealtimeFastContextConsult } from "./realtime-fast-context.js";
 import { resolveVoiceResponseModel } from "./response-model.js";
@@ -217,6 +217,7 @@ export function createMsteamsRealtimeCall(params) {
         ...(visionEnabled ? [MSTEAMS_LOOK_TOOL] : []),
         ...(showEnabled ? [MSTEAMS_SHOW_TOOL] : []),
         ...(asyncTasksEnabled && session.caller.aadId ? [MSTEAMS_MINUTES_TOOL] : []),
+        ...(deps.postChatMessage ? [MSTEAMS_POST_CHAT_TOOL] : []),
     ];
     const runMsteamsConsult = (opts) => {
         const { provider: agentProvider, model } = resolveVoiceResponseModel({
@@ -341,6 +342,10 @@ export function createMsteamsRealtimeCall(params) {
         onToolCall: (event, rtSession) => {
             if (event.name === MSTEAMS_AGENT_TASK_TOOL_NAME) {
                 handleAsyncTask(event, rtSession);
+                return;
+            }
+            if (event.name === MSTEAMS_POST_CHAT_TOOL_NAME) {
+                void handlePostChat(event, rtSession);
                 return;
             }
             const handler = event.name === MSTEAMS_MINUTES_TOOL_NAME
@@ -505,6 +510,17 @@ export function createMsteamsRealtimeCall(params) {
             rtSession.submitToolResult(event.callId, result);
         },
     });
+    const handlePostChat = async (event, rtSession) => {
+        const text = String(event.arguments?.text ?? "").trim();
+        if (!text) {
+            rtSession.submitToolResult(event.callId, { text: "There was nothing to post." });
+            return;
+        }
+        const ok = (await deps.postChatMessage?.(text)) ?? false;
+        rtSession.submitToolResult(event.callId, {
+            text: ok ? "I've posted that to the Teams chat." : "I couldn't post to the Teams chat just now.",
+        });
+    };
     const handleMinutes = withConsultGuards({
         label: "minutes",
         unavailableText: "I can't post minutes from this call right now.",

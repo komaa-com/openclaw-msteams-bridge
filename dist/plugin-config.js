@@ -1,22 +1,25 @@
 import { resolveManagedChatConfig } from "./managed-chat.js";
+const str = (v) => (typeof v === "string" ? v : "");
+const asObject = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : undefined;
 export function resolvePluginConfig(rawInput) {
     const c = rawInput ?? {};
     const r = c.realtime ?? {};
     return {
         enabled: c.enabled !== false,
         media: {
-            port: Number(c.port ?? 9442),
+            port: Number(c.callingPort ?? c.port ?? 9442),
             bindAddress: c.bindAddress,
-            path: String(c.path ?? "/voice/msteams/stream"),
-            sharedSecret: typeof c.sharedSecret === "string" && c.sharedSecret
-                ? c.sharedSecret
-                : typeof c.secret === "string"
-                    ? c.secret
-                    : "",
+            path: String(c.path ?? "/msteams/calling"),
+            sharedSecret: str(c.sharedSecret) || str(c.secret),
         },
-        managedChat: resolveManagedChatConfig((c.messagesSecret ?? c.secret)
-            ? { chatSecret: c.messagesSecret ?? c.secret, ...(c.managedBot ?? c.managedChat ?? {}) }
-            : (c.managedBot ?? c.managedChat)),
+        managedChat: resolveManagedChatConfig({
+            ...(asObject(c.managedBot) ?? {}),
+            ...(str(c.messagesSecret) || str(c.secret)
+                ? { chatSecret: str(c.messagesSecret) || str(c.secret) }
+                : {}),
+            ...(c.messagesPort !== undefined ? { port: Number(c.messagesPort) } : {}),
+            ...(str(c.messagesPath) ? { path: str(c.messagesPath) } : {}),
+        }),
         outbound: c.outbound,
         limits: {
             maxConcurrentCalls: Number(c.maxConcurrentCalls ?? 4),

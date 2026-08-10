@@ -1,8 +1,9 @@
-import { fetchAttachmentImages, ManagedChatServer } from "./managed-chat.js";
+import { fetchAttachmentImages, ManagedChatServer, postManagedMessage, } from "./managed-chat.js";
 import { consultRealtimeVoiceAgent, resolveConfiguredRealtimeVoiceProvider, resolveRealtimeVoiceAgentConsultToolsAllow, } from "openclaw/plugin-sdk/realtime-voice";
 import { getRealtimeTranscriptionProvider, listRealtimeTranscriptionProviders, } from "openclaw/plugin-sdk/realtime-transcription";
 import { resolveConfiguredCapabilityProvider } from "openclaw/plugin-sdk/provider-selection-runtime";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
+import { createHash } from "node:crypto";
 import { createHmac } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -39,7 +40,7 @@ export class MsteamsVoiceRuntime {
     constructor(api, cfg) {
         this.api = api;
         this.cfg = cfg;
-        const logger = api.runtime.logging.getChildLogger({ plugin: "msteams-voice" });
+        const logger = api.runtime.logging.getChildLogger({ plugin: "msteams-call" });
         this.log = {
             info: (m) => logger.info(m),
             warn: (m) => logger.warn(m),
@@ -100,7 +101,7 @@ export class MsteamsVoiceRuntime {
             this.cfg.voice.mode ?? (this.realtime?.provider ? "realtime" : "streaming");
         if (this.mode === "realtime" && !this.realtime?.provider) {
             const providerId = this.cfg.voice.realtime.provider;
-            this.log.warn(`[msteams-voice] mode is "realtime" but no realtime voice provider resolved` +
+            this.log.warn(`[msteams-call] mode is "realtime" but no realtime voice provider resolved` +
                 (providerId
                     ? ` (configured provider "${providerId}" has no usable credentials)`
                     : ` (no realtime provider configured)`) +
@@ -109,20 +110,45 @@ export class MsteamsVoiceRuntime {
         }
         if (this.mode === "streaming")
             this.resolveTranscriptionProvider();
-        this.lifecycle.start();
-        await this.media.start();
         if (this.cfg.managedChat.configuredWithoutSecret) {
-            this.log.warn("[msteams-voice] managedChat.enabled is set but chatSecret is empty - managed chat is OFF. " +
-                "Paste the chat secret from the StandIn portal's connection wizard.");
+            this.log.warn("[msteams-call] managedBot.enabled is set but no secret resolved - the messages lane is OFF. " +
+                "Set `secret` to the value StandIn shows you; it covers calling and messages both.");
         }
-        if (this.cfg.managedChat.enabled) {
-            this.managedChat = new ManagedChatServer(this.cfg.managedChat, {
-                respond: (message) => this.respondToManagedChat(message),
-                log: this.log,
-            });
-            await this.managedChat.start();
+        const rollback = [];
+        try {
+            this.lifecycle.start();
+            rollback.push(() => this.lifecycle.stop());
+            if (this.cfg.media.sharedSecret) {
+                await this.media.start();
+                rollback.push(() => this.media.stop());
+            }
+            else {
+                this.log.warn("[msteams-call] no calling secret - messages lane only, calls will not be answered");
+            }
+            if (this.cfg.managedChat.enabled) {
+                const chat = new ManagedChatServer(this.cfg.managedChat, {
+                    respond: (message) => this.respondToManagedChat(message),
+                    log: this.log,
+                });
+                await chat.start();
+                this.managedChat = chat;
+                rollback.push(async () => {
+                    await chat.stop();
+                    this.managedChat = undefined;
+                });
+            }
         }
-        this.log.info(`[msteams-voice] started (mode=${this.mode})`);
+        catch (err) {
+            for (const undo of rollback.reverse()) {
+                try {
+                    await undo();
+                }
+                catch {
+                }
+            }
+            throw err;
+        }
+        this.log.info(`[msteams-call] started (mode=${this.mode})`);
     }
     async stop() {
         for (const t of this.pendingOutboundTimers.values())
@@ -148,7 +174,9 @@ export class MsteamsVoiceRuntime {
             ? `[card button pressed - submit payload: ${JSON.stringify(message.cardAction)}]`
             : "";
         const question = [message.text, cardActionNote, attachmentNote].filter(Boolean).join("\n");
-        const images = await fetchAttachmentImages(message.attachments);
+        const images = await fetchAttachmentImages(message.attachments, {
+            gatewayOrigin: this.cfg.managedChat.gatewayReplyUrl,
+        });
         if (images.length) {
             this.log.info(`[msteams-chat] attaching ${images.length} image(s) to the consult (ignored by hosts without consult image support)`);
         }
@@ -178,18 +206,18 @@ export class MsteamsVoiceRuntime {
     async placeCall(to, opts) {
         const ob = this.cfg.outbound;
         if (!ob?.enabled)
-            throw new Error("msteams-voice: outbound calling is disabled (set outbound.enabled)");
+            throw new Error("msteams-call: outbound calling is disabled (set outbound.enabled)");
         if (!ob.workerBaseUrl)
-            throw new Error("msteams-voice: outbound.workerBaseUrl is not configured");
+            throw new Error("msteams-call: outbound.workerBaseUrl is not configured");
         if (!ob.tenantId)
-            throw new Error("msteams-voice: outbound.tenantId is not configured");
+            throw new Error("msteams-call: outbound.tenantId is not configured");
         if (!this.cfg.media.sharedSecret)
-            throw new Error("msteams-voice: sharedSecret is not configured");
+            throw new Error("msteams-call: sharedSecret is not configured");
         const userObjectId = to.replace(/^user:/i, "").trim();
         if (!userObjectId)
-            throw new Error("msteams-voice: target userObjectId (to) is required");
+            throw new Error("msteams-call: target userObjectId (to) is required");
         if (this.lifecycle.activeCount() >= this.cfg.limits.maxConcurrentCalls)
-            throw new Error("msteams-voice: max concurrent calls reached; not placing outbound call");
+            throw new Error("msteams-call: max concurrent calls reached; not placing outbound call");
         const timestampMs = Date.now();
         const signature = createHmac("sha256", this.cfg.media.sharedSecret)
             .update(`${timestampMs}.${userObjectId}`)
@@ -214,7 +242,7 @@ export class MsteamsVoiceRuntime {
         try {
             if (!response.ok) {
                 const text = await response.text().catch(() => "");
-                throw new Error(`msteams-voice: worker returned ${response.status}${text ? ` — ${text.slice(0, 200)}` : ""}`);
+                throw new Error(`msteams-call: worker returned ${response.status}${text ? ` — ${text.slice(0, 200)}` : ""}`);
             }
             const payload = (await response.json().catch(() => ({})));
             workerCallId = payload.callId;
@@ -223,7 +251,7 @@ export class MsteamsVoiceRuntime {
             await release();
         }
         if (!workerCallId)
-            throw new Error("msteams-voice: worker response did not include a callId");
+            throw new Error("msteams-call: worker response did not include a callId");
         const mode = opts?.mode ?? ob.defaultMode ?? "notify";
         this.lifecycle.initiate({
             callId: workerCallId,
@@ -237,7 +265,7 @@ export class MsteamsVoiceRuntime {
         const timer = setTimeout(() => this.finalizeUnansweredOutbound(workerCallId), ob.answerTimeoutMs ?? OUTBOUND_ANSWER_TIMEOUT_DEFAULT_MS);
         timer.unref?.();
         this.pendingOutboundTimers.set(workerCallId, timer);
-        this.log.info(`[msteams-voice] outbound call placed callId=${workerCallId} -> ${userObjectId} (${mode})`);
+        this.log.info(`[msteams-call] outbound call placed callId=${workerCallId} -> ${userObjectId} (${mode})`);
         return { callId: workerCallId };
     }
     finalizeUnansweredOutbound(callId) {
@@ -245,7 +273,7 @@ export class MsteamsVoiceRuntime {
             return;
         this.pendingOutbound.delete(callId);
         this.clearOutboundTimer(callId);
-        this.log.warn(`[msteams-voice] outbound call ${callId} not answered within timeout; finalizing (no-answer/voicemail)`);
+        this.log.warn(`[msteams-call] outbound call ${callId} not answered within timeout; finalizing (no-answer/voicemail)`);
         void this.cancelRingingOutbound(callId);
         this.lifecycle.end(callId, "no-answer");
     }
@@ -276,10 +304,10 @@ export class MsteamsVoiceRuntime {
             });
             try {
                 if (!response.ok) {
-                    this.log.warn(`[msteams-voice] cancel-by-callId ${callId} returned ${response.status}`);
+                    this.log.warn(`[msteams-call] cancel-by-callId ${callId} returned ${response.status}`);
                 }
                 else {
-                    this.log.info(`[msteams-voice] cancelled ringing outbound ${callId}`);
+                    this.log.info(`[msteams-call] cancelled ringing outbound ${callId}`);
                 }
             }
             finally {
@@ -287,7 +315,7 @@ export class MsteamsVoiceRuntime {
             }
         }
         catch (err) {
-            this.log.warn(`[msteams-voice] cancel-by-callId ${callId} failed: ${err.message}`);
+            this.log.warn(`[msteams-call] cancel-by-callId ${callId} failed: ${err.message}`);
         }
     }
     clearOutboundTimer(callId) {
@@ -301,7 +329,7 @@ export class MsteamsVoiceRuntime {
     }
     onSessionStart(session) {
         if (this.mode === "realtime" && !this.realtime?.provider) {
-            this.log.error("[msteams-voice] no realtime voice provider resolved — rejecting call");
+            this.log.error("[msteams-call] no realtime voice provider resolved — rejecting call");
             session.close("realtime-unavailable");
             return;
         }
@@ -319,14 +347,14 @@ export class MsteamsVoiceRuntime {
         const prior = this.lifecycle.getStatus(session.callId);
         if (prior?.isTerminal) {
             const rec = this.lifecycle.getRecord(session.callId);
-            this.log.warn(`[msteams-voice] ignoring late media attach for ${session.callId} — call already finalized` +
+            this.log.warn(`[msteams-call] ignoring late media attach for ${session.callId} — call already finalized` +
                 ` (${rec?.endReason ?? "ended"}); closing`);
             session.close(rec?.direction === "outbound" ? "answer-timeout" : "already-ended");
             return;
         }
         const from = session.caller?.aadId ?? "";
         if (!isInboundCallAllowed(this.cfg.voice.inboundPolicy, this.cfg.voice.allowFrom, from)) {
-            this.log.warn(`[msteams-voice] ${describeInboundRejection(this.cfg.voice.inboundPolicy, from)}`);
+            this.log.warn(`[msteams-call] ${describeInboundRejection(this.cfg.voice.inboundPolicy, from)}`);
             session.close("not-allowed");
             return;
         }
@@ -340,7 +368,7 @@ export class MsteamsVoiceRuntime {
             });
         }
         catch (err) {
-            this.log.warn(`[msteams-voice] cannot accept call: ${String(err)}`);
+            this.log.warn(`[msteams-call] cannot accept call: ${String(err)}`);
             session.close("busy");
             return;
         }
@@ -354,6 +382,20 @@ export class MsteamsVoiceRuntime {
         return createMsteamsRealtimeCall({
             session,
             deps: this.buildDeps(session, this.realtime?.provider, greeting),
+        });
+    }
+    buildChatPoster(session) {
+        const chat = this.cfg.managedChat;
+        const tenantId = session.tenantId;
+        if (!chat.enabled || !chat.chatSecret || !tenantId || !session.threadId)
+            return undefined;
+        return async (text) => postManagedMessage({
+            chatSecret: chat.chatSecret,
+            gatewayReplyUrl: chat.gatewayReplyUrl,
+            tenantId,
+            conversationId: session.threadId,
+            text,
+            idempotencyKey: `call-${session.callId}-${createHash("sha256").update(text).digest("hex").slice(0, 12)}`,
         });
     }
     getTtsProvider() {
@@ -389,10 +431,10 @@ export class MsteamsVoiceRuntime {
         });
         if (res.ok) {
             this.transcription = { provider: res.provider, providerConfig: res.providerConfig };
-            this.log.info(`[msteams-voice] streaming STT provider: ${res.provider.id}`);
+            this.log.info(`[msteams-call] streaming STT provider: ${res.provider.id}`);
         }
         else {
-            this.log.info(`[msteams-voice] no streaming STT provider resolved (${res.code}); using file-based STT fallback`);
+            this.log.info(`[msteams-call] no streaming STT provider resolved (${res.code}); using file-based STT fallback`);
         }
     }
     buildStreamingDeps(session, greeting) {
@@ -411,7 +453,7 @@ export class MsteamsVoiceRuntime {
                 : {}),
             transcribe: async (pcm16k) => {
                 const wav = pcmToWav(pcm16k, MSTEAMS_PCM_SAMPLE_RATE_HZ);
-                const tmp = path.join(os.tmpdir(), `msteams-voice-${session.callId}-${this.sttSeq++}.wav`);
+                const tmp = path.join(os.tmpdir(), `msteams-call-${session.callId}-${this.sttSeq++}.wav`);
                 await fs.writeFile(tmp, wav);
                 try {
                     const res = await this.api.runtime.mediaUnderstanding.transcribeAudioFile({
@@ -477,6 +519,7 @@ export class MsteamsVoiceRuntime {
             cfg: this.api.config,
             instructions: this.cfg.voice.realtime.instructions,
             greetingInstructions,
+            postChatMessage: this.buildChatPoster(session),
             inboundPolicy: this.cfg.voice.inboundPolicy,
             allowFrom: this.cfg.voice.allowFrom,
             requireRecordingStatus: this.cfg.voice.msteams?.requireRecordingStatus,

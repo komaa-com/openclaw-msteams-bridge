@@ -87,7 +87,7 @@ export function createMsteamsStreamingCall(params) {
             await playTtsToCall({ ttsProvider: deps.ttsProvider, logger: log }, playback, text);
         }
         catch (err) {
-            log?.warn(`[msteams-voice] streaming playback failed for ${session.callId}: ${String(err)}`);
+            log?.warn(`[msteams-call] streaming playback failed for ${session.callId}: ${String(err)}`);
         }
         finally {
             if (playback.ttsAbort === null)
@@ -101,7 +101,7 @@ export function createMsteamsStreamingCall(params) {
         if (opts?.gated && !addressed(question)) {
             transcript.push({ role: "user", text: attributed });
             deps.appendTranscript?.({ role: "caller", text: attributed, at: now() });
-            log?.debug?.(`[msteams-voice] streaming: caller turn not addressed to the bot — not answering (${session.callId})`);
+            log?.debug?.(`[msteams-call] streaming: caller turn not addressed to the bot — not answering (${session.callId})`);
             return;
         }
         processing = true;
@@ -124,7 +124,7 @@ export function createMsteamsStreamingCall(params) {
             await speak(reply);
         }
         catch (err) {
-            log?.warn(`[msteams-voice] streaming turn failed for ${session.callId}: ${String(err)}`);
+            log?.warn(`[msteams-call] streaming turn failed for ${session.callId}: ${String(err)}`);
         }
         finally {
             processing = false;
@@ -146,7 +146,7 @@ export function createMsteamsStreamingCall(params) {
             text = (await transcribe(pcm)).trim();
         }
         catch (err) {
-            log?.warn(`[msteams-voice] streaming STT failed for ${session.callId}: ${String(err)}`);
+            log?.warn(`[msteams-call] streaming STT failed for ${session.callId}: ${String(err)}`);
             return;
         }
         if (text)
@@ -164,12 +164,12 @@ export function createMsteamsStreamingCall(params) {
             if (text)
                 void runTurn(text, { gated: true });
         },
-        onError: (e) => log?.warn(`[msteams-voice] streaming STT session error for ${session.callId}: ${e.message}`),
+        onError: (e) => log?.warn(`[msteams-call] streaming STT session error for ${session.callId}: ${e.message}`),
     });
     if (sttSession) {
         void sttSession
             .connect()
-            .catch((e) => log?.warn(`[msteams-voice] streaming STT connect failed for ${session.callId}: ${String(e)}`));
+            .catch((e) => log?.warn(`[msteams-call] streaming STT connect failed for ${session.callId}: ${String(e)}`));
     }
     return {
         pushAudio: (pcm16k) => {
