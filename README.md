@@ -46,6 +46,21 @@ Details of each capability follow below.
 - **Secure transport** - a replay-proof HMAC handshake, a caller allowlist that is closed by
   default, and a recording-status gate that holds media until recording is active.
 
+## Upgrading from `msteams-voice`
+
+This release renames the plugin from `msteams-voice` to **`msteams-call`**, so an existing config
+needs three edits. OpenClaw looks the config up by plugin id, which is why this cannot be done for
+you:
+
+1. Rename the entry key: `plugins.entries."msteams-voice"` becomes `plugins.entries."msteams-call"`.
+2. If you used the `managedChat` block, rename it to `managedBot` - or better, move its `chatSecret`
+   to the top-level `secret`, which covers both lanes.
+3. If you pinned `path`, the calling default moved from `/voice/msteams/stream` to
+   `/msteams/calling`. Update the **Agent calling URL** on your StandIn connection to match, or set
+   `path` back to the old value.
+
+Nothing else changes. `sharedSecret` still works exactly as before for BYO deployments.
+
 ## Getting started
 
 There are two ways to connect this plugin to Teams. Pick one - they differ in who owns the Teams bot.
@@ -53,27 +68,32 @@ There are two ways to connect this plugin to Teams. Pick one - they differ in wh
 ### StandIn Managed Bot (recommended)
 
 StandIn provides the Teams bot. You install **StandIn** from the Teams Store, connect this agent in
-the StandIn portal, and paste one secret here. **No Azure bot registration, no App ID, no client
-secret, no endpoint configuration** - and chat and voice both arrive over the same connection.
+the StandIn portal, and paste **one secret** here. No Azure bot registration, no App ID, no client
+secret, no endpoint configuration.
+
+That one secret covers **both lanes** of the connection: calls arrive on the calling WebSocket and
+Teams messages on the messages endpoint. They are two lanes of a single StandIn binding, not two
+products, which is why there is a single value to paste and no enable flag to remember.
 
 ```jsonc
 {
   "plugins": {
     "entries": {
-      "msteams-voice": {
+      "msteams-call": {
         "config": {
           "enabled": true,
-          "managedBot": {
-            // The chat secret from the StandIn portal. Pasting it turns the lane on -
-            // there is no separate enable flag to remember.
-            "chatSecret": { "env": "TEAMS_CALL_MANAGED_BOT_CHAT_SECRET" }
-          }
+          // The connection secret from the StandIn portal. It turns on BOTH lanes:
+          // calling (ws://:9442/msteams/calling) and messages (http://:9444/msteams/messages).
+          "secret": { "env": "MSTEAMS_CALL_SECRET" }
         }
       }
     }
   }
 }
 ```
+
+Then expose both endpoints to the internet (a public host, or a tunnel) and register them on your
+connection in the StandIn portal as the **Agent calling URL** and **Agent messages URL**.
 
 Bind address: the chat listener defaults to all interfaces (`0.0.0.0:9444`) because the StandIn
 gateway must reach it. If you reach your agent over a private network (Tailscale, VPN, a reverse
@@ -117,11 +137,14 @@ on top of OpenClaw's Microsoft Teams **chat** channel, so set those up first:
 
 ## Install
 
-Do these in order. Steps 1 and 2 are prerequisites (see [Getting started](#getting-started) above);
-this plugin is step 3.
+Do these in order.
+
+**Step 2 is BRING-YOUR-OWN-BOT only.** On the StandIn Managed Bot path there is no Teams channel to
+create and no bot credentials to hold - StandIn owns the bot. If you followed the Managed Bot
+quickstart above, skip straight from step 1 to step 3 and set `secret` instead of `sharedSecret`.
 
 1. **OpenClaw is installed and running** (host `>= 2026.6.10`).
-2. **Microsoft Teams is added as a channel** (bot app + credentials).
+2. **(BYO only) Microsoft Teams is added as a channel** (bot app + credentials).
 3. **Install this plugin**, then restart the gateway so it loads:
 
    ```bash
@@ -129,9 +152,10 @@ this plugin is step 3.
    openclaw gateway restart
    ```
 
-4. **Configure it** under `plugins.entries."msteams-voice".config` - at minimum set `sharedSecret`
-   (to match StandIn), `inboundPolicy`, and your provider key. See [Configuration](#configuration)
-   and [Security](#security) below. The server refuses to start until `sharedSecret` is set.
+4. **Configure it** under `plugins.entries."msteams-call".config` - at minimum set `secret` (Managed
+   Bot) or `sharedSecret` (BYO) to match StandIn, plus `inboundPolicy` and your provider key. See
+   [Configuration](#configuration) and [Security](#security) below. Nothing starts until a secret is
+   set somewhere.
 5. **Connect StandIn** to the plugin's WebSocket (start in the
    [sandbox](https://standin.komaa.com/sandbox)) and place a test call.
 
@@ -160,7 +184,7 @@ realtime provider resolves, else streaming.
 
 ## Configuration
 
-Config lives under `plugins.entries."msteams-voice".config`. `sharedSecret` must match the value set
+Config lives under `plugins.entries."msteams-call".config`. `secret` (or `sharedSecret` on BYO) must match the value set
 in your StandIn dashboard. Set `bindAddress` to `0.0.0.0` so the hosted bridge can reach it.
 
 ### Realtime (OpenAI)
@@ -169,7 +193,7 @@ in your StandIn dashboard. Set `bindAddress` to `0.0.0.0` so the hosted bridge c
 {
   "plugins": {
     "entries": {
-      "msteams-voice": {
+      "msteams-call": {
         "config": {
           "enabled": true,
           "mode": "realtime",

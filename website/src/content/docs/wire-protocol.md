@@ -20,8 +20,8 @@ opens **one WebSocket** to:
 ws://<bindAddress>:<port>{path}/{callId}
 ```
 
-with the default path `/voice/msteams/stream`, so for example
-`ws://host:9442/voice/msteams/stream/abc123`. `{callId}` in the URL is authenticated by the HMAC
+with the default path `/msteams/calling`, so for example
+`ws://host:9442/msteams/calling/abc123`. `{callId}` in the URL is authenticated by the HMAC
 headers and later cross-checked against the `callId` in the `session.start` body.
 
 ### The two HMAC headers

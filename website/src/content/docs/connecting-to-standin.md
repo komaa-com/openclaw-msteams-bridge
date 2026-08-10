@@ -22,7 +22,7 @@ What you configure to make this work:
 |---|---|
 | `bindAddress` | Set to `0.0.0.0` so the hosted bridge can reach the plugin. Default `127.0.0.1` is local-only. |
 | `port` | The port the plugin listens on (default `9442`). Make it reachable by StandIn. |
-| `path` | The WebSocket route (default `/voice/msteams/stream`). |
+| `path` | The WebSocket route (default `/msteams/calling`). |
 | `sharedSecret` | The HMAC secret. It **must match** the value StandIn uses, or the handshake is rejected. |
 
 Every connection is authenticated with a replay-proof HMAC handshake - see the [Wire Protocol](/openclaw-msteams-bridge/wire-protocol/).
@@ -68,6 +68,31 @@ For account, dashboard, and bot-pairing specifics (creating the Azure Bot, enter
 retrieving the secret), follow the StandIn docs at [docs.komaa.com](https://docs.komaa.com). Those
 steps live on the StandIn side; this plugin only needs the resulting `sharedSecret`.
 :::
+
+## The Managed Bot connection (no Azure bot)
+
+On the Managed Bot path StandIn owns the Teams bot, so there is nothing to pair: you connect the
+agent in the StandIn portal and paste the connection secret it issues.
+
+One secret covers both lanes of that connection:
+
+- **Calling** - the media WebSocket, `wss://<your-host>/msteams/calling`
+- **Messages** - the Teams chat relay, `https://<your-host>/msteams/messages`
+
+They are two lanes of a single binding, not two products. Per-lane overrides (`sharedSecret`,
+`messagesSecret`) exist for deployments that insist on separate keys, and win over `secret` when set,
+but most installs never need them.
+
+```jsonc
+"msteams-call": {
+  "config": {
+    "enabled": true,
+    "secret": { "env": "MSTEAMS_CALL_SECRET" }
+  }
+}
+```
+
+The sections below - pairing, bot credentials, your own Teams channel - are **BYO only**.
 
 ## Pairing your own Teams bot
 

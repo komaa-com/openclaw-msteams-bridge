@@ -3,7 +3,7 @@ title: "Configuration Reference"
 description: "Every configuration option of the plugin, with types, defaults, and meaning."
 ---
 
-All options live under `plugins.entries."msteams-voice".config`. The schema is
+All options live under `plugins.entries."msteams-call".config`. The schema is
 `additionalProperties: false`, so an unknown key is rejected. Defaults below come from the config
 resolver; secret-valued keys accept either a literal string or an OpenClaw secret reference.
 
@@ -21,7 +21,7 @@ check these two first. See [Troubleshooting](/openclaw-msteams-bridge/troublesho
 | `enabled` | bool | `true` | Master on/off. |
 | `port` | int (1-65535) | `9442` | WebSocket server port. |
 | `bindAddress` | string | `127.0.0.1` | Bind address. Use `0.0.0.0` so the hosted StandIn bridge can connect. |
-| `path` | string | `/voice/msteams/stream` | WebSocket route; StandIn connects to `{path}/{callId}`. |
+| `path` | string | `/msteams/calling` | WebSocket route; StandIn connects to `{path}/{callId}`. |
 | `sharedSecret` | string \| secret-ref | - | HMAC secret; **must match StandIn**. Fails closed - a non-string coerces to empty and rejects all handshakes. |
 | `requireRecordingStatus` | bool | `true` | Hold media processing until Teams reports recording is active. |
 | `inboundPolicy` | enum | unset (deny all) | `disabled` \| `allowlist` \| `pairing` \| `open`. **Unset or `disabled` rejects every inbound call** - you must set a policy to receive calls. `pairing` currently behaves like `allowlist`. |
@@ -35,6 +35,22 @@ check these two first. See [Troubleshooting](/openclaw-msteams-bridge/troublesho
 | `maxVisionPerMinute` | int | - | Per-call vision spend cap. |
 | `meetingRecap` | bool | - | Post an end-of-call recap / minutes. |
 | `bilingual` | bool | - | Enable English/Arabic handling. |
+
+## Managed Bot (the messages lane)
+
+Set on the StandIn Managed Bot path. `secret` alone is enough; the rest are overrides.
+
+| Key | Meaning |
+|---|---|
+| `secret` | **The connection secret.** One value covering BOTH lanes - calling and messages. This is what the StandIn portal gives you |
+| `sharedSecret` | Per-lane override for CALLING only. BYO deployments set this instead of `secret` |
+| `messagesSecret` | Per-lane override for MESSAGES only |
+| `messagesPort` / `messagesPath` | Where the messages lane listens (default `9444`, `/msteams/messages`) |
+| `callingPort` / `path` | Where the calling lane listens (default `9442`, `/msteams/calling`). `port` is the older name for `callingPort` |
+| `gatewayReplyUrl` | Where replies are posted (default `https://teams.standin.komaa.com/api/chat/reply`); override only for a self-hosted StandIn |
+
+The messages lane is enabled by the PRESENCE of a secret - there is no enable flag to remember. The
+`managedBot` block is still read as a compatibility shape for configs written before these flat keys.
 
 ## Group call
 
@@ -94,13 +110,13 @@ These accept a literal string or an OpenClaw secret reference: `sharedSecret`,
 {
   "plugins": {
     "entries": {
-      "msteams-voice": {
+      "msteams-call": {
         "config": {
           "enabled": true,
           "mode": "realtime",
           "bindAddress": "0.0.0.0",
           "port": 9442,
-          "path": "/voice/msteams/stream",
+          "path": "/msteams/calling",
           "sharedSecret": "<same secret as in StandIn>",
           "requireRecordingStatus": true,
           "inboundPolicy": "allowlist",

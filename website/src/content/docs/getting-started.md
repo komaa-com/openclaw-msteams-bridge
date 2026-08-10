@@ -5,6 +5,42 @@ description: "Install the plugin, connect to the StandIn sandbox, and make your 
 
 This walks you from nothing to a working Teams voice call with your OpenClaw agent.
 
+## Two ways to connect
+
+Pick one before you start - they differ in **who owns the Teams bot**, and that decides how much
+Azure work you do.
+
+| | StandIn Managed Bot | Bring your own Azure bot |
+|---|---|---|
+| Who owns the bot | StandIn | You |
+| Azure app registration | none | you create it |
+| Teams channel in OpenClaw | not needed | required |
+| What you paste here | one `secret` | `sharedSecret` + bot credentials |
+| Chat relay | included, same secret | your own Teams channel |
+
+**Managed Bot is the short path.** Install StandIn from the Teams Store, connect this agent in the
+portal, and paste the one secret it gives you:
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "msteams-call": {
+        "config": {
+          "enabled": true,
+          // Covers BOTH lanes: calling and messages.
+          "secret": { "env": "MSTEAMS_CALL_SECRET" }
+        }
+      }
+    }
+  }
+}
+```
+
+Then register the two endpoints on your StandIn connection - **Agent calling URL**
+(`wss://<host>/msteams/calling`) and **Agent messages URL** (`https://<host>/msteams/messages`) - and
+skip the Teams-channel prerequisite below. The rest of this page is the BYO path.
+
 ## Prerequisites
 
 - **An OpenClaw install**, host `>= 2026.6.10`. Follow [docs.openclaw.ai](https://docs.openclaw.ai).
@@ -51,13 +87,13 @@ limit is reached, the agent speaks a short goodbye and the call ends gracefully.
 
 ## 3. Minimal configuration
 
-Config lives under `plugins.entries."msteams-voice".config`. A minimal realtime setup:
+Config lives under `plugins.entries."msteams-call".config`. A minimal realtime setup:
 
 ```jsonc
 {
   "plugins": {
     "entries": {
-      "msteams-voice": {
+      "msteams-call": {
         "config": {
           "enabled": true,
           "mode": "realtime",

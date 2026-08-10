@@ -30,9 +30,9 @@ ever appears in the gateway log.
 **Symptom:** the gateway starts but the voice endpoint is not listening; no plugin banner in the
 log.
 
-- Confirm the plugin is installed: `openclaw plugins list` should show `msteams-voice`.
+- Confirm the plugin is installed: `openclaw plugins list` should show `msteams-call`.
   Reinstall with `openclaw plugins install npm:@komaa/openclaw-msteams-bridge` if not.
-- Confirm `enabled` is not set to `false` under `plugins.entries."msteams-voice".config`.
+- Confirm `enabled` is not set to `false` under `plugins.entries."msteams-call".config`.
 - Restart the gateway after any install or config change: `openclaw gateway restart`.
 
 ## Config changes don't take effect
@@ -43,7 +43,7 @@ Restart the gateway after editing config:
 openclaw gateway restart
 ```
 
-Also confirm the config is under `plugins.entries."msteams-voice".config` and that keys match the
+Also confirm the config is under `plugins.entries."msteams-call".config` and that keys match the
 schema exactly - unknown keys are rejected (`additionalProperties: false`), so a typo makes the
 whole config invalid rather than being silently ignored.
 
