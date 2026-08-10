@@ -875,10 +875,10 @@ export class MsteamsVoiceRuntime {
       cfg: this.api.config as unknown as OpenClawConfig,
       instructions: this.cfg.voice.realtime.instructions,
       greetingInstructions,
-      // MANAGED only. Wired when the messages lane is configured AND the caller told us which tenant
-      // this call is (from the signed route grant) - both are required to address a post, and neither
-      // exists on BYO/free. Undefined here means the tool is not offered at all, which is better than
-      // offering it and failing: the model would promise the caller something that cannot happen.
+      // MANAGED only. Wired when the messages lane is configured AND the session carries the tenant
+      // this call belongs to - both are required to address a post, and neither exists on BYO/free.
+      // Undefined here means the tool is not offered at all, which is better than offering it and
+      // failing: the model would otherwise promise the caller something that cannot happen.
       postChatMessage: this.buildChatPoster(session),
       inboundPolicy: this.cfg.voice.inboundPolicy,
       allowFrom: this.cfg.voice.allowFrom,

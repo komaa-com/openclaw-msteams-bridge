@@ -39,9 +39,10 @@ export interface MsteamsLogger {
 export interface MsteamsSession {
   callId: string;
   threadId: string;
-  /** MANAGED only: the Microsoft tenant this CALL belongs to, asserted by StandIn in the signed route
-   * grant. Distinct from `caller.tenantId`, which describes whoever is on the phone (and is absent or
-   * foreign for a guest). This is the one that may address a chat post. */
+  /** MANAGED only: the Microsoft tenant this CALL belongs to, as supplied by StandIn on the session.
+   * Distinct from `caller.tenantId`, which describes whoever is on the phone and is absent or foreign
+   * for a guest. Use THIS one to address a chat post; using the caller's would post into the wrong
+   * organization whenever a guest dials in. */
   tenantId?: string;
   caller: {
     aadId?: string | null;
@@ -271,9 +272,9 @@ export class MsteamsMediaStream {
         return;
       }
       const raw = Buffer.concat(chunks);
-      // v1 signs the callId alone, so the outcome WORD - the only thing this request carries - rides
-      // unsigned. When the sender offers v2 it covers method, path and a hash of the body, and a
-      // present v2 MUST verify: falling back after a failed one would hand an attacker a downgrade.
+      // v2 covers method, path and a hash of the body; v1 covers the callId only. When the sender
+      // offers v2, a present v2 MUST verify - falling back to v1 after a failed v2 would hand an
+      // attacker a downgrade, and v1 alone does not cover the body this request carries.
       const sigV2 = String(req.headers["x-standin-signature-v2"] ?? "");
       if (sigV2) {
         const bodyHash = crypto.createHash("sha256").update(raw).digest("hex");

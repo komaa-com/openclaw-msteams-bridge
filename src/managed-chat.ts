@@ -1,13 +1,16 @@
-// StandIn managed chat mode (wire contract: protocol/chat-schema.yaml).
+// StandIn managed chat mode. Wire contract: protocol/chat-schema.yaml (published in this repo).
 //
-// On the managed tier the customer does NOT own a Teams bot: StandIn's gateway terminates Bot
-// Framework and speaks the normalized chat protocol to this agent instead. This module is that
-// endpoint: an HTTP server accepting InboundMessage (bridge-HMAC-signed with the binding's CHAT
-// key), answering 200 immediately (the gateway's durable relay handles retry/ordering), consulting
-// the agent async, and POSTing the reply back to the gateway's /api/chat/reply signed with the SAME
-// key. The agent never holds a Bot Framework credential — that is the whole point (D5).
+// In managed mode you do NOT register a Teams bot of your own. StandIn runs the bot and speaks the
+// normalized chat protocol to your agent, so your agent never holds a Bot Framework credential.
 //
-// The voice WebSocket (msteams-media-stream) is UNCHANGED by managed mode; only chat gains a lane.
+// This module is your side of that protocol:
+//   1. Serve HTTP at `path`. Requests are InboundMessage, signed with your connection's CHAT key.
+//   2. Verify the signature, then answer 200 IMMEDIATELY. Do not wait for the agent - the 200 is an
+//      acknowledgement of receipt, and StandIn handles retry and ordering from there.
+//   3. Consult the agent asynchronously, then POST the reply to `gatewayReplyUrl`, signed with the
+//      SAME key.
+//
+// The voice WebSocket (msteams-media-stream) is unchanged by managed mode; chat is an added lane.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import http from "node:http";
@@ -25,7 +28,8 @@ export interface ManagedChatConfig {
   port: number;
   bindAddress?: string;
   path: string;
-  /** The binding's CHAT key (separate, domain-derived from the voice key — section 9). */
+  /** Your connection's CHAT key. Separate from the voice key: chat and voice are signed independently,
+   * so one being exposed does not authorize the other. Both are shown in the StandIn portal. */
   chatSecret: string;
   /** The gateway's reply endpoint, e.g. https://teams.standin.komaa.com/api/chat/reply */
   gatewayReplyUrl: string;
@@ -46,7 +50,8 @@ export interface ManagedInbound {
   cardAction?: Record<string, unknown>;
 }
 
-// ── bridge HMAC (identical construction to @standin/bridge-hmac; KAT-pinned in the tests) ─────────
+// ── bridge HMAC. Construction is specified in protocol/chat-schema.yaml and pinned by known-answer
+// tests in this repo, so an independent implementation can be checked against the same vectors. ─────
 
 export function signBridge(
   secret: string,
