@@ -1377,6 +1377,44 @@ export function createMsteamsRealtimeCall(params: {
     const aadId = session.caller.aadId ?? undefined;
     const deliveryTarget = aadId ? `user:${aadId}` : undefined;
 
+    // MANAGED: same problem the recap had. The "msteams" channel the message instruction names needs
+    // the customer's own Bot Framework credentials, which a managed connection does not have - so a
+    // background task would complete and then have nowhere to deliver. We hold the gateway socket, so
+    // the model AUTHORS the result and we post it, exactly as the recap does. The voice_call delivery
+    // (deliverVia "call") is unaffected: that goes out through the worker, not a Teams channel.
+    if (deliverVia === "message" && deps.postChatMessage) {
+      try {
+        const result = await runMsteamsConsult({
+          agentRuntime,
+          voiceConfig,
+          cfg,
+          agentId: consultAgentId,
+          sessionKey: consultSessionKey,
+          runIdPrefix: `voice-realtime-task:${callId}`,
+          args: { question: task },
+          surface: "a Microsoft Teams voice call (background task)",
+          extraSystemPrompt:
+            `${MSTEAMS_REALTIME_CONSULT_SYSTEM_PROMPT} This task was delegated from a live Microsoft ` +
+            `Teams voice call and now runs in the background; the caller is no longer on the line. ` +
+            `Complete the task and ANSWER with the final result as your reply text - do NOT call any ` +
+            `message or delivery tool, the result is delivered for you. The caller has no memory of ` +
+            `what they asked, so restate the topic and give the answer in one self-contained message.`,
+          toolPolicy: consultToolPolicy,
+          fastMode: false,
+        });
+        const text = (result?.text ?? "").trim();
+        const posted = text.length > 0 ? await deps.postChatMessage(text) : false;
+        logger?.[posted ? "debug" : "warn"]?.(
+          `MsteamsRealtime: managed background task ${posted ? "delivered" : "produced nothing to deliver"} for ${callId}`,
+        );
+      } catch (err) {
+        logger?.warn(
+          `MsteamsRealtime: managed background task failed for ${callId} — ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      return;
+    }
+
     const deliveryInstruction = !deliveryTarget
       ? "This task was delegated from a Microsoft Teams voice call and runs in the background; deliver the final result to the caller when complete."
       : deliverVia === "call"
@@ -1501,6 +1539,27 @@ export function createMsteamsRealtimeCall(params: {
       // authored minutes body, attaching the prebuilt .docx (when available) as the media param. The
       // model only performs the mechanical send; it does not author the document or pick a recipient.
       const bodyForSend = summaryText || "Meeting minutes are attached.";
+
+      // MANAGED connections have no customer Bot Framework credentials, so the "msteams" channel the
+      // delivery consult below uses does not exist for them - the recap could only ever fail. When the
+      // managed chat poster is wired we own both sockets already, so post the minutes through the same
+      // signed gateway hop every other managed message takes, addressed to the call's own conversation.
+      //
+      // Text only on this path: the reply protocol carries text and cards, not files, so the .docx
+      // cannot ride. Losing the attachment is a great deal better than losing the minutes, and it is
+      // said out loud in the message rather than left as a silent difference.
+      if (deps.postChatMessage) {
+        const posted = await deps.postChatMessage(
+          docxPath
+            ? `${bodyForSend}\n\n_(Minutes document is not attached on a StandIn managed connection - the text above is the full record.)_`
+            : bodyForSend,
+        );
+        logger?.[posted ? "info" : "warn"](
+          `MsteamsRealtime: managed meeting recap ${posted ? "posted" : "could not be posted"} for ${callId}`,
+        );
+        return;
+      }
+
       const mediaInstruction = docxPath
         ? `Attach the local file at this absolute path as the message tool's media parameter on the ` +
           `SAME send: ${docxPath}. If the attachment fails, send the text-only message. `

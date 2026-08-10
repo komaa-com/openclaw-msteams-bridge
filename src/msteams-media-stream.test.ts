@@ -1078,3 +1078,58 @@ describe("MsteamsMediaStream", () => {
     ws.close();
   });
 });
+
+describe("worker call-outcome route", () => {
+  // Hermes has answered POST {base}/outcome/{callId} for a while; OpenClaw did not, so the worker's
+  // signal 404'd and this plugin sat on its own answer-timeout - a DECLINED call and an unanswered one
+  // were indistinguishable here and distinct on the other agent.
+  const OUTCOME_PATH = (callId: string) => `${PATH}/outcome/${callId}`;
+
+  function sign(callId: string, ts: number, secret = SECRET): string {
+    return crypto.createHmac("sha256", secret).update(`${ts}.${callId}`).digest("hex");
+  }
+
+  async function post(port: number, callId: string, body: unknown, headers: Record<string, string>) {
+    const res = await fetch(`http://127.0.0.1:${port}${OUTCOME_PATH(callId)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    });
+    return res.status;
+  }
+
+  it("delivers a signed outcome and refuses an unsigned or mis-signed one", async () => {
+    const seen: { callId: string; outcome: string }[] = [];
+    const port = randomPort();
+    const server = new MsteamsMediaStream({
+      port,
+      path: PATH,
+      sharedSecret: SECRET,
+      onCallOutcome: (i) => seen.push(i),
+    });
+    await server.start();
+    try {
+      const ts = Date.now();
+      expect(await post(port, "call-1", { outcome: "declined" }, {
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": sign("call-1", ts),
+      })).toBe(200);
+      expect(seen).toEqual([{ callId: "call-1", outcome: "declined" }]);
+
+      expect(await post(port, "call-2", { outcome: "busy" }, {})).toBe(401);
+      expect(await post(port, "call-3", { outcome: "busy" }, {
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": sign("call-3", ts, "wrong-secret"),
+      })).toBe(401);
+      // The signature covers the callId, so one captured for another call must not be reusable here.
+      expect(await post(port, "call-4", { outcome: "busy" }, {
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": sign("call-1", ts),
+      })).toBe(401);
+
+      expect(seen).toHaveLength(1);
+    } finally {
+      await server.stop();
+    }
+  });
+});

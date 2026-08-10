@@ -20,6 +20,12 @@ import { createMsteamsTtsProvider } from "./msteams-tts.js";
 import { MsteamsVisionStore } from "./msteams-vision-store.js";
 import { resolveVoiceResponseModel } from "./response-model.js";
 import { VisionBudget } from "./vision-budget.js";
+const WORKER_OUTCOME_TO_END_REASON = {
+    "no-answer": "no-answer",
+    declined: "no-answer",
+    busy: "no-answer",
+    failed: "error",
+};
 const OUTBOUND_ANSWER_TIMEOUT_DEFAULT_MS = 120_000;
 export class MsteamsVoiceRuntime {
     api;
@@ -88,6 +94,7 @@ export class MsteamsVoiceRuntime {
                 this.calls.get(i.callId)?.notifyInboundFrame();
             },
             onRecordingStatus: (i) => this.calls.get(i.callId)?.setRecordingActive(i.status === "active"),
+            onCallOutcome: (i) => this.onCallOutcome(i.callId, i.outcome),
             onDtmf: (i) => this.calls.get(i.callId)?.notifyDtmf(i.digit),
             onParticipants: (i) => this.calls.get(i.callId)?.setHumanCount(i.count),
             onAssistantSay: (i) => this.calls.get(i.callId)?.say(i.text),
@@ -269,6 +276,16 @@ export class MsteamsVoiceRuntime {
         this.pendingOutboundTimers.set(workerCallId, timer);
         this.log.info(`[msteams-call] outbound call placed callId=${workerCallId} -> ${userObjectId} (${mode})`);
         return { callId: workerCallId };
+    }
+    onCallOutcome(callId, outcome) {
+        if (outcome === "answered")
+            return;
+        if (!this.pendingOutbound.has(callId))
+            return;
+        this.pendingOutbound.delete(callId);
+        this.clearOutboundTimer(callId);
+        this.log.info(`[msteams-call] outbound call ${callId} ended as ${outcome} (worker outcome)`);
+        this.lifecycle.end(callId, WORKER_OUTCOME_TO_END_REASON[outcome] ?? "no-answer");
     }
     finalizeUnansweredOutbound(callId) {
         if (!this.pendingOutbound.has(callId))

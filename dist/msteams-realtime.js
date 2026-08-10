@@ -751,6 +751,34 @@ export function createMsteamsRealtimeCall(params) {
         }
         const aadId = session.caller.aadId ?? undefined;
         const deliveryTarget = aadId ? `user:${aadId}` : undefined;
+        if (deliverVia === "message" && deps.postChatMessage) {
+            try {
+                const result = await runMsteamsConsult({
+                    agentRuntime,
+                    voiceConfig,
+                    cfg,
+                    agentId: consultAgentId,
+                    sessionKey: consultSessionKey,
+                    runIdPrefix: `voice-realtime-task:${callId}`,
+                    args: { question: task },
+                    surface: "a Microsoft Teams voice call (background task)",
+                    extraSystemPrompt: `${MSTEAMS_REALTIME_CONSULT_SYSTEM_PROMPT} This task was delegated from a live Microsoft ` +
+                        `Teams voice call and now runs in the background; the caller is no longer on the line. ` +
+                        `Complete the task and ANSWER with the final result as your reply text - do NOT call any ` +
+                        `message or delivery tool, the result is delivered for you. The caller has no memory of ` +
+                        `what they asked, so restate the topic and give the answer in one self-contained message.`,
+                    toolPolicy: consultToolPolicy,
+                    fastMode: false,
+                });
+                const text = (result?.text ?? "").trim();
+                const posted = text.length > 0 ? await deps.postChatMessage(text) : false;
+                logger?.[posted ? "debug" : "warn"]?.(`MsteamsRealtime: managed background task ${posted ? "delivered" : "produced nothing to deliver"} for ${callId}`);
+            }
+            catch (err) {
+                logger?.warn(`MsteamsRealtime: managed background task failed for ${callId} — ${err instanceof Error ? err.message : String(err)}`);
+            }
+            return;
+        }
         const deliveryInstruction = !deliveryTarget
             ? "This task was delegated from a Microsoft Teams voice call and runs in the background; deliver the final result to the caller when complete."
             : deliverVia === "call"
@@ -845,6 +873,13 @@ export function createMsteamsRealtimeCall(params) {
                 docxPath = undefined;
             }
             const bodyForSend = summaryText || "Meeting minutes are attached.";
+            if (deps.postChatMessage) {
+                const posted = await deps.postChatMessage(docxPath
+                    ? `${bodyForSend}\n\n_(Minutes document is not attached on a StandIn managed connection - the text above is the full record.)_`
+                    : bodyForSend);
+                logger?.[posted ? "info" : "warn"](`MsteamsRealtime: managed meeting recap ${posted ? "posted" : "could not be posted"} for ${callId}`);
+                return;
+            }
             const mediaInstruction = docxPath
                 ? `Attach the local file at this absolute path as the message tool's media parameter on the ` +
                     `SAME send: ${docxPath}. If the attachment fails, send the text-only message. `

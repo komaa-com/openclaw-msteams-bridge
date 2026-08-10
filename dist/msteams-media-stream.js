@@ -46,11 +46,73 @@ export class MsteamsMediaStream {
         this.maxConnectionsPerIp = config.maxConnectionsPerIp ?? DEFAULT_MAX_CONNECTIONS_PER_IP;
         this.preStartTimeoutMs = config.preStartTimeoutMs ?? DEFAULT_PRE_START_TIMEOUT_MS;
     }
+    handleHttp(req, res) {
+        const url = req.url ?? "";
+        const prefix = `${this.config.path.replace(/\/$/, "")}/outcome/`;
+        if (req.method !== "POST" || !url.startsWith(prefix)) {
+            res.writeHead(404).end();
+            return;
+        }
+        const callId = decodeURIComponent(url.slice(prefix.length).split("?")[0] ?? "");
+        if (!callId) {
+            res.writeHead(400).end();
+            return;
+        }
+        const chunks = [];
+        let size = 0;
+        req.on("data", (c) => {
+            size += c.length;
+            if (size > 8192) {
+                res.writeHead(413).end();
+                req.destroy();
+                return;
+            }
+            chunks.push(c);
+        });
+        req.on("error", () => res.writeHead(400).end());
+        req.on("end", () => {
+            const ts = String(req.headers["x-standin-timestamp"] ?? req.headers["x-openclawteamsbridge-timestamp"] ?? "");
+            const sig = String(req.headers["x-standin-signature"] ?? req.headers["x-openclawteamsbridge-signature"] ?? "");
+            const tsNum = Number(ts);
+            if (!Number.isFinite(tsNum) || Math.abs(Date.now() - tsNum) > this.hmacWindowMs) {
+                res.writeHead(401).end();
+                return;
+            }
+            const expected = crypto
+                .createHmac("sha256", this.config.sharedSecret)
+                .update(`${tsNum}.${callId}`)
+                .digest("hex");
+            if (!safeEqualSecret(sig.trim().toLowerCase(), expected)) {
+                res.writeHead(401).end();
+                return;
+            }
+            let outcome = "";
+            try {
+                outcome = String(JSON.parse(Buffer.concat(chunks).toString("utf8"))?.outcome ?? "");
+            }
+            catch {
+                res.writeHead(400).end();
+                return;
+            }
+            outcome = outcome.trim().toLowerCase();
+            if (!outcome) {
+                res.writeHead(400).end();
+                return;
+            }
+            res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
+            try {
+                this.config.onCallOutcome?.({ callId, outcome });
+            }
+            catch {
+            }
+        });
+    }
     async start() {
         if (this.server) {
             throw new Error("MsteamsMediaStream is already started");
         }
         const server = http.createServer();
+        server.on("request", (req, res) => this.handleHttp(req, res));
         const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_INBOUND_PAYLOAD_BYTES });
         server.on("upgrade", (request, socket, head) => {
             socket.on("error", () => {

@@ -28,6 +28,7 @@ import {
 } from "openclaw/plugin-sdk/realtime-transcription";
 import { resolveConfiguredCapabilityProvider } from "openclaw/plugin-sdk/provider-selection-runtime";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
+import type { CallEndReason } from "./types.js";
 import { createHash } from "node:crypto";
 import { createHmac } from "node:crypto";
 import { promises as fs } from "node:fs";
@@ -55,6 +56,21 @@ import { MsteamsVisionStore } from "./msteams-vision-store.js";
 import { resolveVoiceResponseModel } from "./response-model.js";
 import { VisionBudget } from "./vision-budget.js";
 import type { ResolvedPluginConfig } from "./plugin-config.js";
+
+/** The worker's outcome vocabulary, mapped onto this plugin's own end reasons.
+ *
+ * They are deliberately different vocabularies: CallEndReason is a closed set the lifecycle reasons
+ * about, while the worker reports what Graph said. Declined and busy are both "the callee did not take
+ * it", which is no-answer here; a failure is an error. Anything the map does not know falls back to
+ * no-answer rather than widening the type, so a word a future worker adds cannot become an unknown
+ * lifecycle state. The distinction the caller actually hears comes from the agent's own wording, not
+ * from this enum. */
+const WORKER_OUTCOME_TO_END_REASON: Record<string, CallEndReason> = {
+  "no-answer": "no-answer",
+  declined: "no-answer",
+  busy: "no-answer",
+  failed: "error",
+};
 
 /** Default no-answer guard for a placed outbound call (overridable via outbound.answerTimeoutMs). */
 const OUTBOUND_ANSWER_TIMEOUT_DEFAULT_MS = 120_000;
@@ -165,6 +181,7 @@ export class MsteamsVoiceRuntime {
         this.calls.get(i.callId)?.notifyInboundFrame();
       },
       onRecordingStatus: (i) => this.calls.get(i.callId)?.setRecordingActive(i.status === "active"),
+      onCallOutcome: (i) => this.onCallOutcome(i.callId, i.outcome),
       onDtmf: (i) => this.calls.get(i.callId)?.notifyDtmf(i.digit),
       onParticipants: (i) => this.calls.get(i.callId)?.setHumanCount(i.count),
       // H4: the worker asks the agent to speak a line (e.g. a goodbye) in its own realtime voice.
@@ -412,6 +429,24 @@ export class MsteamsVoiceRuntime {
       `[msteams-call] outbound call placed callId=${workerCallId} -> ${userObjectId} (${mode})`,
     );
     return { callId: workerCallId };
+  }
+
+  /** The worker told us how a call we placed really ended.
+   *
+   * Without this route the plugin only ever learned "no answer", and only after its own timeout - so a
+   * DECLINED call and an unanswered one were indistinguishable, and both took the full answer-timeout
+   * to resolve. Hermes has consumed this signal for a while; the two agents therefore behaved
+   * differently for the same call, which is the divergence rather than either one being wrong.
+   *
+   * "answered" is not terminal: the media socket attaches and onSessionStart owns it from there. */
+  private onCallOutcome(callId: string, outcome: string): void {
+    if (outcome === "answered") return;
+    if (!this.pendingOutbound.has(callId)) return;   // already finalized, or never ours
+    this.pendingOutbound.delete(callId);
+    this.clearOutboundTimer(callId);
+    this.log.info(`[msteams-call] outbound call ${callId} ended as ${outcome} (worker outcome)`);
+    // The worker already knows the call is over, so unlike the timeout path there is nothing to cancel.
+    this.lifecycle.end(callId, WORKER_OUTCOME_TO_END_REASON[outcome] ?? "no-answer");
   }
 
   private finalizeUnansweredOutbound(callId: string): void {

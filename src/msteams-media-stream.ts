@@ -87,6 +87,14 @@ export interface MsteamsMediaStreamConfig {
   /** Teams recording status changed mid-call (worker called Graph updateRecordingStatus). */
   onRecordingStatus?: (info: { callId: string; status: MsteamsRecordingStatus }) => void;
   onSessionEnd?: (info: { callId: string; reason: string }) => void;
+  /** The worker's REAL terminal state for a call we placed (declined / busy / no-answer / failed).
+   *
+   * Wire contract, set by the worker: POST {https form of the WS base}/outcome/{callId}, signed with
+   * the same recipe as the WS dial - HMAC(secret, "{ts}.{callId}"). Hermes has answered this route for
+   * a while; OpenClaw did not, so the worker's signal 404'd and this plugin waited out its own
+   * answer-timeout instead - which is why a declined call and an unanswered one looked identical here
+   * and different on the other agent. */
+  onCallOutcome?: (info: { callId: string; outcome: string }) => void;
   onAudioFrame?: (info: {
     callId: string;
     seq: number;
@@ -216,12 +224,80 @@ export class MsteamsMediaStream {
     this.preStartTimeoutMs = config.preStartTimeoutMs ?? DEFAULT_PRE_START_TIMEOUT_MS;
   }
 
+  /** The worker's outcome POST. Everything else on this port is a 404: it exists to carry a WebSocket. */
+  private handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const url = req.url ?? "";
+    const prefix = `${this.config.path.replace(/\/$/, "")}/outcome/`;
+    if (req.method !== "POST" || !url.startsWith(prefix)) {
+      res.writeHead(404).end();
+      return;
+    }
+    const callId = decodeURIComponent(url.slice(prefix.length).split("?")[0] ?? "");
+    if (!callId) {
+      res.writeHead(400).end();
+      return;
+    }
+    // Body first, then auth: the signature covers the callId (not the body), so reading it costs
+    // nothing and refusing before reading would leave the socket half-consumed.
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > 8192) {
+        res.writeHead(413).end();
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("error", () => res.writeHead(400).end());
+    req.on("end", () => {
+      const ts = String(req.headers["x-standin-timestamp"] ?? req.headers["x-openclawteamsbridge-timestamp"] ?? "");
+      const sig = String(req.headers["x-standin-signature"] ?? req.headers["x-openclawteamsbridge-signature"] ?? "");
+      // The SAME recipe as the WS upgrade above, header fallbacks included: HMAC(secret,
+      // "{ts}.{callId}"), lower-cased and whitespace-stripped, constant-time compare, inside the
+      // replay window.
+      const tsNum = Number(ts);
+      if (!Number.isFinite(tsNum) || Math.abs(Date.now() - tsNum) > this.hmacWindowMs) {
+        res.writeHead(401).end();
+        return;
+      }
+      const expected = crypto
+        .createHmac("sha256", this.config.sharedSecret)
+        .update(`${tsNum}.${callId}`)
+        .digest("hex");
+      if (!safeEqualSecret(sig.trim().toLowerCase(), expected)) {
+        res.writeHead(401).end();
+        return;
+      }
+      let outcome = "";
+      try {
+        outcome = String((JSON.parse(Buffer.concat(chunks).toString("utf8")) as { outcome?: unknown })?.outcome ?? "");
+      } catch {
+        res.writeHead(400).end();
+        return;
+      }
+      outcome = outcome.trim().toLowerCase();
+      if (!outcome) {
+        res.writeHead(400).end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
+      try {
+        this.config.onCallOutcome?.({ callId, outcome });
+      } catch {
+        /* a handler fault must not take the server down */
+      }
+    });
+  }
+
   async start(): Promise<void> {
     if (this.server) {
       throw new Error("MsteamsMediaStream is already started");
     }
 
     const server = http.createServer();
+    server.on("request", (req, res) => this.handleHttp(req, res));
     const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_INBOUND_PAYLOAD_BYTES });
 
     server.on("upgrade", (request, socket, head) => {
