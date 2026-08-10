@@ -59,7 +59,7 @@ export async function playTtsToCall(
   try {
     const emotion = inferEmotion(text);
     deps.logger?.debug?.(
-      `msteams-voice: expression cue '${emotion}' for ${state.providerCallId}`,
+      `msteams-call: expression cue '${emotion}' for ${state.providerCallId}`,
     );
     state.session.send({ type: "expression", emotion });
   } catch {
@@ -95,7 +95,7 @@ export async function playTtsToCall(
     }
     if (marks.length > 0) {
       deps.logger?.debug?.(
-        `msteams-voice: speech.marks ${marks.length} visemes (${alignment ? "aligned" : "estimated"}) for ${state.providerCallId}`,
+        `msteams-call: speech.marks ${marks.length} visemes (${alignment ? "aligned" : "estimated"}) for ${state.providerCallId}`,
       );
       state.session.send({ type: "speech.marks", ts: 0, marks });
     }
@@ -138,7 +138,7 @@ async function streamPcmFrames(
     });
     if (!delivered) {
       deps.logger?.warn(
-        `msteams-voice: audio.frame dropped for ${state.providerCallId}, Teams socket closed; aborting playback`,
+        `msteams-call: audio.frame dropped for ${state.providerCallId}, Teams socket closed; aborting playback`,
       );
       throw new Error(
         `msteams audio send failed for ${state.providerCallId}: session socket closed`,

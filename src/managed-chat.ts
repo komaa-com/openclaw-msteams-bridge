@@ -167,29 +167,87 @@ export interface FetchedImage {
  */
 export async function fetchAttachmentImages(
   attachments: ManagedInbound["attachments"],
-  opts?: { fetchFn?: typeof fetch; maxBytes?: number },
+  opts?: { fetchFn?: typeof fetch; maxBytes?: number; maxImages?: number; gatewayOrigin?: string },
 ): Promise<FetchedImage[]> {
   const fetchFn = opts?.fetchFn ?? fetch;
   const maxBytes = opts?.maxBytes ?? 4 * 1024 * 1024;
+  // A message can name many attachments; each is a fetch and a base64 blob in the consult. Cap the
+  // COUNT as well as each size, or one message multiplies into an unbounded amount of work.
+  const maxImages = opts?.maxImages ?? 4;
   const images: FetchedImage[] = [];
   for (const a of attachments ?? []) {
+    if (images.length >= maxImages) break;
     if (a.kind !== "image" || a.relayable === false || !a.url) continue;
+    // Only the configured gateway may be fetched. The URL is gateway-signed, but the signature is
+    // checked by the GATEWAY - it tells us nothing here, and the URL arrives inside a message. Pinning
+    // the origin is what actually stops this fetch being pointed anywhere.
+    if (!originAllowed(a.url, opts?.gatewayOrigin)) continue;
     try {
       // Bounded and redirect-refusing - the URL is gateway-signed and same-host, so a
       // redirect means something is off; following it would re-open the SSRF door the signing closed.
       const res = await fetchFn(a.url, { signal: AbortSignal.timeout(10_000), redirect: "error" });
       if (!res.ok) continue;
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length === 0 || buf.length > maxBytes) continue;
-      const mime = (a as { contentType?: string }).contentType
-        ?? res.headers.get("content-type")
-        ?? "image/png";
+
+      // Refuse anything that is not an image BEFORE reading a byte of it.
+      const mime = String(
+        (a as { contentType?: string }).contentType ?? res.headers.get("content-type") ?? "",
+      ).split(";")[0].trim().toLowerCase();
+      if (!mime.startsWith("image/")) continue;
+
+      // A declared length over the cap is refused without transferring the body at all.
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > maxBytes) continue;
+
+      const buf = await readCapped(res, maxBytes);
+      if (!buf || buf.length === 0) continue;
       images.push({ type: "image", data: buf.toString("base64"), mimeType: mime });
     } catch {
       // Best-effort: the turn still runs; the text names the attachment either way.
     }
   }
   return images;
+}
+
+/** True when the URL is on the gateway we are configured to talk to (or no origin is pinned). */
+function originAllowed(url: string, gatewayOrigin?: string): boolean {
+  if (!gatewayOrigin) return true;
+  try {
+    return new URL(url).origin === new URL(gatewayOrigin).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Read a response body, ABORTING once it exceeds the cap.
+ *
+ * res.arrayBuffer() allocates the whole body first and checks the size after - which means a
+ * content-length that lies (or is absent) gets to allocate whatever it likes before we object. The
+ * cap has to be enforced while reading, not once reading is done. Returns null when the body runs
+ * over, so the caller drops that attachment.
+ */
+async function readCapped(res: Response, maxBytes: number): Promise<Buffer | null> {
+  const body = res.body;
+  if (!body) return null;
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c)), total);
 }
 
 export interface ManagedChatDeps {
@@ -217,7 +275,21 @@ export class ManagedChatServer {
 
   async start(): Promise<void> {
     const server = http.createServer((req, res) => {
-      void this.handle(req, res);
+      // handle() is async and its result was DISCARDED. A client that sends a partial body and
+      // disconnects makes the request iterator throw ("aborted") before authentication even runs, and
+      // nothing was there to catch it - an unhandled rejection from an unauthenticated peer, which
+      // under Node's default policy takes the process down. Catch at the boundary: an aborted upload
+      // is routine, not an error worth logging at warn, and the socket is already gone.
+      void this.handle(req, res).catch((err) => {
+        // Not warn: a client hanging up mid-body is routine and an unauthenticated peer must not be
+        // able to fill the operator's log by doing it repeatedly.
+        void err;
+        try {
+          if (!res.headersSent) res.writeHead(400).end();
+        } catch {
+          // The socket is gone - which is the usual reason we are here.
+        }
+      });
     });
     this.server = server;
     await new Promise<void>((resolve, reject) => {
@@ -229,11 +301,37 @@ export class ManagedChatServer {
     );
   }
 
+  /** Set by stop(). Checked at every point a turn could still reach the agent or the gateway, so a
+   * chain that was already running when we stopped cannot speak for a runtime that no longer exists. */
+  private stopped = false;
+
   async stop(): Promise<void> {
+    // Mark FIRST: from here no new request is accepted, no queued turn starts, and no in-flight turn
+    // posts its reply. Closing the listener alone left all of that running - a turn that began before
+    // stop() still posted its final "message" after the runtime was gone, so an OpenClaw reload could
+    // produce a late reply from the previous runtime, and tool activity after teardown.
+    this.stopped = true;
+
     const server = this.server;
     this.server = undefined;
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    // Then give the chains that are already running a BOUNDED chance to finish. They cannot post
+    // anymore (the guard above), so this is about letting agent work unwind cleanly rather than
+    // abandoning it mid-flight; we never block teardown on it.
+    const inflight = [...this.chains.values()];
+    if (inflight.length > 0) {
+      await Promise.race([
+        Promise.allSettled(inflight),
+        new Promise<void>((resolve) => setTimeout(resolve, ManagedChatServer.DRAIN_MS).unref?.()),
+      ]);
+    }
+    this.chains.clear();
   }
+
+  /** How long stop() waits for in-flight chains before returning. Bounded because a host reload must
+   * not hang on an agent turn, and the reply guard already makes a straggler harmless. */
+  private static readonly DRAIN_MS = 5000;
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     // The configured path is the ONLY path served - no legacy aliases. If a deployment needs a
@@ -288,6 +386,9 @@ export class ManagedChatServer {
 
   /** Chain the turn behind the conversation's previous one (ordering); see `chains`. */
   private enqueueTurn(message: ManagedInbound): void {
+    // Nothing new after stop(): a queued turn starting during teardown would run the agent for a
+    // runtime that is going away.
+    if (this.stopped) return;
     const key = `${message.tenantId}:${message.conversationId}`;
     const prev = this.chains.get(key) ?? Promise.resolve();
     const next = prev.then(() => this.processAsync(message)).catch(() => undefined);
@@ -332,6 +433,9 @@ export class ManagedChatServer {
   static readonly REPLY_ATTEMPTS = 3;
 
   private async postReply(reply: Record<string, unknown>): Promise<void> {
+    // The single choke point for agent -> Teams. A turn already in flight when stop() ran must not
+    // deliver: that is what produced a late reply from a runtime the host had already replaced.
+    if (this.stopped) return;
     const body = JSON.stringify(reply);
     const fetchFn = this.deps.fetchFn ?? fetch;
     const attempts = reply.kind === "typing" ? 1 : ManagedChatServer.REPLY_ATTEMPTS;

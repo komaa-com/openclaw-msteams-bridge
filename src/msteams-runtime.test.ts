@@ -28,7 +28,7 @@ function fakeApi() {
     pluginConfig: {
       enabled: true,
       port: 0,
-      path: "/voice/msteams/stream",
+      path: "/msteams/calling",
       sharedSecret: "s3cret",
       realtime: { provider: "openai" },
     },
@@ -61,7 +61,7 @@ describe("MsteamsVoiceRuntime", () => {
   it("defaults a missing config to sane values", () => {
     const cfg = resolvePluginConfig(undefined);
     expect(cfg.enabled).toBe(true);
-    expect(cfg.media.path).toBe("/voice/msteams/stream");
+    expect(cfg.media.path).toBe("/msteams/calling");
     expect(cfg.limits.maxConcurrentCalls).toBe(4);
     expect(cfg.voice.responseTimeoutMs).toBe(30000);
   });

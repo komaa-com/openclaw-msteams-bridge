@@ -1,5 +1,5 @@
 {
-  "id": "msteams-voice",
+  "id": "msteams-call",
   "name": "Teams Call by StandIn",
   "description": "Turn a Microsoft Teams call into a real two-way video conversation: the agent sees your camera and screen-share, talks in real time (speech-to-speech or streaming STT to agent to TTS), and appears as a lip-synced avatar. Vision, meeting recap, outbound call-backs, wake-phrase etiquette, HMAC-secured media bridge.",
   "activation": {
@@ -21,17 +21,19 @@
         "type": "string"
       },
       "path": {
-        "type": "string"
+        "type": "string",
+        "description": "WebSocket path for the calling lane (default /msteams/calling)."
       },
       "secret": {
         "type": "string",
-        "description": "The single StandIn connection secret - covers calling AND chat. Paste the value from the StandIn portal; per-lane sharedSecret/messagesSecret override it when set."
+        "description": "The StandIn connection secret - ONE value covering BOTH lanes, calling and messages. Paste the value the StandIn portal shows you; it is all most deployments set. Per-lane overrides (sharedSecret / messagesSecret) exist for deployments that insist on separate keys and win when set."
       },
       "sharedSecret": {
         "type": [
           "string",
           "object"
-        ]
+        ],
+        "description": "Per-lane OVERRIDE for CALLING only. Prefer `secret`, which covers both lanes. Setting this alone configures calling and leaves messages off."
       },
       "requireRecordingStatus": {
         "type": "boolean"
@@ -193,12 +195,12 @@
       },
       "managedBot": {
         "type": "object",
-        "description": "StandIn Managed Bot connection: StandIn provides the Teams bot, you connect this agent. Paste the chat secret from the StandIn portal; that alone turns the lane on. Leave unset for Bring-Your-Own-Azure-Bot deployments - voice is unaffected either way.",
+        "description": "COMPATIBILITY block for the messages lane. Prefer the flat keys beside the calling ones (messagesSecret / messagesPort / messagesPath) - they are the two lanes of one connection, not a sub-product. Still read so an existing config keeps working.",
         "additionalProperties": false,
         "properties": {
           "enabled": {
             "type": "boolean",
-            "description": "Turn the managed chat endpoint on (also requires chatSecret)."
+            "description": "Optional EXPLICIT override. The lane is enabled by the presence of a secret, so this is only needed as `false` to keep it off while a secret is configured."
           },
           "port": {
             "type": "number",
@@ -209,14 +211,14 @@
           },
           "path": {
             "type": "string",
-            "description": "POST path (default /managed/chat)."
+            "description": "POST path (default /msteams/messages)."
           },
           "chatSecret": {
             "type": [
               "string",
               "object"
             ],
-            "description": "The binding's CHAT HMAC key from the StandIn portal (separate from the voice sharedSecret)."
+            "description": "Per-lane secret for messages. Prefer the top-level `secret`, which covers both lanes."
           },
           "gatewayReplyUrl": {
             "type": "string",
@@ -224,10 +226,24 @@
           }
         }
       },
-      "managedChat": {
-        "type": "object",
-        "description": "Deprecated alias for managedBot; still accepted. Prefer managedBot.",
-        "additionalProperties": true
+      "messagesSecret": {
+        "type": [
+          "string",
+          "object"
+        ],
+        "description": "Per-lane OVERRIDE for MESSAGES only. Prefer `secret`, which covers both lanes."
+      },
+      "messagesPort": {
+        "type": "integer",
+        "description": "HTTP port for the messages lane (default 9444)."
+      },
+      "messagesPath": {
+        "type": "string",
+        "description": "POST path for the messages lane (default /msteams/messages)."
+      },
+      "callingPort": {
+        "type": "integer",
+        "description": "WebSocket port for the calling lane (default 9442). `port` is the older name and still works."
       }
     }
   },

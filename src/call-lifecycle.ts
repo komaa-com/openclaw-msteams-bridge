@@ -52,6 +52,11 @@ export interface CallLifecycleOptions {
 /** Cap retained transcript entries per call so a long meeting can't grow a record unbounded. */
 const MAX_TRANSCRIPT_ENTRIES = 200;
 const REAPER_CHECK_INTERVAL_MS = 15_000;
+// DELIBERATELY still "msteams-voice/calls" after the rename to msteams-call. This is a PERSISTENT
+// store key, not a label: renaming it would orphan the call records of any install that upgrades
+// mid-flight, so the reaper would lose track of calls it is supposed to end and the concurrency gate
+// would count from zero while those calls were still up. The key is internal and never shown; the
+// cost of changing it is real and the benefit is cosmetic.
 const STORE_NAME = "msteams-voice/calls";
 
 const ALLOWED_TRANSITIONS: Record<CallState, CallState[]> = {
@@ -65,7 +70,7 @@ const ALLOWED_TRANSITIONS: Record<CallState, CallState[]> = {
 
 export class MaxConcurrentCallsError extends Error {
   constructor(limit: number) {
-    super(`msteams-voice: max concurrent calls reached (${limit})`);
+    super(`msteams-call: max concurrent calls reached (${limit})`);
     this.name = "MaxConcurrentCallsError";
   }
 }
@@ -197,13 +202,13 @@ export class CallLifecycle {
         this.opts.maxDurationMs > 0 &&
         now - rec.answeredAt > this.opts.maxDurationMs;
       if (unanswered) {
-        this.rt.log.info(`msteams-voice: reaping unanswered call ${rec.callId}`);
+        this.rt.log.info(`msteams-call: reaping unanswered call ${rec.callId}`);
         this.end(rec.callId, "no-answer");
         // Signal the owner to tear down the live bridge too (see onReap): end() alone forgets the
         // record but leaves the media/realtime sockets open.
         this.opts.onReap?.(rec.callId, "no-answer");
       } else if (overDuration) {
-        this.rt.log.info(`msteams-voice: reaping over-duration call ${rec.callId}`);
+        this.rt.log.info(`msteams-call: reaping over-duration call ${rec.callId}`);
         this.end(rec.callId, "timeout");
         this.opts.onReap?.(rec.callId, "timeout");
       }
@@ -214,7 +219,7 @@ export class CallLifecycle {
   private transition(rec: CallRecord, next: CallState): void {
     if (rec.state === next) return;
     if (!ALLOWED_TRANSITIONS[rec.state].includes(next)) {
-      this.rt.log.warn(`msteams-voice: illegal transition ${rec.state} -> ${next} (${rec.callId})`);
+      this.rt.log.warn(`msteams-call: illegal transition ${rec.state} -> ${next} (${rec.callId})`);
       return;
     }
     rec.state = next;

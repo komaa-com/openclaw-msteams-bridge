@@ -138,22 +138,35 @@ describe("plugin config path (managedBot lands where the runtime reads it)", () 
     expect(voiceOnly.managedChat.enabled).toBe(false);
   });
 
-  it("resolves managedBot through resolvePluginConfig, and still accepts the managedChat alias", async () => {
+  it("resolves the messages lane from flat keys, managedBot as compatibility, and one secret for both", async () => {
     const { resolvePluginConfig } = await import("./plugin-config.js");
-    const viaNew = resolvePluginConfig({ sharedSecret: "v", managedBot: { chatSecret: "k" } });
-    expect(viaNew.managedChat.enabled).toBe(true);
-    expect(viaNew.managedChat.chatSecret).toBe("k");
 
-    const viaAlias = resolvePluginConfig({ sharedSecret: "v", managedChat: { chatSecret: "k" } });
-    expect(viaAlias.managedChat.enabled).toBe(true);
+    // The compatibility block still works.
+    const viaBlock = resolvePluginConfig({ sharedSecret: "v", managedBot: { chatSecret: "k" } });
+    expect(viaBlock.managedChat.enabled).toBe(true);
+    expect(viaBlock.managedChat.chatSecret).toBe("k");
 
-    // managedBot wins when both are present - the alias must not shadow the real name.
-    const both = resolvePluginConfig({
+    // Flat keys are the documented shape and win over the block.
+    const flat = resolvePluginConfig({
       sharedSecret: "v",
-      managedBot: { chatSecret: "new" },
-      managedChat: { chatSecret: "old" },
+      messagesSecret: "flat",
+      messagesPort: 9555,
+      messagesPath: "/msteams/messages",
+      managedBot: { chatSecret: "block" },
     });
-    expect(both.managedChat.chatSecret).toBe("new");
+    expect(flat.managedChat.chatSecret).toBe("flat");
+    expect(flat.managedChat.port).toBe(9555);
+
+    // ONE secret fills BOTH lanes - the whole point of `secret`.
+    const one = resolvePluginConfig({ secret: "S" });
+    expect(one.media.sharedSecret).toBe("S");
+    expect(one.managedChat.chatSecret).toBe("S");
+    expect(one.managedChat.enabled).toBe(true);
+
+    // The removed `managedChat` alias no longer resolves. It is gone from the manifest schema too,
+    // which sets additionalProperties:false - so such a config fails validation before reaching here.
+    const removed = resolvePluginConfig({ sharedSecret: "v", managedChat: { chatSecret: "k" } });
+    expect(removed.managedChat.enabled).toBe(false);
 
     // Unset = off, and the voice config is untouched either way.
     expect(resolvePluginConfig({ sharedSecret: "v" }).managedChat.enabled).toBe(false);
@@ -227,6 +240,44 @@ describe("attachment image fetch (4.7 agent-side leg)", () => {
     expect(Buffer.from(images[0].data, "base64")).toHaveLength(16);
   });
 
+  it("aborts an oversize body WHILE reading, not after allocating it", async () => {
+    // The cap used to be checked after res.arrayBuffer(), which allocates the whole body first - so a
+    // response that lies about (or omits) content-length got to allocate whatever it liked before we
+    // objected. Here the body is 64 bytes with NO content-length, so only a streamed cap can catch it.
+    const noLength = (async () =>
+      new Response(new Uint8Array(64), { status: 200, headers: { "content-type": "image/png" } })) as unknown as typeof fetch;
+    expect(await fetchAttachmentImages([img()], { fetchFn: noLength, maxBytes: 32 })).toHaveLength(0);
+    // ...and the same body under the cap still comes through.
+    expect(await fetchAttachmentImages([img()], { fetchFn: noLength, maxBytes: 128 })).toHaveLength(1);
+  });
+
+  it("refuses a non-image content type without reading the body", async () => {
+    const html = (async () =>
+      new Response(new Uint8Array(16), { status: 200, headers: { "content-type": "text/html" } })) as unknown as typeof fetch;
+    expect(await fetchAttachmentImages([img({ contentType: undefined })], { fetchFn: html })).toHaveLength(0);
+  });
+
+  it("fetches only from the configured gateway origin", async () => {
+    const ok = fakeFetch(16);
+    expect(
+      await fetchAttachmentImages([img({ url: "https://evil.example/x.png" })], {
+        fetchFn: ok,
+        gatewayOrigin: "https://teams.standin.komaa.com",
+      }),
+    ).toHaveLength(0);
+    expect(
+      await fetchAttachmentImages([img({ url: "https://teams.standin.komaa.com/x.png" })], {
+        fetchFn: ok,
+        gatewayOrigin: "https://teams.standin.komaa.com",
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("caps how MANY images one message can pull", async () => {
+    const many = Array.from({ length: 10 }, () => img());
+    expect(await fetchAttachmentImages(many, { fetchFn: fakeFetch(8), maxImages: 3 })).toHaveLength(3);
+  });
+
   it("skips files, unrelayable, missing urls, failures, and oversize - never throws", async () => {
     expect(await fetchAttachmentImages([img({ kind: "file" })], { fetchFn: fakeFetch(16) })).toHaveLength(0);
     expect(await fetchAttachmentImages([img({ relayable: false })], { fetchFn: fakeFetch(16) })).toHaveLength(0);
@@ -274,6 +325,61 @@ describe("the server end to end", () => {
     await server.start();
     return { port, replies, replyDone };
   }
+
+  it("survives an aborted UNAUTHENTICATED upload (no unhandled rejection)", async () => {
+    const { port } = await startServer();
+    // Announce a long body, send a fragment, then destroy the socket. The request iterator throws
+    // "aborted" BEFORE authentication runs. handle()'s promise used to be discarded with `void`, so
+    // nothing caught it - an unauthenticated peer could take the process down under Node's default
+    // unhandled-rejection policy. A raw socket is the only way to be precise about this; fetch will
+    // not send a deliberately truncated body.
+    const rejections: unknown[] = [];
+    const onUnhandled = (e: unknown) => rejections.push(e);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const net = await import("node:net");
+      await new Promise<void>((resolve) => {
+        const sock = net.connect(port, "127.0.0.1", () => {
+          sock.write(
+            "POST /msteams/messages HTTP/1.1\r\n" +
+              "Host: 127.0.0.1\r\n" +
+              "Content-Type: application/json\r\n" +
+              "Content-Length: 999\r\n\r\n" +
+              '{"tenantId":"t1","conv',
+          );
+          setTimeout(() => { sock.destroy(); resolve(); }, 50);
+        });
+        sock.on("error", () => resolve());
+      });
+      await new Promise((r) => setTimeout(r, 200));
+      expect(rejections).toHaveLength(0);
+      // ...and the server is still serving.
+      const res = await post(port, JSON.stringify({ ...JSON.parse(inbound), activityId: "a-after-abort" }));
+      expect(res.status).toBe(200);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("posts NO reply once stop() has run", async () => {
+    // A turn already in flight when the host reloads used to deliver its final "message" anyway - a
+    // late reply from a runtime that no longer exists.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((r) => { release = r; });
+    const { port, replies } = await startServer({
+      respond: async () => { await held; return "too late"; },
+    });
+    const res = await post(port, JSON.stringify({ ...JSON.parse(inbound), activityId: "a-late-reply" }));
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 50)); // let the turn begin
+
+    const stopping = server!.stop();
+    release?.();
+    await stopping;
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(replies.some((x) => x.body.kind === "message")).toBe(false);
+  });
 
   function post(port: number, body: string, sign = true, path = "/msteams/messages") {
     const { timestamp, signature } = signBridge(KAT_SECRET, body);

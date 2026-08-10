@@ -26,38 +26,53 @@ export interface ResolvedPluginConfig {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Raw = Record<string, any>;
 
+/** A config value only counts when it is a non-empty STRING - see the sharedSecret note below. */
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+/** The compatibility blocks are objects or nothing; anything else is ignored rather than spread. */
+const asObject = (v: unknown): Raw | undefined =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Raw) : undefined;
+
 export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
   const c: Raw = (rawInput as Raw) ?? {};
   const r: Raw = c.realtime ?? {};
   return {
     enabled: c.enabled !== false,
     media: {
-      port: Number(c.port ?? 9442),
+      port: Number(c.callingPort ?? c.port ?? 9442),
       bindAddress: c.bindAddress,
-      path: String(c.path ?? "/voice/msteams/stream"),
-      // Only accept a STRING secret. The manifest allows an object (secret-input reference) form; if the host
+      path: String(c.path ?? "/msteams/calling"),
+      // ONE secret, both lanes (owner decision, matching Hermes): `secret` is THE connection secret
+      // StandIn issues per binding, and the user pastes it once. `sharedSecret` / `messagesSecret`
+      // remain as per-lane OVERRIDES for deployments that insist on separate keys, and win when set.
+      //
+      // Only accept a STRING. The manifest allows an object (secret-input reference) form; if the host
       // ever passes an UNRESOLVED object (e.g. an env descriptor whose var is unset), String({}) would yield the
       // literal "[object Object]" — a non-empty, guessable secret that the fail-closed check in index.ts would
       // accept. Coerce a non-string to "" so it fails CLOSED (server refuses to start) instead.
-      sharedSecret:
-        typeof c.sharedSecret === "string" && c.sharedSecret
-          ? c.sharedSecret
-          : typeof c.secret === "string"
-            ? c.secret
-            : "",
+      sharedSecret: str(c.sharedSecret) || str(c.secret),
     },
-    // `managedBot` is the name; `managedChat` stays accepted so an early adopter's config keeps
-    // working (pre-1.0, but silently ignoring someone's existing block is not a trade worth making).
-    // ONE secret serves both lanes (owner decision): `secret` fills sharedSecret AND the messages
-    // lane, so the portal hands out a single value and the user pastes it once. Per-lane keys
-    // (sharedSecret / messagesSecret) remain as overrides. Deliberately a NEW key rather than a
-    // fallback from sharedSecret - that would silently open the chat listener on every existing
-    // voice-only deployment at upgrade.
-    managedChat: resolveManagedChatConfig(
-      (c.messagesSecret ?? c.secret)
-        ? { chatSecret: c.messagesSecret ?? c.secret, ...(c.managedBot ?? c.managedChat ?? {}) }
-        : (c.managedBot ?? c.managedChat),
-    ),
+    // The messages lane, configured with FLAT keys beside the calling ones - the two lanes of one
+    // connection, not a nested sub-product. `managedBot` stays accepted as the compatibility block.
+    //
+    // The older `managedChat` alias is GONE from both here and the manifest schema. Keeping it in one
+    // and not the other was the worst of both: configSchema sets additionalProperties:false, so a
+    // config using the alias would have failed validation before this resolver ever saw it - dead code
+    // behind a closed door. Removing it outright is safe here because the plugin id itself changed in
+    // this release (msteams-voice -> msteams-call), so every existing config has to be edited anyway;
+    // renaming one more key while you are already in the file is not an extra migration.
+    //
+    // Note the asymmetry that is deliberate: `secret` fills BOTH lanes, so pasting the one value the
+    // portal gives you turns on calling AND messages. That is the whole point of one secret. A
+    // deployment that wants calling only sets `sharedSecret` instead, which fills nothing else.
+    managedChat: resolveManagedChatConfig({
+      ...(asObject(c.managedBot) ?? {}),
+      // Flat keys win over the compatibility block.
+      ...(str(c.messagesSecret) || str(c.secret)
+        ? { chatSecret: str(c.messagesSecret) || str(c.secret) }
+        : {}),
+      ...(c.messagesPort !== undefined ? { port: Number(c.messagesPort) } : {}),
+      ...(str(c.messagesPath) ? { path: str(c.messagesPath) } : {}),
+    }),
     outbound: c.outbound,
     limits: {
       maxConcurrentCalls: Number(c.maxConcurrentCalls ?? 4),

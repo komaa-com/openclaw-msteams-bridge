@@ -327,7 +327,7 @@ export class MsteamsMediaStream {
       return;
     }
 
-    // Exact segment match, not a loose prefix: "/voice/msteams/streamX" must 404
+    // Exact segment match, not a loose prefix: "/msteams/callingX" must 404
     // here rather than fall through and confusingly 401 at the HMAC check.
     if (url.pathname !== this.config.path && !url.pathname.startsWith(this.config.path + "/")) {
       this.rejectUpgrade(socket, 404, "Not Found");

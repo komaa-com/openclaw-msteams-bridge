@@ -4,7 +4,7 @@ import { WebSocket } from "ws";
 import { MsteamsMediaStream, type MsteamsSession } from "./msteams-media-stream.js";
 
 const SECRET = "test-shared-secret";
-const PATH = "/voice/msteams/stream";
+const PATH = "/msteams/calling";
 
 function signHmac(secret: string, ts: number, callId: string): string {
   return crypto.createHmac("sha256", secret).update(`${ts}.${callId}`).digest("hex");
@@ -433,7 +433,7 @@ describe("MsteamsMediaStream", () => {
     const port = randomPort();
     server = await startServer({ port });
 
-    // "/voice/msteams/streamX/..." must be a 404 (wrong endpoint), not fall through
+    // "/msteams/callingX/..." must be a 404 (wrong endpoint), not fall through
     // to the HMAC check and read as a confusing 401.
     const callId = "call-prefix";
     const ts = Date.now();
