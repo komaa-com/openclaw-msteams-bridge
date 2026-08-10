@@ -103,10 +103,13 @@ products, which is why there is a single value to paste and no enable flag to re
 Then expose both endpoints to the internet (a public host, or a tunnel) and register them on your
 connection in the StandIn portal as the **Agent calling URL** and **Agent messages URL**.
 
-Bind address: the chat listener defaults to all interfaces (`0.0.0.0:9444`) because the StandIn
-gateway must reach it. If you reach your agent over a private network (Tailscale, VPN, a reverse
-proxy), set `managedBot.bindAddress` to that interface instead, or firewall the port - the HMAC keeps
-unauthenticated callers out, but an open port is still an open port.
+Bind address: **both lanes default to loopback** (`127.0.0.1`), matching the documented posture of a
+tunnel that terminates TLS publicly and proxies in. The chat listener used to default to all
+interfaces while calling defaulted to loopback, so a config that named no bind address at all put the
+messages port on your LAN and the docs described the two as sharing one. If StandIn reaches this host
+directly, set `bindAddress` to that interface (or `0.0.0.0` behind a firewall) - the HMAC keeps
+unauthenticated callers out, but an open port is still an open port. `messagesBindAddress` overrides
+the messages lane alone.
 
 One agent instance serves **one** StandIn connection: the chat secret is a single value, scoped to
 one tenant binding. Serving several tenants means running several instances, each with its own
@@ -207,7 +210,11 @@ realtime provider resolves, else streaming.
 ## Configuration
 
 Config lives under `plugins.entries."msteams-call".config`. `secret` (or `sharedSecret` on BYO) must match the value set
-in your StandIn dashboard. Set `bindAddress` to `0.0.0.0` so the hosted bridge can reach it.
+in your StandIn dashboard.
+
+`bindAddress` defaults to **loopback for both lanes**, because the documented posture is a tunnel that
+terminates TLS publicly and proxies to `127.0.0.1` - nothing is exposed on your LAN. Widen it to
+`0.0.0.0` only when StandIn reaches this host directly, and only on a trusted interface.
 
 ### Realtime (OpenAI)
 
@@ -219,10 +226,14 @@ in your StandIn dashboard. Set `bindAddress` to `0.0.0.0` so the hosted bridge c
         "config": {
           "enabled": true,
           "mode": "realtime",
-          "bindAddress": "0.0.0.0",
-          "port": 9442,
+          // Loopback + a tunnel; 0.0.0.0 only when StandIn reaches this host directly.
+          "bindAddress": "127.0.0.1",
+          "callingPort": 9442,
+          "messagesPort": 9444,
           "path": "/msteams/calling",
-          "sharedSecret": "<same secret as in StandIn>",
+          // ONE connection secret from the StandIn portal, covering calling AND messages.
+          // BYO deployments set "sharedSecret" (calling only) instead.
+          "secret": "<the connection secret from StandIn>",
           "requireRecordingStatus": true,
           "inboundPolicy": "allowlist",
           "allowFrom": ["<caller AAD object id>"],
@@ -281,6 +292,24 @@ gating, DTMF, and vision all work in streaming mode too.
   "defaultMode": "notify"
 }
 ```
+
+## StandIn Managed Bot: what differs from BYO
+
+On a managed connection StandIn owns the Teams bot, so this plugin has **no customer Bot Framework
+credentials**. Everything that would normally be sent "as your bot" goes through StandIn's signed
+gateway instead, and two behaviours follow from that:
+
+- **Meeting recap, minutes and background-task results are delivered as TEXT.** The gateway hop carries
+  text and cards, not files, so the Word document is not attached; the message says so. BYO deployments
+  post through your own bot and still get the `.docx`.
+- **`post_chat_message` needs a meeting call.** A 1:1 call has no Teams conversation of its own, so
+  there is nothing to post into and the tool is not offered for those calls.
+
+**Call outcomes.** StandIn POSTs the real terminal state of a call you placed to
+`{calling path}/outcome/{callId}`, signed with the same HMAC recipe as the WebSocket upgrade. The route
+is served whenever the calling lane is - nothing to configure - and it is what makes a declined or busy
+call finalize immediately instead of waiting out `outbound.answerTimeoutMs`. See
+[Outbound calls](https://komaa-com.github.io/openclaw-msteams-bridge/outbound-calls/).
 
 ## Security
 
