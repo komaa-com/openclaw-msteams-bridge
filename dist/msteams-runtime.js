@@ -1,3 +1,4 @@
+import { MSTEAMS_POST_CHAT_TOOL_NAME } from "./msteams-realtime-tools.js";
 import { fetchAttachmentImages, ManagedChatServer, postManagedMessage, } from "./managed-chat.js";
 import { consultRealtimeVoiceAgent, resolveConfiguredRealtimeVoiceProvider, resolveRealtimeVoiceAgentConsultToolsAllow, } from "openclaw/plugin-sdk/realtime-voice";
 import { getRealtimeTranscriptionProvider, listRealtimeTranscriptionProviders, } from "openclaw/plugin-sdk/realtime-transcription";
@@ -28,6 +29,7 @@ export class MsteamsVoiceRuntime {
     vision;
     visionBudget;
     calls = new Map();
+    postableCalls = new Map();
     log;
     realtime;
     transcription;
@@ -328,6 +330,7 @@ export class MsteamsVoiceRuntime {
         return this.lifecycle.getStatus(callId);
     }
     onSessionStart(session) {
+        this.trackManagedCall(session, true);
         if (this.mode === "realtime" && !this.realtime?.provider) {
             this.log.error("[msteams-call] no realtime voice provider resolved — rejecting call");
             session.close("realtime-unavailable");
@@ -384,12 +387,50 @@ export class MsteamsVoiceRuntime {
             deps: this.buildDeps(session, this.realtime?.provider, greeting),
         });
     }
+    managedCallBySession = new Map();
+    sessionKeyByCall = new Map();
+    forgetManagedCall(callId) {
+        const key = this.sessionKeyByCall.get(callId);
+        if (!key)
+            return;
+        this.sessionKeyByCall.delete(callId);
+        this.managedCallBySession.delete(key);
+    }
+    chatPosterForSession(sessionKey) {
+        const call = this.managedCallBySession.get(sessionKey);
+        const chat = this.cfg.managedChat;
+        if (!call || !chat.enabled || !chat.chatSecret)
+            return undefined;
+        return async (text) => postManagedMessage({
+            chatSecret: chat.chatSecret,
+            gatewayReplyUrl: chat.gatewayReplyUrl,
+            tenantId: call.tenantId,
+            conversationId: call.conversationId,
+            text,
+            idempotencyKey: `sess-${sessionKey}-${createHash("sha256").update(text).digest("hex").slice(0, 12)}`,
+        });
+    }
+    trackManagedCall(session, add) {
+        const tenantId = session.tenantId;
+        if (!tenantId || !session.threadId?.startsWith("19:"))
+            return;
+        const key = this.streamingSessionKey(session);
+        if (add) {
+            this.managedCallBySession.set(key, { tenantId, conversationId: session.threadId });
+            this.sessionKeyByCall.set(session.callId, key);
+        }
+        else {
+            this.managedCallBySession.delete(key);
+        }
+    }
     buildChatPoster(session) {
         const chat = this.cfg.managedChat;
         const tenantId = session.tenantId;
         if (!chat.enabled || !chat.chatSecret || !tenantId || !session.threadId)
             return undefined;
-        return async (text) => postManagedMessage({
+        if (!session.threadId.startsWith("19:"))
+            return undefined;
+        const poster = async (text) => postManagedMessage({
             chatSecret: chat.chatSecret,
             gatewayReplyUrl: chat.gatewayReplyUrl,
             tenantId,
@@ -397,6 +438,23 @@ export class MsteamsVoiceRuntime {
             text,
             idempotencyKey: `call-${session.callId}-${createHash("sha256").update(text).digest("hex").slice(0, 12)}`,
         });
+        this.postableCalls.set(session.callId, { conversationId: session.threadId, post: poster });
+        return poster;
+    }
+    resolvePostableCall() {
+        const entries = [...this.postableCalls.values()];
+        if (entries.length === 1)
+            return entries[0];
+        if (entries.length === 0) {
+            return {
+                error: "There is no active Teams call with a chat to post into. This works during a meeting call " +
+                    "on a StandIn managed connection; a 1:1 call has no chat thread of its own.",
+            };
+        }
+        return {
+            error: `There are ${entries.length} calls in progress, so I cannot tell which chat you mean. ` +
+                "Ask me again when only one call is active.",
+        };
     }
     getTtsProvider() {
         if (!this.ttsProvider) {
@@ -493,7 +551,10 @@ export class MsteamsVoiceRuntime {
                     model,
                     thinkLevel,
                     fastMode: this.cfg.voice.realtime.consultFastMode,
-                    toolsAllow: resolveRealtimeVoiceAgentConsultToolsAllow(this.cfg.voice.realtime.toolPolicy),
+                    toolsAllow: [
+                        ...(resolveRealtimeVoiceAgentConsultToolsAllow(this.cfg.voice.realtime.toolPolicy) ?? []),
+                        MSTEAMS_POST_CHAT_TOOL_NAME,
+                    ],
                 });
                 return { text: result.text };
             },
@@ -537,6 +598,7 @@ export class MsteamsVoiceRuntime {
         };
     }
     onSessionEnd(info) {
+        this.forgetManagedCall(info.callId);
         this.disposeCall(info.callId);
         this.lifecycle.end(info.callId, "hangup-user");
     }
@@ -545,6 +607,7 @@ export class MsteamsVoiceRuntime {
         this.clearOutboundTimer(callId);
         this.calls.get(callId)?.close(closeReason);
         this.calls.delete(callId);
+        this.postableCalls.delete(callId);
         this.vision.release(callId);
     }
 }

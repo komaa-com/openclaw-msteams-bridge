@@ -8,6 +8,7 @@
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
+import { MSTEAMS_POST_CHAT_TOOL_NAME } from "./msteams-realtime-tools.js";
 import {
   fetchAttachmentImages,
   ManagedChatServer,
@@ -66,6 +67,19 @@ export class MsteamsVoiceRuntime {
   private readonly vision: MsteamsVisionStore;
   private readonly visionBudget: VisionBudget;
   private readonly calls = new Map<string, MsteamsRealtimeCall>();
+
+  /**
+   * Live calls that have a postable Teams conversation, keyed by call id.
+   *
+   * The realtime path gets its poster injected with exact per-call context. STREAMING has no
+   * tool-dispatch surface at all - it is STT -> consult -> TTS - so its only route to a tool is an
+   * OpenClaw tool the delegated agent turn can call. Those are registered globally and the handler
+   * context carries no session or run id, so a tool cannot tell WHICH call invoked it. Hence this
+   * registry, and hence the tool refusing when more than one entry is live rather than guessing: one
+   * OpenClaw instance serves one binding, so a wrong guess is not a cross-tenant leak, but it would
+   * still put a caller's message in someone else's conversation.
+   */
+  private readonly postableCalls = new Map<string, { conversationId: string; post: (text: string) => Promise<boolean> }>();
   private readonly log: MsteamsLogger;
   private realtime?: { provider?: unknown; providerConfig?: unknown };
   /** Resolved streaming STT provider (mode:"streaming"); undefined → file-based STT fallback. */
@@ -480,6 +494,8 @@ export class MsteamsVoiceRuntime {
   }
 
   private onSessionStart(session: MsteamsSession): void {
+    // Make this call resolvable by the registered OpenClaw tool for the duration of the call.
+    this.trackManagedCall(session, true);
     // Realtime mode requires a resolved provider; streaming mode does not.
     if (this.mode === "realtime" && !this.realtime?.provider) {
       this.log.error("[msteams-call] no realtime voice provider resolved — rejecting call");
@@ -562,11 +578,76 @@ export class MsteamsVoiceRuntime {
    * This uses the messages lane the plugin is already serving, over the gateway that already carries
    * its chat replies.
    */
+  /**
+   * sessionKey -> the live managed call it belongs to.
+   *
+   * An OpenClaw tool is registered once and global, but "post to the chat" only means something
+   * inside a particular call. The consult carries a sessionKey (both the streaming and realtime paths
+   * build it the same way), and the tool context hands that back - so this is what turns a global tool
+   * into a per-call one without inventing a second context mechanism.
+   */
+  private readonly managedCallBySession = new Map<string, { tenantId: string; conversationId: string }>();
+
+  /** callId -> the session key it registered under, so teardown removes the right entry. */
+  private readonly sessionKeyByCall = new Map<string, string>();
+
+  /** Drop a call from the registry when it ends. */
+  private forgetManagedCall(callId: string): void {
+    const key = this.sessionKeyByCall.get(callId);
+    if (!key) return;
+    this.sessionKeyByCall.delete(callId);
+    this.managedCallBySession.delete(key);
+  }
+
+  /** Look up the poster for a consult running under this session key. Used by the registered tool. */
+  chatPosterForSession(sessionKey: string): ((text: string) => Promise<boolean>) | undefined {
+    const call = this.managedCallBySession.get(sessionKey);
+    const chat = this.cfg.managedChat;
+    if (!call || !chat.enabled || !chat.chatSecret) return undefined;
+    return async (text: string) =>
+      postManagedMessage({
+        chatSecret: chat.chatSecret,
+        gatewayReplyUrl: chat.gatewayReplyUrl,
+        tenantId: call.tenantId,
+        conversationId: call.conversationId,
+        text,
+        idempotencyKey: `sess-${sessionKey}-${createHash("sha256").update(text).digest("hex").slice(0, 12)}`,
+      });
+  }
+
+  /** Register/forget a managed call against the STREAMING consult's session key.
+   *
+   * Streaming only, on purpose: the realtime path dispatches post_chat_message itself through its own
+   * onToolCall and already has the poster injected, so it needs nothing here. Streaming has no tool
+   * dispatch at all - its agent turn IS an OpenClaw consult - which is why that path has to go through
+   * a registered OpenClaw tool and the consult tool policy instead. */
+  private trackManagedCall(session: MsteamsSession, add: boolean): void {
+    const tenantId = session.tenantId;
+    // Only a real Teams conversation can be posted into. A 1:1 call has none of its own - the worker
+    // sends threadId=callId as a fallback, which Teams cannot resolve - so those calls simply do not
+    // get the tool rather than getting one that fails.
+    if (!tenantId || !session.threadId?.startsWith("19:")) return;
+    const key = this.streamingSessionKey(session);
+    if (add) {
+      this.managedCallBySession.set(key, { tenantId, conversationId: session.threadId });
+      // Remember the key BY CALL ID: sessionScope can make the key per-thread or per-AAD, so it is not
+      // derivable from a call id alone at teardown, and a stale entry would let a later consult in the
+      // same scope post into a call that has ended.
+      this.sessionKeyByCall.set(session.callId, key);
+    } else {
+      this.managedCallBySession.delete(key);
+    }
+  }
+
   private buildChatPoster(session: MsteamsSession): ((text: string) => Promise<boolean>) | undefined {
     const chat = this.cfg.managedChat;
     const tenantId = session.tenantId;
     if (!chat.enabled || !chat.chatSecret || !tenantId || !session.threadId) return undefined;
-    return async (text: string) =>
+    // A 1:1 call has no Teams conversation of its own - the worker falls back to the call id, which
+    // the gateway cannot address (it 404s rather than acknowledging). Only a real conversation
+    // ("19:...") can be posted into, so anything else is not postable and the tool is not offered.
+    if (!session.threadId.startsWith("19:")) return undefined;
+    const poster = async (text: string) =>
       postManagedMessage({
         chatSecret: chat.chatSecret,
         gatewayReplyUrl: chat.gatewayReplyUrl,
@@ -577,6 +658,27 @@ export class MsteamsVoiceRuntime {
         // genuinely different posts in one call both go out.
         idempotencyKey: `call-${session.callId}-${createHash("sha256").update(text).digest("hex").slice(0, 12)}`,
       });
+    // Registered for the STREAMING path, whose agent reaches this through a global OpenClaw tool.
+    this.postableCalls.set(session.callId, { conversationId: session.threadId, post: poster });
+    return poster;
+  }
+
+  /** The one live call a global tool may post into, or a reason it cannot decide. */
+  resolvePostableCall(): { post: (text: string) => Promise<boolean> } | { error: string } {
+    const entries = [...this.postableCalls.values()];
+    if (entries.length === 1) return entries[0];
+    if (entries.length === 0) {
+      return {
+        error:
+          "There is no active Teams call with a chat to post into. This works during a meeting call " +
+          "on a StandIn managed connection; a 1:1 call has no chat thread of its own.",
+      };
+    }
+    return {
+      error:
+        `There are ${entries.length} calls in progress, so I cannot tell which chat you mean. ` +
+        "Ask me again when only one call is active.",
+    };
   }
 
   private getTtsProvider(): MsteamsTtsProvider {
@@ -687,7 +789,15 @@ export class MsteamsVoiceRuntime {
           model,
           thinkLevel,
           fastMode: this.cfg.voice.realtime.consultFastMode,
-          toolsAllow: resolveRealtimeVoiceAgentConsultToolsAllow(this.cfg.voice.realtime.toolPolicy),
+          // The consult tool policy decides what this turn may call. Append the in-call chat tool so
+          // STREAMING mode can post to the Teams chat - the realtime path has its own dispatch for
+          // this, streaming has none, and the policy is the mechanism that exists for exactly this.
+          // The tool factory returns null unless this session is a live managed call, so allowing the
+          // name here costs nothing on a BYO or 1:1 call: it simply is not there to call.
+          toolsAllow: [
+            ...(resolveRealtimeVoiceAgentConsultToolsAllow(this.cfg.voice.realtime.toolPolicy) ?? []),
+            MSTEAMS_POST_CHAT_TOOL_NAME,
+          ],
         });
         return { text: result.text };
       },
@@ -744,6 +854,7 @@ export class MsteamsVoiceRuntime {
   }
 
   private onSessionEnd(info: { callId: string; reason: string }): void {
+    this.forgetManagedCall(info.callId);
     // Caller-driven hangup: the Teams worker session is already closing, so tear down locally
     // (close() with no reason) and end the lifecycle record.
     this.disposeCall(info.callId);
@@ -762,6 +873,7 @@ export class MsteamsVoiceRuntime {
     this.clearOutboundTimer(callId);
     this.calls.get(callId)?.close(closeReason);
     this.calls.delete(callId);
+    this.postableCalls.delete(callId);
     // Release the per-call vision frames (latest + keyframe history, ~1-2 MB/call). These were never
     // released outside tests, leaking for the process lifetime on every completed call.
     this.vision.release(callId);

@@ -8,6 +8,7 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/core";
 import { MsteamsVoiceRuntime } from "./msteams-runtime.js";
 import { resolvePluginConfig } from "./plugin-config.js";
+import { MSTEAMS_POST_CHAT_TOOL_NAME } from "./msteams-realtime-tools.js";
 
 export default definePluginEntry({
   id: "msteams-call",
@@ -34,6 +35,48 @@ export default definePluginEntry({
     }
 
     let runtime: MsteamsVoiceRuntime | undefined;
+
+    // The in-call "post to the Teams chat" tool, for the STREAMING path.
+    //
+    // Realtime gets this injected per call, with exact context. Streaming has no tool-dispatch
+    // surface - STT -> consult -> TTS - so the only way its delegated agent turn can reach a tool is
+    // an OpenClaw tool, and those are global. The handler context carries no session id, so the tool
+    // asks the runtime which call is postable and REFUSES when that is ambiguous rather than posting
+    // into the wrong conversation. Registered only when the messages lane is configured, so a
+    // voice-only deployment never sees a tool it cannot honour.
+    if (cfg.managedChat.enabled) {
+      api.registerTool({
+        name: "post_chat_message",
+        label: "Post to the Teams chat",
+        description:
+          "Post a text message into the Teams chat for the call in progress. Use when the caller asks " +
+          'you to "send that to the chat", "post it", or "message me the link" - anything they want to ' +
+          "keep after the call ends.",
+        promptSnippet: "post_chat_message: put text in the Teams chat of the call in progress",
+        parameters: {
+          type: "object",
+          properties: { text: { type: "string", description: "The message to post. Markdown is supported." } },
+          required: ["text"],
+        } as never,
+        async execute(_toolCallId: string, params: unknown) {
+          const text = String((params as { text?: unknown })?.text ?? "").trim();
+          if (!text) {
+            return { content: [{ type: "text", text: "There was nothing to post." }], isError: true } as never;
+          }
+          const target = runtime?.resolvePostableCall();
+          if (!target || "error" in target) {
+            const reason = target?.error ?? "The Teams bridge is not running.";
+            return { content: [{ type: "text", text: reason }], isError: true } as never;
+          }
+          const ok = await target.post(text);
+          return {
+            content: [{ type: "text", text: ok ? "Posted to the Teams chat." : "Could not post to the Teams chat." }],
+            isError: !ok,
+          } as never;
+        },
+      } as never);
+    }
+
     api.registerService({
       id: "msteams-call",
       start: async () => {
