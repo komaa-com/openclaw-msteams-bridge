@@ -39,6 +39,10 @@ export interface MsteamsLogger {
 export interface MsteamsSession {
   callId: string;
   threadId: string;
+  /** MANAGED only: the Microsoft tenant this CALL belongs to, asserted by StandIn in the signed route
+   * grant. Distinct from `caller.tenantId`, which describes whoever is on the phone (and is absent or
+   * foreign for a guest). This is the one that may address a chat post. */
+  tenantId?: string;
   caller: {
     aadId?: string | null;
     displayName?: string | null;
@@ -550,6 +554,7 @@ export class MsteamsMediaStream {
         this.config.onSessionStart?.({
           callId,
           threadId: parsed.threadId,
+          tenantId: parsed.tenantId ?? undefined,
           // Blank ids become null at the boundary: an empty-string aadId would survive every
           // downstream `aadId ?? fallback` and collapse all such callers into one session key
           // (cross-caller memory bleed) or one delivery target.

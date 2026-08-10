@@ -103,6 +103,24 @@ export const MSTEAMS_MINUTES_TOOL: RealtimeVoiceTool = {
   parameters: { type: "object", properties: {} },
 };
 
+export const MSTEAMS_POST_CHAT_TOOL_NAME = "post_chat_message";
+export const MSTEAMS_POST_CHAT_TOOL: RealtimeVoiceTool = {
+  type: "function",
+  name: MSTEAMS_POST_CHAT_TOOL_NAME,
+  description:
+    "Post a text message into the Teams chat for THIS call, while the call is still going. Use when " +
+    'the caller asks you to "send that to the chat", "post it", "write it down", or "message me the ' +
+    'link" - anything they want to keep after the call ends. It appears in the same Teams ' +
+    "conversation. Say what you posted; do not read long text aloud.",
+  parameters: {
+    type: "object",
+    properties: {
+      text: { type: "string", description: "The message to post. Markdown is supported." },
+    },
+    required: ["text"],
+  },
+};
+
 export const MSTEAMS_SHOW_TOOL_NAME = "show_to_caller";
 export const MSTEAMS_SHOW_TOOL: RealtimeVoiceTool = {
   type: "function",

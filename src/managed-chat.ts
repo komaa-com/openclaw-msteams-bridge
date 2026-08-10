@@ -250,6 +250,54 @@ async function readCapped(res: Response, maxBytes: number): Promise<Buffer | nul
   return Buffer.concat(chunks.map((c) => Buffer.from(c)), total);
 }
 
+/**
+ * Post a message into a Teams conversation through the gateway, with no inbound message to reply to.
+ *
+ * The SAME hop an ordinary chat reply takes - the gateway's /api/chat/reply, signed with this
+ * binding's connection secret - just addressed explicitly rather than derived from something that
+ * arrived. The agent never holds a Bot Framework credential; the gateway performs the Teams send.
+ *
+ * It exists because in-call chat had no route on a managed connection. post_meeting_minutes delivers
+ * through the HOST's message tool, which needs the customer's own Teams channel - a managed customer
+ * has none, so "post that to the chat" during a call could only fail. The plugin already holds both
+ * sockets; this uses the one built for this direction.
+ *
+ * Best-effort: returns false rather than throwing, because a failed post must not break a live call.
+ */
+export async function postManagedMessage(opts: {
+  chatSecret: string;
+  gatewayReplyUrl: string;
+  tenantId: string;
+  conversationId: string;
+  text: string;
+  idempotencyKey?: string;
+  fetchFn?: typeof fetch;
+}): Promise<boolean> {
+  const body = JSON.stringify({
+    tenantId: opts.tenantId,
+    conversationId: opts.conversationId,
+    text: opts.text,
+    kind: "message",
+    ...(opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}),
+  });
+  const { timestamp, signature } = signBridge(opts.chatSecret, body);
+  try {
+    const res = await (opts.fetchFn ?? fetch)(opts.gatewayReplyUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-standin-timestamp": timestamp,
+        "x-standin-signature": signature,
+      },
+      body,
+      signal: AbortSignal.timeout(20_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export interface ManagedChatDeps {
   /** Run one agent turn for an inbound message; returns the reply text. */
   respond: (message: ManagedInbound) => Promise<string>;

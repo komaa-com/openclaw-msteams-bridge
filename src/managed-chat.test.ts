@@ -10,6 +10,7 @@ import {
   buildReply,
   fetchAttachmentImages,
   computeBridgeSignature,
+  postManagedMessage,
   ManagedChatServer,
   parseInbound,
   REPLAY_WINDOW_MS,
@@ -238,6 +239,59 @@ describe("attachment image fetch (4.7 agent-side leg)", () => {
     expect(images).toHaveLength(1);
     expect(images[0].mimeType).toBe("image/png");
     expect(Buffer.from(images[0].data, "base64")).toHaveLength(16);
+  });
+
+  it("posts an in-call message over the messages lane, signed with the connection secret", async () => {
+    // In-call chat had no route on a managed connection: post_meeting_minutes delivers through the
+    // HOST's message tool, which needs the customer's own Teams channel - a managed customer has
+    // none. This is the same hop a chat REPLY takes, just addressed explicitly.
+    const sent: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = [];
+    const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+      sent.push({
+        url: String(url),
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        headers: init?.headers as Record<string, string>,
+      });
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const ok = await postManagedMessage({
+      chatSecret: KAT_SECRET,
+      gatewayReplyUrl: "https://gateway.test/api/chat/reply",
+      tenantId: "t1",
+      conversationId: "c1",
+      text: "the link you asked for",
+      idempotencyKey: "call-1-abc",
+      fetchFn,
+    });
+
+    expect(ok).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].url).toBe("https://gateway.test/api/chat/reply");
+    expect(sent[0].body).toMatchObject({
+      tenantId: "t1",
+      conversationId: "c1",
+      text: "the link you asked for",
+      kind: "message",
+      idempotencyKey: "call-1-abc",
+    });
+    // Signed with the binding's secret over the exact bytes sent - the gateway verifies per binding.
+    const expected = computeBridgeSignature(KAT_SECRET, sent[0].headers["x-standin-timestamp"], JSON.stringify(sent[0].body));
+    expect(sent[0].headers["x-standin-signature"]).toBe(expected);
+  });
+
+  it("reports a failed in-call post instead of throwing into the call", async () => {
+    const failing = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
+    expect(
+      await postManagedMessage({
+        chatSecret: KAT_SECRET,
+        gatewayReplyUrl: "https://gateway.test/api/chat/reply",
+        tenantId: "t1",
+        conversationId: "c1",
+        text: "x",
+        fetchFn: failing,
+      }),
+    ).toBe(false);
   });
 
   it("aborts an oversize body WHILE reading, not after allocating it", async () => {

@@ -65,6 +65,8 @@ import {
   MSTEAMS_LOOK_TOOL_NAME,
   MSTEAMS_MINUTES_TOOL,
   MSTEAMS_MINUTES_TOOL_NAME,
+  MSTEAMS_POST_CHAT_TOOL,
+  MSTEAMS_POST_CHAT_TOOL_NAME,
   MSTEAMS_REALTIME_CONSULT_SYSTEM_PROMPT,
   MSTEAMS_REALTIME_LOOK_SYSTEM_PROMPT,
   MSTEAMS_REALTIME_SHOW_SYSTEM_PROMPT,
@@ -330,6 +332,9 @@ export interface MsteamsRealtimeDeps {
   onDeliveryComplete?: () => void;
   /** Realtime tools exposed to the model (e.g. openclaw_agent_consult). */
   tools?: RealtimeVoiceTool[];
+  /** MANAGED only: post a message into this call's Teams chat through the StandIn gateway. Absent on
+   * BYO/free, where the host's own Teams channel already carries chat and there is no gateway. */
+  postChatMessage?: (text: string) => Promise<boolean>;
   /** Inbound-call policy applied before bridging (mirrors the streaming path). */
   inboundPolicy?: "disabled" | "allowlist" | "pairing" | "open";
   /** Allowlist of caller ids honored when inboundPolicy is "allowlist"/"pairing". */
@@ -583,6 +588,9 @@ export function createMsteamsRealtimeCall(params: {
     ...(showEnabled ? [MSTEAMS_SHOW_TOOL] : []),
     // On-demand minutes deliver via the agent's message tool (owner policy), like background tasks.
     ...(asyncTasksEnabled && session.caller.aadId ? [MSTEAMS_MINUTES_TOOL] : []),
+    // MANAGED only: posting to the chat needs the gateway lane, which BYO does not have (its chat is
+    // the host's own Teams channel). Offering the tool without it would be a promise we cannot keep.
+    ...(deps.postChatMessage ? [MSTEAMS_POST_CHAT_TOOL] : []),
   ];
 
   /**
@@ -785,6 +793,10 @@ export function createMsteamsRealtimeCall(params: {
     onToolCall: (event, rtSession) => {
       if (event.name === MSTEAMS_AGENT_TASK_TOOL_NAME) {
         handleAsyncTask(event, rtSession);
+        return;
+      }
+      if (event.name === MSTEAMS_POST_CHAT_TOOL_NAME) {
+        void handlePostChat(event, rtSession);
         return;
       }
       const handler =
@@ -1048,6 +1060,22 @@ export function createMsteamsRealtimeCall(params: {
    * post_meeting_minutes (#18/#22): ack on the call, then build+post the minutes .docx detached via
    * the same deterministic recap path so mid-call minutes are a real Word document too.
    */
+  /** post_chat_message: put text in the call's Teams chat, over the managed messages lane. */
+  const handlePostChat = async (
+    event: { callId: string; arguments?: unknown },
+    rtSession: { submitToolResult: (id: string, r: { text: string }) => void },
+  ): Promise<void> => {
+    const text = String((event.arguments as { text?: unknown } | undefined)?.text ?? "").trim();
+    if (!text) {
+      rtSession.submitToolResult(event.callId, { text: "There was nothing to post." });
+      return;
+    }
+    const ok = (await deps.postChatMessage?.(text)) ?? false;
+    rtSession.submitToolResult(event.callId, {
+      text: ok ? "I've posted that to the Teams chat." : "I couldn't post to the Teams chat just now.",
+    });
+  };
+
   const handleMinutes = withConsultGuards({
     label: "minutes",
     unavailableText: "I can't post minutes from this call right now.",

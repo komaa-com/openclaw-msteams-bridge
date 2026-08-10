@@ -8,7 +8,12 @@
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
-import { fetchAttachmentImages, ManagedChatServer, type ManagedInbound } from "./managed-chat.js";
+import {
+  fetchAttachmentImages,
+  ManagedChatServer,
+  postManagedMessage,
+  type ManagedInbound,
+} from "./managed-chat.js";
 import {
   consultRealtimeVoiceAgent,
   resolveConfiguredRealtimeVoiceProvider,
@@ -22,6 +27,7 @@ import {
 } from "openclaw/plugin-sdk/realtime-transcription";
 import { resolveConfiguredCapabilityProvider } from "openclaw/plugin-sdk/provider-selection-runtime";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
+import { createHash } from "node:crypto";
 import { createHmac } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -548,6 +554,31 @@ export class MsteamsVoiceRuntime {
     });
   }
 
+  /**
+   * The in-call "post this to the Teams chat" sender, or undefined when this call cannot have one.
+   *
+   * post_meeting_minutes delivers through the HOST's message tool, which needs the customer's own
+   * Teams channel - a managed customer has none, so on that tier posting to chat could only fail.
+   * This uses the messages lane the plugin is already serving, over the gateway that already carries
+   * its chat replies.
+   */
+  private buildChatPoster(session: MsteamsSession): ((text: string) => Promise<boolean>) | undefined {
+    const chat = this.cfg.managedChat;
+    const tenantId = session.tenantId;
+    if (!chat.enabled || !chat.chatSecret || !tenantId || !session.threadId) return undefined;
+    return async (text: string) =>
+      postManagedMessage({
+        chatSecret: chat.chatSecret,
+        gatewayReplyUrl: chat.gatewayReplyUrl,
+        tenantId,
+        conversationId: session.threadId,
+        text,
+        // Scoped to the call AND the content, so a retried tool call does not double-post while two
+        // genuinely different posts in one call both go out.
+        idempotencyKey: `call-${session.callId}-${createHash("sha256").update(text).digest("hex").slice(0, 12)}`,
+      });
+  }
+
   private getTtsProvider(): MsteamsTtsProvider {
     if (!this.ttsProvider) {
       this.ttsProvider = createMsteamsTtsProvider({
@@ -690,6 +721,11 @@ export class MsteamsVoiceRuntime {
       cfg: this.api.config as unknown as OpenClawConfig,
       instructions: this.cfg.voice.realtime.instructions,
       greetingInstructions,
+      // MANAGED only. Wired when the messages lane is configured AND the caller told us which tenant
+      // this call is (from the signed route grant) - both are required to address a post, and neither
+      // exists on BYO/free. Undefined here means the tool is not offered at all, which is better than
+      // offering it and failing: the model would promise the caller something that cannot happen.
+      postChatMessage: this.buildChatPoster(session),
       inboundPolicy: this.cfg.voice.inboundPolicy,
       allowFrom: this.cfg.voice.allowFrom,
       requireRecordingStatus: this.cfg.voice.msteams?.requireRecordingStatus,
