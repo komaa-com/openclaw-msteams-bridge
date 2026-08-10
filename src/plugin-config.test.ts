@@ -25,3 +25,33 @@ describe("resolvePluginConfig", () => {
     expect(resolvePluginConfig(undefined).media.sharedSecret).toBe("");
   });
 });
+
+describe("flat messages-lane keys", () => {
+  it("accepts gatewayReplyUrl at the root, as the config reference documents it", () => {
+    // The docs put it at the root beside messagesPort/messagesPath; only managedBot.gatewayReplyUrl was
+    // wired, and with additionalProperties:false a config that followed the docs failed validation.
+    const cfg = resolvePluginConfig({
+      enabled: true,
+      secret: "s3cret",
+      gatewayReplyUrl: "https://self-hosted.example.com/api/chat/reply",
+    });
+    expect(cfg.managedChat.gatewayReplyUrl).toBe("https://self-hosted.example.com/api/chat/reply");
+  });
+
+  it("the flat key wins over the compatibility block", () => {
+    const cfg = resolvePluginConfig({
+      enabled: true,
+      secret: "s3cret",
+      managedBot: { gatewayReplyUrl: "https://old.example.com/x" },
+      gatewayReplyUrl: "https://new.example.com/y",
+    });
+    expect(cfg.managedChat.gatewayReplyUrl).toBe("https://new.example.com/y");
+  });
+
+  it("the messages lane defaults to loopback, like calling", () => {
+    // Undefined was handed to server.listen(port, undefined), which binds every interface - so a
+    // config naming no bind address got calling on loopback and messages on the LAN.
+    const cfg = resolvePluginConfig({ enabled: true, secret: "s3cret" });
+    expect(cfg.managedChat.bindAddress).toBe("127.0.0.1");
+  });
+});

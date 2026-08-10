@@ -160,8 +160,22 @@ quickstart above, skip straight from step 1 to step 3 and set `secret` instead o
    openclaw gateway restart
    ```
 
-4. **Configure it** under `plugins.entries."msteams-call".config` - at minimum set `secret` (Managed
-   Bot) or `sharedSecret` (BYO) to match StandIn, plus `inboundPolicy` and your provider key. See
+4. **Configure it** under `plugins.entries."msteams-call".config`. The minimum that actually WORKS -
+   a secret alone leaves `inboundPolicy` unset, which denies every inbound call, so the bridge
+   connects and then answers nothing:
+
+   ```jsonc
+   "msteams-call": {
+     "config": {
+       "enabled": true,
+       "secret": "PASTE_THE_STANDIN_CONNECTION_SECRET",   // covers calling AND messages
+       "bindAddress": "127.0.0.1",
+       "inboundPolicy": "open"                            // or "allowlist" + allowFrom: [...]
+     }
+   }
+   ```
+
+   BYO deployments set `sharedSecret` instead of `secret`. You also need your provider key. See
    [Configuration](#configuration) and [Security](#security) below. Nothing starts until a secret is
    set somewhere.
 5. **Connect StandIn** to the plugin's WebSocket (start in the

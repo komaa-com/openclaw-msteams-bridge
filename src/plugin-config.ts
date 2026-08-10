@@ -80,6 +80,10 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
         : {}),
       ...(c.messagesPort !== undefined ? { port: Number(c.messagesPort) } : {}),
       ...(str(c.messagesPath) ? { path: str(c.messagesPath) } : {}),
+      // Flat, like every other messages-lane key. The config reference has always documented it here
+      // while only managedBot.gatewayReplyUrl was declared - and with additionalProperties false, a
+      // config that followed the docs failed validation outright.
+      ...(str(c.gatewayReplyUrl) ? { gatewayReplyUrl: str(c.gatewayReplyUrl) } : {}),
     }),
     outbound: c.outbound,
     limits: {

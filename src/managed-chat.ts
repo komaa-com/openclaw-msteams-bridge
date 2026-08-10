@@ -478,10 +478,14 @@ export class ManagedChatServer {
   static readonly TURN_TIMEOUT_MS = 5 * 60 * 1000;
 
   private async processAsync(message: ManagedInbound): Promise<void> {
-    // Typing while the agent thinks — best-effort, ephemeral by design.
-    await this.postReply(buildReply(message, "", "typing")).catch(() => undefined);
+    // Typing while the agent thinks — best-effort, ephemeral by design. Started, NOT awaited, before
+    // the turn: awaiting it put a whole outbound timeout in front of every answer on a slow gateway.
+    // It is awaited just before the reply instead, so the indicator still lands first (one that
+    // arrives after the answer is worse than a slow one) at no real cost - the turn is always longer.
+    const typing = this.postReply(buildReply(message, "", "typing")).catch(() => undefined);
     try {
       const text = await withTimeout(this.deps.respond(message), ManagedChatServer.TURN_TIMEOUT_MS, "agent turn");
+      await typing;
       if (text.trim().length > 0) {
         await this.postReply(buildReply(message, text));
       } else {
@@ -513,6 +517,11 @@ export class ManagedChatServer {
     const fetchFn = this.deps.fetchFn ?? fetch;
     const attempts = reply.kind === "typing" ? 1 : ManagedChatServer.REPLY_ATTEMPTS;
     for (let attempt = 1; attempt <= attempts; attempt++) {
+      // Re-checked EVERY attempt, not just on entry. With up to three attempts and backoff between
+      // them, this loop can run for ~30 seconds - so a stop() that arrived after the first attempt
+      // started would still let a later attempt post, which is the late reply the entry check exists
+      // to prevent, only harder to see.
+      if (this.stopped) return;
       // Fresh signature per attempt: a retry after backoff must not replay a stale timestamp into
       // the gateway's +/-5min window edge.
       const { timestamp, signature } = signBridge(this.cfg.chatSecret, body, this.deps.nowMs?.() ?? Date.now());
@@ -577,7 +586,12 @@ export function resolveManagedChatConfig(raw: unknown): ManagedChatConfig {
     configuredWithoutSecret: c.enabled === true && chatSecret.length === 0,
     enabled: chatSecret.length > 0 && !explicitlyOff,
     port: Number(c.port ?? 9444),
-    bindAddress: typeof c.bindAddress === "string" ? c.bindAddress : undefined,
+    // Default to LOOPBACK, the same default the calling lane has. Leaving this undefined handed it to
+    // server.listen(port, undefined), which binds every interface - so a config that named no bind
+    // address at all got calling on 127.0.0.1 and messages on the LAN, while the docs said the two
+    // lanes share one. The portal's snippet always writes bindAddress explicitly, so this only ever
+    // bit people following the README.
+    bindAddress: typeof c.bindAddress === "string" ? c.bindAddress : "127.0.0.1",
     path: typeof c.path === "string" ? c.path : "/msteams/messages",
     chatSecret,
     gatewayReplyUrl:

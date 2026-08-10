@@ -243,6 +243,10 @@
         "type": "string",
         "description": "POST path for the messages lane (default /msteams/messages)."
       },
+      "gatewayReplyUrl": {
+        "type": "string",
+        "description": "Where replies are posted. Defaults to the StandIn gateway; override only for a self-hosted StandIn. Flat here beside the other messages-lane keys - the docs have always shown it at the root, while the schema accepted it only under managedBot, and additionalProperties is false, so following the documentation produced a config that failed validation."
+      },
       "callingPort": {
         "type": "integer",
         "description": "WebSocket port for the calling lane (default 9442). `port` is the older name and still works.",
