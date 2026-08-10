@@ -65,6 +65,11 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
     // portal gives you turns on calling AND messages. That is the whole point of one secret. A
     // deployment that wants calling only sets `sharedSecret` instead, which fills nothing else.
     managedChat: resolveManagedChatConfig({
+      // The messages lane binds the SAME address as calling unless told otherwise - one machine, one
+      // interface, and it is what Hermes does. Without this, someone setting bindAddress 127.0.0.1 for
+      // the documented tunnel posture (TLS terminated publicly, proxied to loopback) got calling on
+      // loopback and messages on EVERY interface, quietly exposing it on the LAN.
+      ...(str(c.bindAddress) ? { bindAddress: str(c.bindAddress) } : {}),
       ...(asObject(c.managedBot) ?? {}),
       // Flat keys win over the compatibility block.
       ...(str(c.messagesSecret) || str(c.secret)

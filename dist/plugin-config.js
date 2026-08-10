@@ -13,6 +13,7 @@ export function resolvePluginConfig(rawInput) {
             sharedSecret: str(c.sharedSecret) || str(c.secret),
         },
         managedChat: resolveManagedChatConfig({
+            ...(str(c.bindAddress) ? { bindAddress: str(c.bindAddress) } : {}),
             ...(asObject(c.managedBot) ?? {}),
             ...(str(c.messagesSecret) || str(c.secret)
                 ? { chatSecret: str(c.messagesSecret) || str(c.secret) }
