@@ -71,6 +71,9 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       // loopback and messages on EVERY interface, quietly exposing it on the LAN.
       ...(str(c.bindAddress) ? { bindAddress: str(c.bindAddress) } : {}),
       ...(asObject(c.managedBot) ?? {}),
+      // An explicit per-lane override, for the rare deployment that genuinely wants the two lanes on
+      // different interfaces. Last, so it beats both the root default and the compatibility block.
+      ...(str(c.messagesBindAddress) ? { bindAddress: str(c.messagesBindAddress) } : {}),
       // Flat keys win over the compatibility block.
       ...(str(c.messagesSecret) || str(c.secret)
         ? { chatSecret: str(c.messagesSecret) || str(c.secret) }

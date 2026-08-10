@@ -274,6 +274,10 @@ export async function postManagedMessage(opts: {
   fetchFn?: typeof fetch;
 }): Promise<boolean> {
   const body = JSON.stringify({
+    // Every message on this wire carries schemaVersion (chat-schema.yaml). buildReply() sets it and
+    // this did not - the current gateway defaults it in C# and hid the omission, which is exactly the
+    // kind of thing that breaks against a stricter consumer rather than against the one that wrote it.
+    schemaVersion: SCHEMA_VERSION,
     tenantId: opts.tenantId,
     conversationId: opts.conversationId,
     text: opts.text,
@@ -362,7 +366,19 @@ export class ManagedChatServer {
 
     const server = this.server;
     this.server = undefined;
-    if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (server) {
+      // server.close() waits for every in-flight request to finish, so a slow or half-sent request
+      // could hold a reload open far past the drain budget below - the budget only covered the agent
+      // turns, not the listener. Bound the close, then destroy whatever is still attached.
+      server.closeIdleConnections?.();
+      await Promise.race([
+        new Promise<void>((resolve) => server.close(() => resolve())),
+        new Promise<void>((resolve) => setTimeout(resolve, ManagedChatServer.CLOSE_MS).unref?.()),
+      ]);
+      // Anything still holding the listener open at this point is not going to finish in time. It
+      // cannot post a reply either way (see the stopped guard), so the socket is all that is left.
+      server.closeAllConnections?.();
+    }
 
     // Then give the chains that are already running a BOUNDED chance to finish. They cannot post
     // anymore (the guard above), so this is about letting agent work unwind cleanly rather than
@@ -380,6 +396,10 @@ export class ManagedChatServer {
   /** How long stop() waits for in-flight chains before returning. Bounded because a host reload must
    * not hang on an agent turn, and the reply guard already makes a straggler harmless. */
   private static readonly DRAIN_MS = 5000;
+
+  /** How long stop() waits for the LISTENER to close before destroying connections. Separate from
+   * DRAIN_MS: one bounds sockets, the other bounds agent work, and the two used to be conflated. */
+  private static readonly CLOSE_MS = 2000;
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     // The configured path is the ONLY path served - no legacy aliases. If a deployment needs a
@@ -439,7 +459,12 @@ export class ManagedChatServer {
     if (this.stopped) return;
     const key = `${message.tenantId}:${message.conversationId}`;
     const prev = this.chains.get(key) ?? Promise.resolve();
-    const next = prev.then(() => this.processAsync(message)).catch(() => undefined);
+    // Re-check on the way IN, not only when queued: this callback can sit behind another turn and
+    // reach the front long after stop() ran, at which point starting an agent turn for a runtime the
+    // host has already replaced is exactly what we are trying to avoid.
+    const next = prev
+      .then(() => (this.stopped ? undefined : this.processAsync(message)))
+      .catch(() => undefined);
     this.chains.set(key, next);
     void next.finally(() => {
       if (this.chains.get(key) === next) this.chains.delete(key);

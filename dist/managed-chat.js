@@ -153,6 +153,7 @@ async function readCapped(res, maxBytes) {
 }
 export async function postManagedMessage(opts) {
     const body = JSON.stringify({
+        schemaVersion: SCHEMA_VERSION,
         tenantId: opts.tenantId,
         conversationId: opts.conversationId,
         text: opts.text,
@@ -211,8 +212,14 @@ export class ManagedChatServer {
         this.stopped = true;
         const server = this.server;
         this.server = undefined;
-        if (server)
-            await new Promise((resolve) => server.close(() => resolve()));
+        if (server) {
+            server.closeIdleConnections?.();
+            await Promise.race([
+                new Promise((resolve) => server.close(() => resolve())),
+                new Promise((resolve) => setTimeout(resolve, ManagedChatServer.CLOSE_MS).unref?.()),
+            ]);
+            server.closeAllConnections?.();
+        }
         const inflight = [...this.chains.values()];
         if (inflight.length > 0) {
             await Promise.race([
@@ -223,6 +230,7 @@ export class ManagedChatServer {
         this.chains.clear();
     }
     static DRAIN_MS = 5000;
+    static CLOSE_MS = 2000;
     async handle(req, res) {
         if (req.method !== "POST" || (req.url ?? "").split("?")[0] !== this.cfg.path) {
             res.writeHead(404).end();
@@ -268,7 +276,9 @@ export class ManagedChatServer {
             return;
         const key = `${message.tenantId}:${message.conversationId}`;
         const prev = this.chains.get(key) ?? Promise.resolve();
-        const next = prev.then(() => this.processAsync(message)).catch(() => undefined);
+        const next = prev
+            .then(() => (this.stopped ? undefined : this.processAsync(message)))
+            .catch(() => undefined);
         this.chains.set(key, next);
         void next.finally(() => {
             if (this.chains.get(key) === next)

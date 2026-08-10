@@ -29,7 +29,7 @@ portal, and paste the one secret it gives you:
         "config": {
           "enabled": true,
           // Covers BOTH lanes: calling and messages.
-          "secret": { "env": "MSTEAMS_CALL_SECRET" }
+          "secret": "paste-the-value-from-the-StandIn-portal"
         }
       }
     }

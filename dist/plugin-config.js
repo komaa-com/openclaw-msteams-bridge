@@ -15,6 +15,7 @@ export function resolvePluginConfig(rawInput) {
         managedChat: resolveManagedChatConfig({
             ...(str(c.bindAddress) ? { bindAddress: str(c.bindAddress) } : {}),
             ...(asObject(c.managedBot) ?? {}),
+            ...(str(c.messagesBindAddress) ? { bindAddress: str(c.messagesBindAddress) } : {}),
             ...(str(c.messagesSecret) || str(c.secret)
                 ? { chatSecret: str(c.messagesSecret) || str(c.secret) }
                 : {}),

@@ -55,11 +55,19 @@ you:
 1. Rename the entry key: `plugins.entries."msteams-voice"` becomes `plugins.entries."msteams-call"`.
 2. If you used the `managedChat` block, rename it to `managedBot` - or better, move its `chatSecret`
    to the top-level `secret`, which covers both lanes.
-3. If you pinned `path`, the calling default moved from `/voice/msteams/stream` to
-   `/msteams/calling`. Update the **Agent calling URL** on your StandIn connection to match, or set
-   `path` back to the old value.
+3. **The calling path default changed**, from `/voice/msteams/stream` to `/msteams/calling`. This is
+   the step that breaks calls if you skip it, and it bites you precisely if you NEVER set `path` -
+   pinning it is what protects you. Two ways out, pick one:
 
-Nothing else changes. `sharedSecret` still works exactly as before for BYO deployments.
+   - **Recommended.** Leave the default and update the **Agent calling URL** on your StandIn
+     connection to `wss://<your-host>/msteams/calling`.
+   - **No StandIn change.** Keep serving the old path by pinning it: `"path": "/voice/msteams/stream"`.
+
+   Only the new path is served. There is no alias, so a mismatch is a 404 on every call rather than a
+   quiet degradation.
+
+`sharedSecret` still works exactly as before for BYO deployments, and `secret` is the newer way to set
+both lanes at once.
 
 ## Getting started
 
@@ -84,7 +92,7 @@ products, which is why there is a single value to paste and no enable flag to re
           "enabled": true,
           // The connection secret from the StandIn portal. It turns on BOTH lanes:
           // calling (ws://:9442/msteams/calling) and messages (http://:9444/msteams/messages).
-          "secret": { "env": "MSTEAMS_CALL_SECRET" }
+          "secret": "paste-the-value-from-the-StandIn-portal"
         }
       }
     }
@@ -199,7 +207,7 @@ in your StandIn dashboard. Set `bindAddress` to `0.0.0.0` so the hosted bridge c
           "mode": "realtime",
           "bindAddress": "0.0.0.0",
           "port": 9442,
-          "path": "/voice/msteams/stream",
+          "path": "/msteams/calling",
           "sharedSecret": "<same secret as in StandIn>",
           "requireRecordingStatus": true,
           "inboundPolicy": "allowlist",
@@ -291,7 +299,7 @@ Full reference in the [Configuration Reference](https://komaa-com.github.io/open
 | `mode` | `realtime` or `streaming` (auto if omitted) |
 | `port` | WebSocket port (default `9442`) |
 | `bindAddress` | bind address; use `0.0.0.0` for the hosted bridge |
-| `path` | WebSocket path (default `/voice/msteams/stream`) |
+| `path` | Calling WebSocket path (default `/msteams/calling`; was `/voice/msteams/stream` before the rename - see [Upgrading](#upgrading-from-msteams-voice)) |
 | `sharedSecret` | HMAC secret; must match StandIn |
 | `requireRecordingStatus` | engage only once recording is active |
 | `inboundPolicy` | `disabled`, `allowlist`, `pairing`, `open`. `pairing` currently behaves exactly like `allowlist` (the plugin issues no pairing codes or approvals for calls; callers must be in `allowFrom`) |

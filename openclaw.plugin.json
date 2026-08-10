@@ -26,14 +26,14 @@
       },
       "secret": {
         "type": "string",
-        "description": "The StandIn connection secret - ONE value covering BOTH lanes, calling and messages. Paste the value the StandIn portal shows you; it is all most deployments set. Per-lane overrides (sharedSecret / messagesSecret) exist for deployments that insist on separate keys and win when set."
+        "description": "The StandIn connection secret - ONE value covering BOTH lanes, calling and messages. Paste the value the StandIn portal shows you; it is all most deployments set. Per-lane overrides (sharedSecret / messagesSecret) exist for deployments that insist on separate keys and win when set. Must be a string. An object here fails validation, which is deliberate: coercing it would leave both lanes silently disabled."
       },
       "sharedSecret": {
         "type": [
           "string",
           "object"
         ],
-        "description": "Per-lane OVERRIDE for CALLING only. Prefer `secret`, which covers both lanes. Setting this alone configures calling and leaves messages off."
+        "description": "Per-lane OVERRIDE for CALLING only. Prefer `secret`, which covers both lanes. Setting this alone configures calling and leaves messages off. Must resolve to a STRING: a non-string (an unresolved reference object, say) is coerced to empty so the lane fails closed rather than running on a guessable value."
       },
       "requireRecordingStatus": {
         "type": "boolean"
@@ -231,11 +231,13 @@
           "string",
           "object"
         ],
-        "description": "Per-lane OVERRIDE for MESSAGES only. Prefer `secret`, which covers both lanes."
+        "description": "Per-lane OVERRIDE for MESSAGES only. Prefer `secret`, which covers both lanes. Must resolve to a STRING: a non-string (an unresolved reference object, say) is coerced to empty so the lane fails closed rather than running on a guessable value."
       },
       "messagesPort": {
         "type": "integer",
-        "description": "HTTP port for the messages lane (default 9444)."
+        "description": "HTTP port for the messages lane (default 9444).",
+        "minimum": 1,
+        "maximum": 65535
       },
       "messagesPath": {
         "type": "string",
@@ -243,7 +245,13 @@
       },
       "callingPort": {
         "type": "integer",
-        "description": "WebSocket port for the calling lane (default 9442). `port` is the older name and still works."
+        "description": "WebSocket port for the calling lane (default 9442). `port` is the older name and still works.",
+        "minimum": 1,
+        "maximum": 65535
+      },
+      "messagesBindAddress": {
+        "type": "string",
+        "description": "Bind address for the messages lane. Defaults to the root `bindAddress`, so both lanes share one interface; set this only to split them."
       }
     }
   },
@@ -259,7 +267,7 @@
           "expected": "string"
         },
         {
-          "path": "managedChat.chatSecret",
+          "path": "messagesSecret",
           "expected": "string"
         },
         {

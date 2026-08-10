@@ -68,17 +68,6 @@
     "build": {
       "openclawVersion": "2026.6.10",
       "pluginSdkVersion": "2026.6.10"
-    },
-    "channel": {
-      "id": "msteams-voice",
-      "label": "Microsoft Teams Voice"
-    },
-    "channelEnvVars": {
-      "msteams-voice": [
-        "MSTEAMS_APP_ID",
-        "MSTEAMS_APP_PASSWORD",
-        "MSTEAMS_TENANT_ID"
-      ]
     }
   },
   "scripts": {

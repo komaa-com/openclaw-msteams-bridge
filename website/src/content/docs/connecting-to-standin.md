@@ -87,7 +87,7 @@ but most installs never need them.
 "msteams-call": {
   "config": {
     "enabled": true,
-    "secret": { "env": "MSTEAMS_CALL_SECRET" }
+    "secret": "paste-the-value-from-the-StandIn-portal"
   }
 }
 ```
