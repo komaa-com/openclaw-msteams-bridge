@@ -363,7 +363,7 @@ export class MsteamsVoiceRuntime {
       throw new Error("msteams-call: outbound.workerBaseUrl is not configured");
     if (!ob.tenantId) throw new Error("msteams-call: outbound.tenantId is not configured");
     if (!this.cfg.media.sharedSecret)
-      throw new Error("msteams-call: sharedSecret is not configured");
+      throw new Error("msteams-call: secret is not configured");
     const userObjectId = to.replace(/^user:/i, "").trim();
     if (!userObjectId) throw new Error("msteams-call: target userObjectId (to) is required");
     if (this.lifecycle.activeCount() >= this.cfg.limits.maxConcurrentCalls)

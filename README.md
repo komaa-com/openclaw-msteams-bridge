@@ -66,7 +66,7 @@ you:
    Only the new path is served. There is no alias, so a mismatch is a 404 on every call rather than a
    quiet degradation.
 
-`sharedSecret` still works exactly as before for BYO deployments, and `secret` is the newer way to set
+`secret` is the one connection secret, for every deployment. It is the only way to set
 both lanes at once.
 
 ## Getting started
@@ -152,7 +152,7 @@ Do these in order.
 
 **Step 2 is BRING-YOUR-OWN-BOT only.** On the StandIn Managed Bot path there is no Teams channel to
 create and no bot credentials to hold - StandIn owns the bot. If you followed the Managed Bot
-quickstart above, skip straight from step 1 to step 3 and set `secret` instead of `sharedSecret`.
+quickstart above, skip straight from step 1 to step 3 and set `secret`.
 
 1. **OpenClaw is installed and running** (host `>= 2026.6.10`).
 2. **(BYO only) Microsoft Teams is added as a channel** (bot app + credentials).
@@ -178,7 +178,7 @@ quickstart above, skip straight from step 1 to step 3 and set `secret` instead o
    }
    ```
 
-   BYO deployments set `sharedSecret` instead of `secret`. You also need your provider key. See
+   Set `secret` (the value the StandIn portal shows you). You also need your provider key. See
    [Configuration](#configuration) and [Security](#security) below. Nothing starts until a secret is
    set somewhere.
 5. **Connect StandIn** to the plugin's WebSocket (start in the
@@ -209,7 +209,7 @@ realtime provider resolves, else streaming.
 
 ## Configuration
 
-Config lives under `plugins.entries."msteams-call".config`. `secret` (or `sharedSecret` on BYO) must match the value set
+Config lives under `plugins.entries."msteams-call".config`. `secret` must match the value set
 in your StandIn dashboard.
 
 `bindAddress` defaults to **loopback for both lanes**, because the documented posture is a tunnel that
@@ -232,7 +232,6 @@ terminates TLS publicly and proxies to `127.0.0.1` - nothing is exposed on your 
           "messagesPort": 9444,
           "path": "/msteams/calling",
           // ONE connection secret from the StandIn portal, covering calling AND messages.
-          // BYO deployments set "sharedSecret" (calling only) instead.
           "secret": "<the connection secret from StandIn>",
           "requireRecordingStatus": true,
           "inboundPolicy": "allowlist",
@@ -319,14 +318,14 @@ genuinely needs it, and only in the narrow way described.
 
 | Option | Safe default | Why it is safe | When to change it |
 |:--|:--|:--|:--|
-| `sharedSecret` | none (fails closed) | The media WebSocket authenticates every connection with a replay-proof HMAC handshake keyed on this secret. With no secret the server refuses to start, so a misconfig can never expose an unauthenticated port. A non-string value coerces to empty and also fails closed. | Always set it, to a strong random value that matches your StandIn dashboard. Prefer an OpenClaw secret reference over a literal in config. |
+| `secret` | none (fails closed) | Both lanes authenticate every connection with a replay-proof HMAC handshake keyed on this secret. With no secret the server refuses to start, so a misconfig can never expose an unauthenticated port. A non-string value coerces to empty and also fails closed. | Always set it, to a strong random value that matches your StandIn dashboard. Prefer an OpenClaw secret reference over a literal in config. |
 | `inboundPolicy` | unset = deny all | Inbound calls are rejected until you name a policy, so the agent never answers an unknown caller by default. | Set `allowlist` and list trusted callers in `allowFrom` (by AAD object id or phone number). Reserve `open` for throwaway sandbox testing only. |
 | `requireRecordingStatus` | `true` | Media is held until Teams reports recording is active, so the agent never sees or hears the call before participants have the recording indicator. This keeps you on the right side of Teams' notice expectations. | Leave it on. Only disable for a controlled test where no real participants are present. |
 | `bindAddress` | `127.0.0.1` (loopback) | The WebSocket listens on localhost only, so it is unreachable from other hosts by default. | Widen to `0.0.0.0` only when the StandIn bridge runs on a different host, and only on a trusted or VPN-only interface behind your firewall. The HMAC handshake still guards it, but do not expose the port to the open internet. |
 | `realtime.toolPolicy` | `none` | The voice model cannot invoke any agent tools, so a caller cannot drive tools by voice unless you opt in. | Use `safe-read-only` to allow read-only tools. Reserve `owner` (full tool access) for calls you have restricted to trusted owners via `inboundPolicy`. |
 | Installer | applies the above | The one-line installer configures these secure defaults for you rather than leaving them blank. | If your policy forbids piping a script to a shell, download and read `install.sh` first, then run it, or follow the manual [Install](#install) steps. |
 
-In short: set a strong `sharedSecret`, keep `inboundPolicy` restrictive with an explicit `allowFrom`,
+In short: set a strong `secret`, keep `inboundPolicy` restrictive with an explicit `allowFrom`,
 leave `requireRecordingStatus` on, keep `bindAddress` as tight as your topology allows, and only
 raise `toolPolicy` for callers you trust.
 
@@ -343,7 +342,7 @@ Full reference in the [Configuration Reference](https://komaa-com.github.io/open
 | `port` | WebSocket port (default `9442`) |
 | `bindAddress` | bind address; use `0.0.0.0` for the hosted bridge |
 | `path` | Calling WebSocket path (default `/msteams/calling`; was `/voice/msteams/stream` before the rename - see [Upgrading](#upgrading-from-msteams-voice)) |
-| `sharedSecret` | HMAC secret; must match StandIn |
+| `secret` | HMAC secret for BOTH lanes; must match StandIn |
 | `requireRecordingStatus` | engage only once recording is active |
 | `inboundPolicy` | `disabled`, `allowlist`, `pairing`, `open`. `pairing` currently behaves exactly like `allowlist` (the plugin issues no pairing codes or approvals for calls; callers must be in `allowFrom`) |
 | `allowFrom` | allowlisted caller ids |

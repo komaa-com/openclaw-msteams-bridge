@@ -10,15 +10,13 @@ export function resolvePluginConfig(rawInput) {
             port: Number(c.callingPort ?? c.port ?? 9442),
             bindAddress: c.bindAddress,
             path: String(c.path ?? "/msteams/calling"),
-            sharedSecret: str(c.sharedSecret) || str(c.secret),
+            sharedSecret: str(c.secret),
         },
         managedChat: resolveManagedChatConfig({
             ...(str(c.bindAddress) ? { bindAddress: str(c.bindAddress) } : {}),
             ...(asObject(c.managedBot) ?? {}),
             ...(str(c.messagesBindAddress) ? { bindAddress: str(c.messagesBindAddress) } : {}),
-            ...(str(c.messagesSecret) || str(c.secret)
-                ? { chatSecret: str(c.messagesSecret) || str(c.secret) }
-                : {}),
+            ...(str(c.secret) ? { chatSecret: str(c.secret) } : {}),
             ...(c.messagesPort !== undefined ? { port: Number(c.messagesPort) } : {}),
             ...(str(c.messagesPath) ? { path: str(c.messagesPath) } : {}),
             ...(str(c.gatewayReplyUrl) ? { gatewayReplyUrl: str(c.gatewayReplyUrl) } : {}),

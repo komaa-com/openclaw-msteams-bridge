@@ -3,7 +3,7 @@ import { resolvePluginConfig } from "./plugin-config.js";
 
 describe("resolvePluginConfig", () => {
   it("passes a string sharedSecret through unchanged", () => {
-    const resolved = resolvePluginConfig({ sharedSecret: "s3cret" });
+    const resolved = resolvePluginConfig({ secret: "s3cret" });
     expect(resolved.media.sharedSecret).toBe("s3cret");
   });
 

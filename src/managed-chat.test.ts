@@ -124,38 +124,40 @@ describe("reply building", () => {
 });
 
 describe("plugin config path (managedBot lands where the runtime reads it)", () => {
-  it("ONE `secret` fills both lanes; sharedSecret alone never opens the chat lane", async () => {
+  it("`secret` is the ONLY key, and it fills both lanes", async () => {
     const { resolvePluginConfig } = await import("./plugin-config.js");
     const one = resolvePluginConfig({ secret: "ONE" });
     expect(one.media.sharedSecret).toBe("ONE");
     expect(one.managedChat.enabled).toBe(true);
     expect(one.managedChat.chatSecret).toBe("ONE");
-    // per-lane override wins
-    const ovr = resolvePluginConfig({ secret: "ONE", messagesSecret: "OVR" });
-    expect(ovr.managedChat.chatSecret).toBe("OVR");
-    // a voice-only deployment (sharedSecret, no secret) must NOT grow a chat listener on upgrade
-    const voiceOnly = resolvePluginConfig({ sharedSecret: "V" });
-    expect(voiceOnly.media.sharedSecret).toBe("V");
-    expect(voiceOnly.managedChat.enabled).toBe(false);
+
+    // The former per-lane overrides are GONE. They are the reason the published docs taught
+    // `sharedSecret` and left the messages lane silently off for everyone who followed them, so a
+    // config still carrying them must not quietly half-work - it must resolve to nothing.
+    const legacy = resolvePluginConfig({ sharedSecret: "V" });
+    expect(legacy.media.sharedSecret).toBe("");
+    expect(legacy.managedChat.enabled).toBe(false);
+
+    const legacyMsgs = resolvePluginConfig({ secret: "ONE", messagesSecret: "OVR" });
+    expect(legacyMsgs.managedChat.chatSecret).toBe("ONE");
   });
 
   it("resolves the messages lane from flat keys, managedBot as compatibility, and one secret for both", async () => {
     const { resolvePluginConfig } = await import("./plugin-config.js");
 
     // The compatibility block still works.
-    const viaBlock = resolvePluginConfig({ sharedSecret: "v", managedBot: { chatSecret: "k" } });
+    const viaBlock = resolvePluginConfig({ managedBot: { chatSecret: "k" } });
     expect(viaBlock.managedChat.enabled).toBe(true);
     expect(viaBlock.managedChat.chatSecret).toBe("k");
 
-    // Flat keys are the documented shape and win over the block.
+    // `secret` wins over the compatibility block, and the flat lane keys still apply.
     const flat = resolvePluginConfig({
-      sharedSecret: "v",
-      messagesSecret: "flat",
+      secret: "S",
       messagesPort: 9555,
       messagesPath: "/msteams/messages",
       managedBot: { chatSecret: "block" },
     });
-    expect(flat.managedChat.chatSecret).toBe("flat");
+    expect(flat.managedChat.chatSecret).toBe("S");
     expect(flat.managedChat.port).toBe(9555);
 
     // ONE secret fills BOTH lanes - the whole point of `secret`.
@@ -166,11 +168,11 @@ describe("plugin config path (managedBot lands where the runtime reads it)", () 
 
     // The removed `managedChat` alias no longer resolves. It is gone from the manifest schema too,
     // which sets additionalProperties:false - so such a config fails validation before reaching here.
-    const removed = resolvePluginConfig({ sharedSecret: "v", managedChat: { chatSecret: "k" } });
+    const removed = resolvePluginConfig({ managedChat: { chatSecret: "k" } });
     expect(removed.managedChat.enabled).toBe(false);
 
-    // Unset = off, and the voice config is untouched either way.
-    expect(resolvePluginConfig({ sharedSecret: "v" }).managedChat.enabled).toBe(false);
+    // Unset = off.
+    expect(resolvePluginConfig({}).managedChat.enabled).toBe(false);
   });
 });
 

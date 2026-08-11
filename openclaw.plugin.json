@@ -31,14 +31,7 @@
       },
       "secret": {
         "type": "string",
-        "description": "The StandIn connection secret - ONE value covering BOTH lanes, calling and messages. Paste the value the StandIn portal shows you; it is all most deployments set. Per-lane overrides (sharedSecret / messagesSecret) exist for deployments that insist on separate keys and win when set. Must be a string. An object here fails validation, which is deliberate: coercing it would leave both lanes silently disabled."
-      },
-      "sharedSecret": {
-        "type": [
-          "string",
-          "object"
-        ],
-        "description": "Per-lane OVERRIDE for CALLING only. Prefer `secret`, which covers both lanes. Setting this alone configures calling and leaves messages off. Must resolve to a STRING: a non-string (an unresolved reference object, say) is coerced to empty so the lane fails closed rather than running on a guessable value."
+        "description": "The StandIn connection secret. ONE value covering BOTH lanes, calling and messages. Paste the value the StandIn portal shows you."
       },
       "requireRecordingStatus": {
         "type": "boolean"
@@ -231,13 +224,6 @@
           }
         }
       },
-      "messagesSecret": {
-        "type": [
-          "string",
-          "object"
-        ],
-        "description": "Per-lane OVERRIDE for MESSAGES only. Prefer `secret`, which covers both lanes. Must resolve to a STRING: a non-string (an unresolved reference object, say) is coerced to empty so the lane fails closed rather than running on a guessable value."
-      },
       "messagesPort": {
         "type": "integer",
         "description": "HTTP port for the messages lane (default 9444).",
@@ -269,14 +255,6 @@
       "paths": [
         {
           "path": "secret",
-          "expected": "string"
-        },
-        {
-          "path": "sharedSecret",
-          "expected": "string"
-        },
-        {
-          "path": "messagesSecret",
           "expected": "string"
         },
         {

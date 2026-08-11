@@ -29,7 +29,7 @@ function fakeApi() {
       enabled: true,
       port: 0,
       path: "/msteams/calling",
-      sharedSecret: "s3cret",
+      secret: "s3cret",
       realtime: { provider: "openai" },
     },
     config: {},
@@ -217,6 +217,11 @@ describe("MsteamsVoiceRuntime.start (realtime provider warning)", () => {
     api.pluginConfig.mode = "realtime";
     api.pluginConfig.realtime = { provider: "openai" }; // no credentials → does not resolve
     api.pluginConfig.port = 0; // OS-assigned; avoids collisions
+    // Both lanes now come up from the single `secret`, so the messages listener needs an OS-assigned
+    // port too. It used to stay off here because the fixture set the calling-only `sharedSecret`; with
+    // that key removed there is no half-on configuration, and a fixed 9444 collides with any real
+    // gateway running on the same machine.
+    api.pluginConfig.messagesPort = 0;
     const rt = new MsteamsVoiceRuntime(api, resolvePluginConfig(api.pluginConfig));
     await rt.start();
     try {

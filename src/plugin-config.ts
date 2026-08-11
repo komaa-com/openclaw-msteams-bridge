@@ -42,14 +42,17 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       bindAddress: c.bindAddress,
       path: String(c.path ?? "/msteams/calling"),
       // ONE secret, both lanes (owner decision, matching Hermes): `secret` is THE connection secret
-      // StandIn issues per binding, and the user pastes it once. `sharedSecret` / `messagesSecret`
-      // remain as per-lane OVERRIDES for deployments that insist on separate keys, and win when set.
+      // StandIn issues per binding, and the user pastes it once. It is now the ONLY way to set it -
+      // the former `sharedSecret` / `messagesSecret` per-lane overrides are gone. They existed so a
+      // deployment could run calling without messages, but that made the secret do two jobs at once,
+      // key choice and lane selection, which is why the published docs taught `sharedSecret` and
+      // silently left the messages lane off for everyone who followed them.
       //
       // Only accept a STRING. The manifest allows an object (secret-input reference) form; if the host
       // ever passes an UNRESOLVED object (e.g. an env descriptor whose var is unset), String({}) would yield the
       // literal "[object Object]" — a non-empty, guessable secret that the fail-closed check in index.ts would
       // accept. Coerce a non-string to "" so it fails CLOSED (server refuses to start) instead.
-      sharedSecret: str(c.sharedSecret) || str(c.secret),
+      sharedSecret: str(c.secret),
     },
     // The messages lane, configured with FLAT keys beside the calling ones - the two lanes of one
     // connection, not a nested sub-product. `managedBot` stays accepted as the compatibility block.
@@ -61,9 +64,9 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
     // this release (msteams-voice -> msteams-call), so every existing config has to be edited anyway;
     // renaming one more key while you are already in the file is not an extra migration.
     //
-    // Note the asymmetry that is deliberate: `secret` fills BOTH lanes, so pasting the one value the
-    // portal gives you turns on calling AND messages. That is the whole point of one secret. A
-    // deployment that wants calling only sets `sharedSecret` instead, which fills nothing else.
+    // `secret` fills BOTH lanes: paste the one value the portal gives you and calling AND messages
+    // come up. That is the whole point of one secret, and there is no longer a second key that turns
+    // half of it on.
     managedChat: resolveManagedChatConfig({
       // The messages lane binds the SAME address as calling unless told otherwise - one machine, one
       // interface, and it is what Hermes does. Without this, someone setting bindAddress 127.0.0.1 for
@@ -75,9 +78,7 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       // different interfaces. Last, so it beats both the root default and the compatibility block.
       ...(str(c.messagesBindAddress) ? { bindAddress: str(c.messagesBindAddress) } : {}),
       // Flat keys win over the compatibility block.
-      ...(str(c.messagesSecret) || str(c.secret)
-        ? { chatSecret: str(c.messagesSecret) || str(c.secret) }
-        : {}),
+      ...(str(c.secret) ? { chatSecret: str(c.secret) } : {}),
       ...(c.messagesPort !== undefined ? { port: Number(c.messagesPort) } : {}),
       ...(str(c.messagesPath) ? { path: str(c.messagesPath) } : {}),
       // Flat, like every other messages-lane key. The config reference has always documented it here
