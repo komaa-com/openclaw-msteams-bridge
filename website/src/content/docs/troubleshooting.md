@@ -105,7 +105,7 @@ move to a subscription tier - see
 - The place-call request is signed with `sharedSecret`; a mismatch fails it.
 - Check `outbound.tenantId` is the callee's AAD tenant.
 - **No answer:** after `outbound.answerTimeoutMs` (default 120,000 ms) the plugin treats the call
-  as unanswered, delivers the voicemail-style fallback if configured, and cancels the ringing call
+  as unanswered and cancels the ringing call
   so the callee's Teams stops ringing. A late answer after that point is declined by design.
 
 ## Where to look for logs

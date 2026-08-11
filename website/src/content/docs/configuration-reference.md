@@ -94,7 +94,7 @@ the plugin uses your configured transcription provider, then a VAD-segmented fil
 | `outbound.enabled` | bool | - | Enable outbound call-backs. |
 | `outbound.workerBaseUrl` | string | - | StandIn outbound API base URL. |
 | `outbound.tenantId` | string | - | Your AAD tenant id for outbound. |
-| `outbound.answerTimeoutMs` | int | `120000` | No-answer timeout before voicemail/cancel. |
+| `outbound.answerTimeoutMs` | int | `120000` | How long to wait for an answer before finalizing the attempt as no-answer and cancelling the ringing call. |
 | `outbound.defaultMode` | enum | - | `notify` (speak and hang up) \| `conversation`. |
 
 See [Outbound Calls](/openclaw-msteams-bridge/outbound-calls/).

@@ -35,8 +35,9 @@ Details of each capability follow below.
 - **Group and meeting etiquette** - stays silent until addressed by a wake phrase, then answers
   through a short follow-up window; 1:1 calls always answer; every frame and utterance is attributed
   to the right speaker.
-- **Outbound call-backs** - places a call, speaks the result, and hangs up, with a voicemail
-  fallback when no one answers.
+- **Outbound call-backs** - hand over a long task and the agent rings you back and speaks the result
+  when it is done, or answer a Teams chat with a phone call. An unanswered call is finalized after a
+  no-answer timeout.
 - **Meeting recap and minutes** - end-of-call summary of key points, decisions, and action items,
   plus an on-demand `.docx` of minutes with per-person attribution.
 - **Avatar driver cues** - expression changes, viseme lip-sync, and picture-in-picture image
@@ -314,6 +315,27 @@ gating, DTMF, and vision all work in streaming mode too.
 }
 ```
 
+This one block turns on **two** things:
+
+- **Call me back when done.** `openclaw_agent_task` takes `deliverVia`. The default `"message"` sends the
+  result as a Teams chat message; `"call"` rings the caller back and speaks it once the work finishes.
+- **Chat-to-call.** The `call_me_with_the_answer` tool answers a Teams chat with a phone call. It rings
+  the person it is chatting with - always, and only. There is no target parameter, deliberately: the
+  agent reads untrusted text all day, and a tool that took a user id would turn any of it into "ring
+  this person". Needs the messages lane as well.
+
+Both are offered ONLY when `enabled`, `workerBaseUrl`, `tenantId` and `secret` are all set. Miss any one
+and the plugin does not expose the capability at all - the background task quietly delivers by message
+and the chat tool refuses and says why. An agent that promises "I'll call you back" and then cannot is
+worse than one that answers in the chat.
+
+Your Azure bot also needs **`Calls.Initiate.All`**, admin-consented, on top of the join/media
+permissions. Without it every attempt fails at Graph no matter how this is configured.
+
+> Needs **v0.4.0+**. Earlier versions accepted `deliverVia: "call"` and told the caller "I'll call you
+> back", then never placed a call - the delivery was routed to a tool that does not exist in OpenClaw.
+> Nothing errored, so there was no way to tell misconfiguration from breakage.
+
 ## StandIn Managed Bot: what differs from BYO
 
 On a managed connection StandIn owns the Teams bot, so this plugin has **no customer Bot Framework
@@ -392,6 +414,7 @@ Full reference in the [Configuration Reference](https://komaa-com.github.io/open
 | `realtime.providers.openai.apiKey` | provider key (secret) |
 | `realtime.providers.openai.model` | e.g. `gpt-realtime` |
 | `responseModel` | *optional* - overrides the agent model for consult/task; omit to inherit `agents.defaults.model.primary` |
+| `outbound.enabled` + `workerBaseUrl` + `tenantId` | enables call-back delivery (`deliverVia: "call"`) and chat-to-call (`call_me_with_the_answer`); also needs `Calls.Initiate.All` on the bot |
 | `realtime.providers.openai.azureEndpoint` | Azure OpenAI endpoint |
 | `realtime.providers.openai.azureDeployment` | Azure deployment name |
 | `realtime.instructions` | system instructions |

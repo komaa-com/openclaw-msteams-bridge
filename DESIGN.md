@@ -99,7 +99,7 @@ speaker from the roster so the agent can greet and reference people by name.
 ## Outbound call-backs
 
 When `outbound.enabled`, the agent can place a call through the StandIn outbound API (an HMAC-signed
-REST call), speak a result or hold a conversation, and hang up - with a no-answer / voicemail fallback
+REST call), speak a result or hold a conversation, and hang up - with a no-answer fallback
 and a cancel-ringing path so a late pickup does not strand the callee. See
 [Outbound Calls](https://komaa-com.github.io/openclaw-msteams-bridge/outbound-calls/).
 

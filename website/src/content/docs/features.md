@@ -90,7 +90,7 @@ Exposed to the realtime voice agent, governed by `realtime.toolPolicy`
 ## Outbound call-backs
 
 Place a call, speak a result (`notify`) or hold a conversation (`conversation`), and hang up - with
-a no-answer/voicemail fallback and cancel-ringing so the callee's phone stops ringing when the
+a no-answer fallback and cancel-ringing so the callee's phone stops ringing when the
 plugin gives up. See [Outbound Calls](/openclaw-msteams-bridge/outbound-calls/).
 
 ## Sessions
