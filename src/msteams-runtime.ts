@@ -809,6 +809,7 @@ export class MsteamsVoiceRuntime {
         const { provider, model } = resolveVoiceResponseModel({
           voiceConfig: this.cfg.voice,
           agentRuntime,
+          cfg,
         });
         const thinkLevel =
           this.cfg.voice.realtime.consultThinkingLevel ??
