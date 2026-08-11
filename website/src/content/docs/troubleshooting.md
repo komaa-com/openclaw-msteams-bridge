@@ -108,6 +108,39 @@ move to a subscription tier - see
   as unanswered and cancels the ringing call
   so the callee's Teams stops ringing. A late answer after that point is declined by design.
 
+## The agent says it can't see my screen or camera
+
+The agent's own wording tells you which layer to look at - each answer has a different cause:
+
+1. **"I can't see anything yet - make sure your camera or screen-share is on."**
+   No frame has arrived at the plugin yet. Start (or restart) the share; the first frame can take a few
+   seconds. If it never arrives, confirm the call is actually connected through StandIn (you can hear
+   the agent) and that your **Agent calling URL** points at this plugin instance.
+
+2. **"I'm not receiving the shared-screen image."**
+   Frames ARE arriving, but they were not attached to the agent's look. This is the pre-**v0.4.1** bug:
+   on every published OpenClaw host, the image was silently dropped between the plugin and the agent,
+   so a fully working setup still produced this answer. Upgrade the plugin, then restart the gateway.
+
+3. **"I've been looking quite a lot in the last minute..."**
+   The `maxVisionPerMinute` budget (default 30 looks/min per call). Wait a few seconds or raise it.
+
+4. **The agent never even tries to look.**
+   `realtime.toolPolicy` is `"none"` - the look tool is deliberately withheld on locked-down calls. Any
+   other value (the default `"safe-read-only"`, or `"owner"`) exposes it.
+
+5. **Lookups fail generally, not just vision** (an `Unknown model` error in the gateway log).
+   That is the agent model, not vision: it is inherited from `agents.defaults.model.primary` in your
+   OpenClaw config. Fixed resolution shipped in v0.3.1.
+
+To tell case 1 from case 2 without guessing, open the newest file in
+`~/.openclaw/agents/<agentId>/sessions/*.jsonl` and find the look consult turn: a working look shows
+the user message carrying **image parts**; a broken one is text-only. The spoken answers sound
+identical - the session log is what distinguishes them.
+
+And after ANY upgrade: restart the gateway. Plugin code loads at startup, so a fix on disk changes
+nothing until you do.
+
 ## Where to look for logs
 
 Everything the plugin does is logged through the OpenClaw gateway log: handshake accept/reject
