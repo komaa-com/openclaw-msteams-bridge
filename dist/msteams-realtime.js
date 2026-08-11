@@ -223,6 +223,7 @@ export function createMsteamsRealtimeCall(params) {
         const { provider: agentProvider, model } = resolveVoiceResponseModel({
             voiceConfig: opts.voiceConfig,
             agentRuntime: opts.agentRuntime,
+            cfg: opts.cfg,
         });
         const thinkLevel = opts.voiceConfig.realtime.consultThinkingLevel ??
             opts.agentRuntime.resolveThinkingDefault({ cfg: opts.cfg, provider: agentProvider, model });
