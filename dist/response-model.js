@@ -1,6 +1,8 @@
 export function resolveVoiceResponseModel(params) {
+    const configured = params.cfg?.agents?.defaults?.model;
+    const configuredPrimary = (typeof configured === "string" ? configured : configured?.primary)?.trim();
     const modelRef = params.voiceConfig.responseModel ??
-        `${params.agentRuntime.defaults.provider}/${params.agentRuntime.defaults.model}`;
+        (configuredPrimary || `${params.agentRuntime.defaults.provider}/${params.agentRuntime.defaults.model}`);
     const slashIndex = modelRef.indexOf("/");
     return {
         modelRef,
