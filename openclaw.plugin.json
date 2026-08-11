@@ -7,7 +7,8 @@
   },
   "contracts": {
     "tools": [
-      "post_chat_message"
+      "post_chat_message",
+      "call_me_with_the_answer"
     ]
   },
   "configSchema": {

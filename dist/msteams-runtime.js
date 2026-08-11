@@ -26,6 +26,7 @@ const WORKER_OUTCOME_TO_END_REASON = {
     busy: "no-answer",
     failed: "error",
 };
+const CHAT_CALLBACK_WINDOW_MS = 10 * 60_000;
 const OUTBOUND_ANSWER_TIMEOUT_DEFAULT_MS = 120_000;
 export class MsteamsVoiceRuntime {
     api;
@@ -44,6 +45,7 @@ export class MsteamsVoiceRuntime {
     sttSeq = 0;
     pendingOutbound = new Map();
     pendingOutboundTimers = new Map();
+    lastChatSender;
     managedChat;
     constructor(api, cfg) {
         this.api = api;
@@ -174,6 +176,14 @@ export class MsteamsVoiceRuntime {
     }
     async respondToManagedChat(message) {
         const cfg = this.api.config;
+        if (message.sender?.aadObjectId) {
+            this.lastChatSender = {
+                aadObjectId: message.sender.aadObjectId,
+                displayName: message.sender.displayName,
+                tenantId: message.tenantId,
+                atMs: Date.now(),
+            };
+        }
         const attachmentNote = (message.attachments ?? [])
             .map((a) => a.relayable === false
             ? `[attachment not relayed: ${a.name ?? a.kind}]`
@@ -476,6 +486,25 @@ export class MsteamsVoiceRuntime {
                 "Ask me again when only one call is active.",
         };
     }
+    resolveChatCallbackTarget() {
+        if (!this.cfg.outbound?.enabled || !this.cfg.outbound.workerBaseUrl || !this.cfg.outbound.tenantId) {
+            return {
+                error: "Calling back is not enabled on this connection. It needs the outbound block configured " +
+                    "(outbound.enabled, workerBaseUrl and tenantId).",
+            };
+        }
+        const sender = this.lastChatSender;
+        if (!sender) {
+            return { error: "I do not know who to call - I have not answered a Teams chat message yet." };
+        }
+        if (Date.now() - sender.atMs > CHAT_CALLBACK_WINDOW_MS) {
+            return {
+                error: "That chat conversation is too old for me to call back about. Message me again and ask, and " +
+                    "I will call you.",
+            };
+        }
+        return { to: `user:${sender.aadObjectId}`, displayName: sender.displayName };
+    }
     getTtsProvider() {
         if (!this.ttsProvider) {
             this.ttsProvider = createMsteamsTtsProvider({
@@ -602,6 +631,12 @@ export class MsteamsVoiceRuntime {
             instructions: this.cfg.voice.realtime.instructions,
             greetingInstructions,
             postChatMessage: this.buildChatPoster(session),
+            placeCall: this.cfg.outbound?.enabled &&
+                this.cfg.outbound.workerBaseUrl &&
+                this.cfg.outbound.tenantId &&
+                this.cfg.media.sharedSecret
+                ? (to, opts) => this.placeCall(to, opts)
+                : undefined,
             inboundPolicy: this.cfg.voice.inboundPolicy,
             allowFrom: this.cfg.voice.allowFrom,
             requireRecordingStatus: this.cfg.voice.msteams?.requireRecordingStatus,

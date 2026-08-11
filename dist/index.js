@@ -50,6 +50,61 @@ export default definePluginEntry({
                 },
             });
         }
+        if (cfg.managedChat.enabled) {
+            api.registerTool({
+                name: "call_me_with_the_answer",
+                label: "Call back with the answer",
+                description: "Ring the person you are chatting with on Microsoft Teams and speak an answer to them, instead " +
+                    'of replying in the chat. Use when they ask to be CALLED - "call me with the answer", "ring me ' +
+                    'when you know", "tell me by phone". The message is spoken aloud to someone who may not ' +
+                    "remember asking, so make it a complete, self-contained sentence or two - restate the topic and " +
+                    "give the answer. Do not use this for a normal reply; just answer in the chat for those.",
+                promptSnippet: "call_me_with_the_answer: phone the Teams chat sender and speak an answer, when they asked to be called",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        message: {
+                            type: "string",
+                            description: "What to say when they answer. Plain spoken language, no markdown. Self-contained: " +
+                                'restate the topic and give the answer, e.g. "About the Dubai time you asked for - it is 5:41 PM."',
+                        },
+                    },
+                    required: ["message"],
+                },
+                async execute(_toolCallId, params) {
+                    const message = String(params?.message ?? "").trim();
+                    if (!message) {
+                        return {
+                            content: [{ type: "text", text: "There was nothing to say, so I did not call." }],
+                            isError: true,
+                        };
+                    }
+                    const target = runtime?.resolveChatCallbackTarget();
+                    if (!target || "error" in target) {
+                        const reason = target?.error ?? "The Teams bridge is not running.";
+                        return { content: [{ type: "text", text: reason }], isError: true };
+                    }
+                    try {
+                        const placed = await runtime.placeCall(target.to, { message, mode: "notify" });
+                        return {
+                            content: [
+                                {
+                                    type: "text",
+                                    text: `Calling ${target.displayName ?? "them"} now to deliver that (call ${placed.callId}).`,
+                                },
+                            ],
+                        };
+                    }
+                    catch (err) {
+                        const why = err instanceof Error ? err.message : String(err);
+                        return {
+                            content: [{ type: "text", text: `I could not place the call: ${why}` }],
+                            isError: true,
+                        };
+                    }
+                },
+            });
+        }
         api.registerService({
             id: "msteams-call",
             start: async () => {

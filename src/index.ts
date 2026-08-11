@@ -77,6 +77,74 @@ export default definePluginEntry({
       } as never);
     }
 
+    // Chat-to-call: ask in a Teams chat, get the answer as a phone call.
+    //
+    // Registered on the same messages-lane condition as post_chat_message, because the only target it will
+    // ever ring is the authenticated sender of a chat we just answered - no target parameter, by design.
+    // The agent reads untrusted text all day; a tool that accepted an arbitrary AAD id would turn any of
+    // that into "call this person". Here the worst a prompt injection achieves is calling the person who
+    // is already in the conversation.
+    if (cfg.managedChat.enabled) {
+      api.registerTool({
+        name: "call_me_with_the_answer",
+        label: "Call back with the answer",
+        description:
+          "Ring the person you are chatting with on Microsoft Teams and speak an answer to them, instead " +
+          'of replying in the chat. Use when they ask to be CALLED - "call me with the answer", "ring me ' +
+          'when you know", "tell me by phone". The message is spoken aloud to someone who may not ' +
+          "remember asking, so make it a complete, self-contained sentence or two - restate the topic and " +
+          "give the answer. Do not use this for a normal reply; just answer in the chat for those.",
+        promptSnippet:
+          "call_me_with_the_answer: phone the Teams chat sender and speak an answer, when they asked to be called",
+        parameters: {
+          type: "object",
+          properties: {
+            message: {
+              type: "string",
+              description:
+                "What to say when they answer. Plain spoken language, no markdown. Self-contained: " +
+                'restate the topic and give the answer, e.g. "About the Dubai time you asked for - it is 5:41 PM."',
+            },
+          },
+          required: ["message"],
+        } as never,
+        async execute(_toolCallId: string, params: unknown) {
+          const message = String((params as { message?: unknown })?.message ?? "").trim();
+          if (!message) {
+            // Placing a call with nothing to say is worse than not calling: they answer to silence.
+            return {
+              content: [{ type: "text", text: "There was nothing to say, so I did not call." }],
+              isError: true,
+            } as never;
+          }
+          const target = runtime?.resolveChatCallbackTarget();
+          if (!target || "error" in target) {
+            const reason = target?.error ?? "The Teams bridge is not running.";
+            return { content: [{ type: "text", text: reason }], isError: true } as never;
+          }
+          try {
+            const placed = await runtime!.placeCall(target.to, { message, mode: "notify" });
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Calling ${target.displayName ?? "them"} now to deliver that (call ${placed.callId}).`,
+                },
+              ],
+            } as never;
+          } catch (err) {
+            // Surface the real reason - placeCall's errors name the missing config precisely, and a vague
+            // "could not call" here is what sends someone hunting through the wrong settings.
+            const why = err instanceof Error ? err.message : String(err);
+            return {
+              content: [{ type: "text", text: `I could not place the call: ${why}` }],
+              isError: true,
+            } as never;
+          }
+        },
+      } as never);
+    }
+
     api.registerService({
       id: "msteams-call",
       start: async () => {
