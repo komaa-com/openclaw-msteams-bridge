@@ -7,7 +7,7 @@ import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import { inferEmotion } from "./expression.js";
 import { consultMediaPaths } from "./realtime-voice-compat.js";
 import { isAddressed } from "./group-call-gate.js";
-import { pushOrQueueBridgeImage } from "./vision-consult.js";
+import { pushOrQueueBridgeImage, withConsultImages } from "./vision-consult.js";
 import { buildMinutesDocx } from "./meeting-minutes-docx.js";
 import { MSTEAMS_PCM_SAMPLE_RATE_HZ, } from "./msteams-media-stream.js";
 import { MSTEAMS_AGENT_TASK_TOOL, MSTEAMS_AGENT_TASK_TOOL_NAME, MSTEAMS_ASYNC_TASK_ACK, MSTEAMS_ASYNC_TASK_ACK_CALL, MSTEAMS_ASYNC_TASK_NO_TARGET, MSTEAMS_LOOK_BUDGETED, MSTEAMS_LOOK_NO_FRAME, MSTEAMS_LOOK_TOOL, MSTEAMS_LOOK_TOOL_NAME, MSTEAMS_MINUTES_TOOL, MSTEAMS_MINUTES_TOOL_NAME, MSTEAMS_POST_CHAT_TOOL, MSTEAMS_POST_CHAT_TOOL_NAME, MSTEAMS_REALTIME_CONSULT_SYSTEM_PROMPT, MSTEAMS_REALTIME_LOOK_SYSTEM_PROMPT, MSTEAMS_REALTIME_SHOW_SYSTEM_PROMPT, MSTEAMS_RECORDING_BLOCKED, MSTEAMS_SHOW_TOOL, MSTEAMS_SHOW_TOOL_NAME, } from "./msteams-realtime-tools.js";
@@ -231,7 +231,7 @@ export function createMsteamsRealtimeCall(params) {
         const mergedImages = [...(opts.images ?? []), ...ambientImages];
         return consultRealtimeVoiceAgent({
             cfg: opts.cfg,
-            agentRuntime: opts.agentRuntime,
+            agentRuntime: withConsultImages(opts.agentRuntime, mergedImages),
             logger: { warn: (message) => logger?.warn(message) },
             agentId: opts.agentId,
             sessionKey: opts.sessionKey,
