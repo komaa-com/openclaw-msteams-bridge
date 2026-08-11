@@ -5,6 +5,11 @@
   "activation": {
     "onStartup": true
   },
+  "contracts": {
+    "tools": [
+      "post_chat_message"
+    ]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
