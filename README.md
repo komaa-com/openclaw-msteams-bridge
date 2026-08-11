@@ -216,6 +216,28 @@ in your StandIn dashboard.
 terminates TLS publicly and proxies to `127.0.0.1` - nothing is exposed on your LAN. Widen it to
 `0.0.0.0` only when StandIn reaches this host directly, and only on a trusted interface.
 
+You do **not** need OpenClaw's `voice-call` plugin. That one is telephony (Twilio, `fromNumber`,
+webhook URLs); this one is self-contained. If your config nests Teams settings inside it as
+`plugins.entries."voice-call".config.msteams`, lift that block up to
+`plugins.entries."msteams-call".config` and drop the `voice-call` entry.
+
+### Two models, two places
+
+The **voice** model is configured here (`realtime.providers.<provider>.model`) and runs the spoken
+conversation. The **agent** model - used by `openclaw_agent_consult` and `openclaw_agent_task` for
+lookups and background work - is **inherited from your OpenClaw config**
+(`agents.defaults.model.primary`). There is nothing to set here for it.
+
+> **`FailoverError: Unknown model: openai/gpt-5.5`** logged mid-call, while the voice side works fine?
+> On **v0.2.x and earlier** the agent model fell back to OpenClaw's compiled-in default pair rather
+> than your configured agent, so a host on any other provider failed every consult - and only after
+> the caller had already been greeted, since the voice lane has its own provider block. Nothing in
+> your config names `gpt-5.5`, which is what makes it hard to find. **Fixed in v0.3.1.**
+
+`responseModel` is an optional override for when the voice lane should consult a different model than
+your default agent. Order: `responseModel` → `agents.defaults.model.primary` → OpenClaw's built-in
+default (only with no agent configured at all).
+
 ### Realtime (OpenAI)
 
 ```jsonc
@@ -369,6 +391,7 @@ Full reference in the [Configuration Reference](https://komaa-com.github.io/open
 | `realtime.provider` | `openai` |
 | `realtime.providers.openai.apiKey` | provider key (secret) |
 | `realtime.providers.openai.model` | e.g. `gpt-realtime` |
+| `responseModel` | *optional* - overrides the agent model for consult/task; omit to inherit `agents.defaults.model.primary` |
 | `realtime.providers.openai.azureEndpoint` | Azure OpenAI endpoint |
 | `realtime.providers.openai.azureDeployment` | Azure deployment name |
 | `realtime.instructions` | system instructions |
