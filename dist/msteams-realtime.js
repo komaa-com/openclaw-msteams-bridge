@@ -752,6 +752,40 @@ export function createMsteamsRealtimeCall(params) {
         }
         const aadId = session.caller.aadId ?? undefined;
         const deliveryTarget = aadId ? `user:${aadId}` : undefined;
+        if (deliverVia === "call" && deps.placeCall && deliveryTarget) {
+            try {
+                const result = await runMsteamsConsult({
+                    agentRuntime,
+                    voiceConfig,
+                    cfg,
+                    agentId: consultAgentId,
+                    sessionKey: consultSessionKey,
+                    runIdPrefix: `voice-realtime-task:${callId}`,
+                    args: { question: task },
+                    surface: "a Microsoft Teams voice call (background task)",
+                    extraSystemPrompt: `${MSTEAMS_REALTIME_CONSULT_SYSTEM_PROMPT} This task was delegated from a live Microsoft ` +
+                        `Teams voice call and now runs in the background; the caller is no longer on the line. ` +
+                        `Complete the task and ANSWER with the final result as your reply text - do NOT call any ` +
+                        `message, call or delivery tool, the result is delivered for you. It will be SPOKEN aloud to ` +
+                        `someone who has no memory of asking, so restate the topic and give the answer in one ` +
+                        `self-contained sentence or two, in plain spoken language with no markdown. If you could not ` +
+                        `determine the answer, say plainly what went wrong instead.`,
+                    toolPolicy: consultToolPolicy,
+                    fastMode: false,
+                });
+                const text = (result?.text ?? "").trim();
+                if (text.length === 0) {
+                    logger?.warn(`MsteamsRealtime: background task produced nothing to speak for ${callId}; not calling back`);
+                    return;
+                }
+                const placed = await deps.placeCall(deliveryTarget, { message: text, mode: "notify" });
+                logger?.info?.(`MsteamsRealtime: calling ${deliveryTarget} back for ${callId} (outbound call ${placed.callId})`);
+            }
+            catch (err) {
+                logger?.warn(`MsteamsRealtime: call-back delivery failed for ${callId} — ${err instanceof Error ? err.message : String(err)}`);
+            }
+            return;
+        }
         if (deliverVia === "message" && deps.postChatMessage) {
             try {
                 const result = await runMsteamsConsult({

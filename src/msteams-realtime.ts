@@ -335,6 +335,13 @@ export interface MsteamsRealtimeDeps {
   /** MANAGED only: post a message into this call's Teams chat through the StandIn gateway. Absent on
    * BYO/free, where the host's own Teams channel already carries chat and there is no gateway. */
   postChatMessage?: (text: string) => Promise<boolean>;
+  /** Place an outbound Teams call and speak a result. Absent when `outbound.enabled` is not configured,
+   * which is deliberate: an absent dep means the "call me back" delivery is not OFFERED, rather than
+   * promised to the caller and then silently dropped. */
+  placeCall?: (
+    to: string,
+    opts?: { message?: string; mode?: "notify" | "conversation" },
+  ) => Promise<{ callId: string }>;
   /** Inbound-call policy applied before bridging (mirrors the streaming path). */
   inboundPolicy?: "disabled" | "allowlist" | "pairing" | "open";
   /** Allowlist of caller ids honored when inboundPolicy is "allowlist"/"pairing". */
@@ -1383,6 +1390,54 @@ export function createMsteamsRealtimeCall(params: {
     // background task would complete and then have nowhere to deliver. We hold the gateway socket, so
     // the model AUTHORS the result and we post it, exactly as the recap does. The voice_call delivery
     // (deliverVia "call") is unaffected: that goes out through the worker, not a Teams channel.
+    // "Call me back when done." This used to be a natural-language instruction telling the background agent
+    // to invoke a `voice_call` tool with action "initiate_call". No such tool exists in openclaw - zero
+    // occurrences of "initiate_call" anywhere in the distribution - so the agent was asked for a capability
+    // it does not have, and a caller who was promised a call back never got one. We hold the outbound
+    // capability ourselves, so do what the message branch does: let the model AUTHOR the answer, then
+    // deliver it.
+    if (deliverVia === "call" && deps.placeCall && deliveryTarget) {
+      try {
+        const result = await runMsteamsConsult({
+          agentRuntime,
+          voiceConfig,
+          cfg,
+          agentId: consultAgentId,
+          sessionKey: consultSessionKey,
+          runIdPrefix: `voice-realtime-task:${callId}`,
+          args: { question: task },
+          surface: "a Microsoft Teams voice call (background task)",
+          extraSystemPrompt:
+            `${MSTEAMS_REALTIME_CONSULT_SYSTEM_PROMPT} This task was delegated from a live Microsoft ` +
+            `Teams voice call and now runs in the background; the caller is no longer on the line. ` +
+            `Complete the task and ANSWER with the final result as your reply text - do NOT call any ` +
+            `message, call or delivery tool, the result is delivered for you. It will be SPOKEN aloud to ` +
+            `someone who has no memory of asking, so restate the topic and give the answer in one ` +
+            `self-contained sentence or two, in plain spoken language with no markdown. If you could not ` +
+            `determine the answer, say plainly what went wrong instead.`,
+          toolPolicy: consultToolPolicy,
+          fastMode: false,
+        });
+        const text = (result?.text ?? "").trim();
+        if (text.length === 0) {
+          // Never ring someone with nothing to say - they answer to silence and learn nothing.
+          logger?.warn(
+            `MsteamsRealtime: background task produced nothing to speak for ${callId}; not calling back`,
+          );
+          return;
+        }
+        const placed = await deps.placeCall(deliveryTarget, { message: text, mode: "notify" });
+        logger?.info?.(
+          `MsteamsRealtime: calling ${deliveryTarget} back for ${callId} (outbound call ${placed.callId})`,
+        );
+      } catch (err) {
+        logger?.warn(
+          `MsteamsRealtime: call-back delivery failed for ${callId} — ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      return;
+    }
+
     if (deliverVia === "message" && deps.postChatMessage) {
       try {
         const result = await runMsteamsConsult({

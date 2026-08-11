@@ -72,6 +72,9 @@ const WORKER_OUTCOME_TO_END_REASON: Record<string, CallEndReason> = {
   failed: "error",
 };
 
+/** How recently a chat must have happened for "call me back about it" to still make sense. */
+const CHAT_CALLBACK_WINDOW_MS = 10 * 60_000;
+
 /** Default no-answer guard for a placed outbound call (overridable via outbound.answerTimeoutMs). */
 const OUTBOUND_ANSWER_TIMEOUT_DEFAULT_MS = 120_000;
 
@@ -115,6 +118,13 @@ export class MsteamsVoiceRuntime {
     { to: string; message?: string; mode: PlaceCallMode }
   >();
   private readonly pendingOutboundTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Most recent AUTHENTICATED Teams chat sender, for chat-to-call. See respondToManagedChat. */
+  private lastChatSender?: {
+    aadObjectId: string;
+    displayName?: string;
+    tenantId: string;
+    atMs: number;
+  };
   /** StandIn managed chat endpoint (protocol/chat-schema.yaml); undefined unless configured. */
   private managedChat?: ManagedChatServer;
 
@@ -289,6 +299,19 @@ export class MsteamsVoiceRuntime {
    */
   private async respondToManagedChat(message: ManagedInbound): Promise<string> {
     const cfg = this.api.config as unknown as OpenClawConfig;
+    // Chat-to-call: remember who is talking to us, so "call me with the answer" has a target. Recorded
+    // here and NOWHERE else on purpose - this is the one place a sender is already AUTHENTICATED (the
+    // gateway verified the HMAC and resolved the tenant), so the call-back tool never has to accept an
+    // AAD id as a parameter. A tool that took an arbitrary target would let anything the agent reads -
+    // a chat message, a web page, a document - talk it into cold-calling a stranger.
+    if (message.sender?.aadObjectId) {
+      this.lastChatSender = {
+        aadObjectId: message.sender.aadObjectId,
+        displayName: message.sender.displayName,
+        tenantId: message.tenantId,
+        atMs: Date.now(),
+      };
+    }
     const attachmentNote = (message.attachments ?? [])
       .map((a) =>
         a.relayable === false
@@ -725,6 +748,38 @@ export class MsteamsVoiceRuntime {
     };
   }
 
+  /**
+   * Chat-to-call: who a "call me with the answer" should ring, or why it cannot.
+   *
+   * Deliberately narrow. The target is always the person whose chat message we are answering - never a
+   * parameter - so the blast radius of a prompt injection is "the agent calls the person already talking
+   * to it", which is what they asked for anyway.
+   *
+   * The freshness window matters for the same reason: openclaw tools are global and carry no session, so
+   * without it a task hours later could ring someone about a conversation they have forgotten.
+   */
+  resolveChatCallbackTarget(): { to: string; displayName?: string } | { error: string } {
+    if (!this.cfg.outbound?.enabled || !this.cfg.outbound.workerBaseUrl || !this.cfg.outbound.tenantId) {
+      return {
+        error:
+          "Calling back is not enabled on this connection. It needs the outbound block configured " +
+          "(outbound.enabled, workerBaseUrl and tenantId).",
+      };
+    }
+    const sender = this.lastChatSender;
+    if (!sender) {
+      return { error: "I do not know who to call - I have not answered a Teams chat message yet." };
+    }
+    if (Date.now() - sender.atMs > CHAT_CALLBACK_WINDOW_MS) {
+      return {
+        error:
+          "That chat conversation is too old for me to call back about. Message me again and ask, and " +
+          "I will call you.",
+      };
+    }
+    return { to: `user:${sender.aadObjectId}`, displayName: sender.displayName };
+  }
+
   private getTtsProvider(): MsteamsTtsProvider {
     if (!this.ttsProvider) {
       this.ttsProvider = createMsteamsTtsProvider({
@@ -881,6 +936,18 @@ export class MsteamsVoiceRuntime {
       // Undefined here means the tool is not offered at all, which is better than offering it and
       // failing: the model would otherwise promise the caller something that cannot happen.
       postChatMessage: this.buildChatPoster(session),
+      // Same philosophy as postChatMessage above: offered ONLY when it can actually happen. placeCall throws
+      // unless outbound.enabled + workerBaseUrl + tenantId + secret are all set, and a background task that
+      // promised "I'll call you back" and then threw is the worst of both worlds - the caller waits for a
+      // call that was never placed. Undefined here means openclaw_agent_task delivers by message instead,
+      // which is a real delivery.
+      placeCall:
+        this.cfg.outbound?.enabled &&
+        this.cfg.outbound.workerBaseUrl &&
+        this.cfg.outbound.tenantId &&
+        this.cfg.media.sharedSecret
+          ? (to, opts) => this.placeCall(to, opts)
+          : undefined,
       inboundPolicy: this.cfg.voice.inboundPolicy,
       allowFrom: this.cfg.voice.allowFrom,
       requireRecordingStatus: this.cfg.voice.msteams?.requireRecordingStatus,
