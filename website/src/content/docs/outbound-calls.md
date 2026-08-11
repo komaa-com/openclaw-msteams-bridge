@@ -40,11 +40,11 @@ The agent triggers an outbound call through its realtime tools. Under the hood t
 Once the callee answers, the same per-call WebSocket session begins and the conversation runs exactly
 like an inbound call.
 
-## No answer, voicemail, and cancel
+## No answer and cancel
 
 - The StandIn worker reports the **real** terminal state as soon as it knows it, so a declined or busy
   call finalizes immediately instead of waiting out `answerTimeoutMs`. See the outcome callback below.
-- If no outcome arrives, the attempt is finalized as **no-answer / voicemail** when `answerTimeoutMs`
+- If no outcome arrives, the attempt is finalized as **no-answer** when `answerTimeoutMs`
   expires. That timer is the fallback, not the primary path.
 - The plugin also best-effort **cancels the ringing** call so a late pickup does not strand the callee
   in a dead call.
@@ -85,4 +85,4 @@ one were indistinguishable.
 
 - Outbound needs the same `sharedSecret` as inbound - it signs the place-call request.
 - Set `tenantId` to the callee's tenant.
-- Keep `answerTimeoutMs` realistic (people take a few rings); too short causes premature voicemail.
+- Keep `answerTimeoutMs` realistic (people take a few rings); too short gives up before they pick up.

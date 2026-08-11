@@ -51,7 +51,7 @@ the same states:
 flowchart LR
     initiate["initiate<br/>(outbound only)"] --> ringing
     ringing --> answered --> active
-    ringing -- "answer timeout" --> noanswer["no-answer / voicemail<br/>(+ cancel ringing)"]
+    ringing -- "answer timeout" --> noanswer["no-answer<br/>(+ cancel ringing)"]
     active -- "session.end / socket close /<br/>reaper / duration cap / policy" --> terminal["terminal<br/>(teardown runs exactly once)"]
     noanswer --> terminal
 ```
