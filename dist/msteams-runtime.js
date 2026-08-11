@@ -12,7 +12,7 @@ import path from "node:path";
 import { describeInboundRejection, isInboundCallAllowed } from "./allowlist.js";
 import { CallLifecycle } from "./call-lifecycle.js";
 import { resolveGroupCallGateConfig } from "./group-call-gate.js";
-import { collectLatestFrameImages } from "./vision-consult.js";
+import { collectLatestFrameImages, withConsultImages } from "./vision-consult.js";
 import { MSTEAMS_PCM_SAMPLE_RATE_HZ, MsteamsMediaStream, } from "./msteams-media-stream.js";
 import { createMsteamsRealtimeCall, } from "./msteams-realtime.js";
 import { createMsteamsStreamingCall } from "./msteams-streaming.js";
@@ -201,7 +201,7 @@ export class MsteamsVoiceRuntime {
         }
         const result = await consultRealtimeVoiceAgent({
             cfg,
-            agentRuntime: this.api.runtime.agent,
+            agentRuntime: withConsultImages(this.api.runtime.agent, images),
             ...(images.length ? { images } : {}),
             logger: { warn: (m) => this.log.warn(m) },
             ...(this.cfg.voice.agentId ? { agentId: this.cfg.voice.agentId } : {}),
@@ -583,7 +583,7 @@ export class MsteamsVoiceRuntime {
                     agentRuntime.resolveThinkingDefault({ cfg, provider, model });
                 const result = await consultRealtimeVoiceAgent({
                     cfg,
-                    agentRuntime,
+                    agentRuntime: withConsultImages(agentRuntime, images),
                     logger: { warn: (m) => this.log.warn(m) },
                     agentId: this.cfg.voice.agentId ?? "main",
                     sessionKey: this.streamingSessionKey(session),

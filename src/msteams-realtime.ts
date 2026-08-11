@@ -46,7 +46,7 @@ import type { CoreAgentDeps } from "./core-bridge.js";
 import { inferEmotion } from "./expression.js";
 import { consultMediaPaths } from "./realtime-voice-compat.js";
 import { type GroupCallGateConfig, isAddressed } from "./group-call-gate.js";
-import { type ConsultImage, pushOrQueueBridgeImage } from "./vision-consult.js";
+import { type ConsultImage, pushOrQueueBridgeImage, withConsultImages } from "./vision-consult.js";
 import { buildMinutesDocx, type MinutesTranscriptEntry } from "./meeting-minutes-docx.js";
 import {
   MSTEAMS_PCM_SAMPLE_RATE_HZ,
@@ -645,7 +645,9 @@ export function createMsteamsRealtimeCall(params: {
     const mergedImages = [...(opts.images ?? []), ...ambientImages];
     return consultRealtimeVoiceAgent({
       cfg: opts.cfg,
-      agentRuntime: opts.agentRuntime,
+      // Wrapped so the images actually arrive: the published host's consult has no images param and
+      // silently drops the one below. See withConsultImages.
+      agentRuntime: withConsultImages(opts.agentRuntime, mergedImages),
       logger: { warn: (message) => logger?.warn(message) },
       agentId: opts.agentId,
       sessionKey: opts.sessionKey,

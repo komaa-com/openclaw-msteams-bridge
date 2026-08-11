@@ -38,7 +38,7 @@ import { describeInboundRejection, isInboundCallAllowed } from "./allowlist.js";
 import { CallLifecycle, type SyncKeyedStore } from "./call-lifecycle.js";
 import type { CoreConfig } from "./core-bridge.js";
 import { resolveGroupCallGateConfig } from "./group-call-gate.js";
-import { collectLatestFrameImages } from "./vision-consult.js";
+import { collectLatestFrameImages, withConsultImages } from "./vision-consult.js";
 import {
   MSTEAMS_PCM_SAMPLE_RATE_HZ,
   MsteamsMediaStream,
@@ -343,7 +343,9 @@ export class MsteamsVoiceRuntime {
     }
     const result = await consultRealtimeVoiceAgent({
       cfg,
-      agentRuntime: this.api.runtime.agent,
+      // Wrapped so a pasted screenshot actually reaches the model - the published host's consult drops
+      // the images param below. See withConsultImages.
+      agentRuntime: withConsultImages(this.api.runtime.agent, images),
       ...(images.length ? { images } : {}),
       logger: { warn: (m: string) => this.log.warn(m) },
       ...(this.cfg.voice.agentId ? { agentId: this.cfg.voice.agentId } : {}),
@@ -871,7 +873,7 @@ export class MsteamsVoiceRuntime {
           agentRuntime.resolveThinkingDefault({ cfg, provider, model });
         const result = await consultRealtimeVoiceAgent({
           cfg,
-          agentRuntime,
+          agentRuntime: withConsultImages(agentRuntime, images),
           logger: { warn: (m) => this.log.warn(m) },
           agentId: this.cfg.voice.agentId ?? "main",
           sessionKey: this.streamingSessionKey(session),

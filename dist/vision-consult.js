@@ -17,6 +17,14 @@ export function collectLatestFrameImages(opts) {
     }
     return images;
 }
+export function withConsultImages(agentRuntime, images) {
+    if (!images?.length)
+        return agentRuntime;
+    return {
+        ...agentRuntime,
+        runEmbeddedAgent: (p) => agentRuntime.runEmbeddedAgent(p && typeof p === "object" && !p.images ? { ...p, images } : p),
+    };
+}
 export function pushOrQueueBridgeImage(bridge, image, queue) {
     const fn = bridge.sendImage;
     if (typeof fn === "function") {
