@@ -165,6 +165,41 @@
             "type": "object",
             "additionalProperties": {
               "type": "object",
+              "properties": {
+                "apiKey": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "azureEndpoint": {
+                  "type": "string"
+                },
+                "azureDeployment": {
+                  "type": "string"
+                },
+                "azureApiVersion": {
+                  "type": "string"
+                },
+                "voice": {
+                  "type": "string"
+                },
+                "silenceDurationMs": {
+                  "type": "integer"
+                },
+                "prefixPaddingMs": {
+                  "type": "integer"
+                },
+                "vadThreshold": {
+                  "type": "number"
+                },
+                "interruptResponseOnInputAudio": {
+                  "type": "boolean"
+                },
+                "minBargeInAudioEndMs": {
+                  "type": "integer"
+                }
+              },
               "additionalProperties": true
             }
           },
