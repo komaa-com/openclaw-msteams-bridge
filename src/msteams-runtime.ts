@@ -349,7 +349,7 @@ export class MsteamsVoiceRuntime {
       ...(images.length ? { images } : {}),
       logger: { warn: (m: string) => this.log.warn(m) },
       ...(this.cfg.voice.agentId ? { agentId: this.cfg.voice.agentId } : {}),
-      sessionKey: `msteams-chat:${message.tenantId}:${message.conversationId}`,
+      sessionKey: this.chatSessionKey(message),
       messageProvider: "msteams",
       lane: "chat",
       runIdPrefix: "msteams-chat",
@@ -572,7 +572,10 @@ export class MsteamsVoiceRuntime {
         pending.mode === "notify" && pending.message
           ? `Deliver this message to the person, then say goodbye and end the call: "${pending.message}"`
           : (pending.message ?? this.cfg.voice.inboundGreeting);
-      this.calls.set(session.callId, this.createCall(session, greeting));
+      // Defer the greeting until the callee ANSWERS. Without this the model starts delivering the
+      // result the moment the media session attaches - i.e. while the phone is still ringing - so the
+      // person picks up to a sentence already in progress, or to silence because it already finished.
+      this.calls.set(session.callId, this.createCall(session, greeting, true));
       return;
     }
 
@@ -620,13 +623,18 @@ export class MsteamsVoiceRuntime {
   }
 
   /** Build the call handle for the selected voice path (realtime speech-to-speech vs streaming). */
-  private createCall(session: MsteamsSession, greeting?: string): MsteamsRealtimeCall {
+  private createCall(
+    session: MsteamsSession,
+    greeting?: string,
+    /** Outbound call-backs only: hold the greeting until the callee answers (recording goes active). */
+    deferGreetingUntilAnswered = false,
+  ): MsteamsRealtimeCall {
     if (this.mode === "streaming") {
       return createMsteamsStreamingCall({ session, deps: this.buildStreamingDeps(session, greeting) });
     }
     return createMsteamsRealtimeCall({
       session,
-      deps: this.buildDeps(session, this.realtime?.provider, greeting),
+      deps: this.buildDeps(session, this.realtime?.provider, greeting, deferGreetingUntilAnswered),
     });
   }
 
@@ -794,6 +802,32 @@ export class MsteamsVoiceRuntime {
     return this.ttsProvider;
   }
 
+  /**
+   * Chat consult session key, honoring sessionScope.
+   *
+   * This used to hardcode `msteams-chat:{tenant}:{conversation}` - i.e. per-thread, always - so a
+   * deployment that set sessionScope to per-phone got per-thread chat memory anyway, silently. The
+   * setting is documented as governing "the session", and a lane that ignores it is a lie the operator
+   * cannot see.
+   *
+   * A conversation id is ALWAYS present here (the gateway resolved it), so unlike the voice keyer there
+   * is no callId fallback: per-thread and per-call both key by the conversation, because in chat they
+   * are the same thing - a Teams chat has no per-call identity to be finer-grained about.
+   */
+  private chatSessionKey(message: ManagedInbound): string {
+    const scope = this.cfg.voice.sessionScope;
+    const tenant = message.tenantId;
+    if (scope === "per-phone") {
+      // Key by the human, so one person's context follows them across conversations in this tenant.
+      const who = message.sender?.aadObjectId;
+      if (who) return `msteams-chat:${tenant}:user:${who}`;
+      // Anonymous/guest senders have no stable id; fall back rather than collapsing them into one
+      // shared session keyed by nothing.
+      return `msteams-chat:${tenant}:${message.conversationId}`;
+    }
+    return `msteams-chat:${tenant}:${message.conversationId}`;
+  }
+
   /** Consult session key, honoring sessionScope (mirrors the realtime path). */
   private streamingSessionKey(session: MsteamsSession): string {
     const scope = this.cfg.voice.sessionScope;
@@ -924,6 +958,7 @@ export class MsteamsVoiceRuntime {
     session: MsteamsSession,
     provider: unknown,
     greetingInstructions?: string,
+    greetingOnRecordingActive = false,
   ): MsteamsRealtimeDeps {
     return {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -933,6 +968,10 @@ export class MsteamsVoiceRuntime {
       cfg: this.api.config as unknown as OpenClawConfig,
       instructions: this.cfg.voice.realtime.instructions,
       greetingInstructions,
+      // Greet-on-answer. The realtime session has always honoured this (it withholds
+      // triggerGreetingOnReady and fires from setRecordingActive instead), but NOTHING outside a test
+      // ever set it - so every call-back spoke into a still-ringing phone.
+      greetingOnRecordingActive,
       // MANAGED only. Wired when the messages lane is configured AND the session carries the tenant
       // this call belongs to - both are required to address a post, and neither exists on BYO/free.
       // Undefined here means the tool is not offered at all, which is better than offering it and

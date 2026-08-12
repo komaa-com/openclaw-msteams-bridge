@@ -1,6 +1,6 @@
 import { MSTEAMS_PCM_SAMPLE_RATE_HZ, } from "./msteams-media-stream.js";
 import { playTtsToCall } from "./msteams-tts-playback.js";
-import { isAddressed } from "./group-call-gate.js";
+import { shouldRespondToGroupTurn } from "./group-call-gate.js";
 const DEFAULT_VAD_ENERGY_THRESHOLD = 0.02;
 const DEFAULT_VAD_SILENCE_MS = 700;
 const DEFAULT_MIN_UTTERANCE_MS = 300;
@@ -52,14 +52,17 @@ export function createMsteamsStreamingCall(params) {
         deps.groupCallGate.requireAddress &&
         deps.groupCallGate.wakePhrases.some((p) => p.trim().length > 0);
     function addressed(text) {
-        if (!gateActive || humanCount < 2)
-            return true;
-        const gate = deps.groupCallGate;
-        if (isAddressed(text, gate.wakePhrases)) {
+        const verdict = shouldRespondToGroupTurn({
+            transcript: text,
+            isGroup: humanCount >= 2,
+            config: deps.groupCallGate ?? { requireAddress: false, wakePhrases: [], followUpWindowMs: 0 },
+            lastAddressedAt,
+            now: now(),
+        });
+        if (verdict.addressed) {
             lastAddressedAt = now();
-            return true;
         }
-        return lastAddressedAt !== undefined && now() - lastAddressedAt <= gate.followUpWindowMs;
+        return verdict.respond;
     }
     let speechBuffers = [];
     let bufferedMs = 0;

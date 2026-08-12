@@ -2,11 +2,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { buildRealtimeVoiceAgentConsultWorkingResponse, consultRealtimeVoiceAgent, createRealtimeVoiceBridgeSession, REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME, REALTIME_VOICE_AUDIO_FORMAT_PCM16_24KHZ, resamplePcm, resolveRealtimeVoiceAgentConsultToolsAllow, } from "openclaw/plugin-sdk/realtime-voice";
+import { buildRealtimeVoiceAgentConsultWorkingResponse, consultRealtimeVoiceAgent, createRealtimeVoiceBridgeSession, REALTIME_VOICE_AGENT_CONSULT_TOOL, REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME, REALTIME_VOICE_AUDIO_FORMAT_PCM16_24KHZ, resamplePcm, resolveRealtimeVoiceAgentConsultToolsAllow, } from "openclaw/plugin-sdk/realtime-voice";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import { inferEmotion } from "./expression.js";
 import { consultMediaPaths } from "./realtime-voice-compat.js";
-import { isAddressed } from "./group-call-gate.js";
+import { isAddressed, isFollowUpWindowOpen } from "./group-call-gate.js";
 import { pushOrQueueBridgeImage, withConsultImages } from "./vision-consult.js";
 import { buildMinutesDocx } from "./meeting-minutes-docx.js";
 import { MSTEAMS_PCM_SAMPLE_RATE_HZ, } from "./msteams-media-stream.js";
@@ -211,8 +211,10 @@ export function createMsteamsRealtimeCall(params) {
     const visionEnabled = Boolean(deps.agentRuntime && deps.voiceConfig && deps.cfg && deps.getLatestFrame) &&
         consultToolPolicy !== "none";
     const showEnabled = Boolean(deps.agentRuntime && deps.voiceConfig && deps.cfg) && consultToolPolicy !== "none";
+    const consultEnabled = Boolean(deps.agentRuntime && deps.voiceConfig && deps.cfg);
     const bridgeTools = [
         ...(deps.tools ?? []),
+        ...(consultEnabled ? [REALTIME_VOICE_AGENT_CONSULT_TOOL] : []),
         ...(asyncTasksEnabled ? [MSTEAMS_AGENT_TASK_TOOL] : []),
         ...(visionEnabled ? [MSTEAMS_LOOK_TOOL] : []),
         ...(showEnabled ? [MSTEAMS_SHOW_TOOL] : []),
@@ -276,7 +278,7 @@ export function createMsteamsRealtimeCall(params) {
                 if (humanCount >= 2 && groupGateActive) {
                     const g = deps.groupCallGate;
                     const now = Date.now();
-                    if (lastAddressedAt === undefined || now - lastAddressedAt > g.followUpWindowMs) {
+                    if (!isFollowUpWindowOpen({ lastAddressedAt, followUpWindowMs: g.followUpWindowMs, now })) {
                         return;
                     }
                     lastAddressedAt = now;
@@ -644,7 +646,7 @@ export function createMsteamsRealtimeCall(params) {
             return null;
         }
     }
-    async function forwardDisplayImages(mediaPaths, caption) {
+    async function forwardDisplayImages(mediaPaths, caption, displayMode = "overlay") {
         const images = [];
         for (const pathOrUrl of mediaPaths) {
             const img = await loadDisplayImage(pathOrUrl);
@@ -667,7 +669,7 @@ export function createMsteamsRealtimeCall(params) {
                     type: "display.image",
                     dataBase64: img.bytes.toString("base64"),
                     mime: img.mime,
-                    mode: "overlay",
+                    mode: displayMode,
                     ...(sequence && !isLast
                         ? { durationMs: DISPLAY_SLIDESHOW_MS + DISPLAY_SLIDESHOW_OVERLAP_MS }
                         : {}),
@@ -698,6 +700,7 @@ export function createMsteamsRealtimeCall(params) {
         errorText: "Sorry, I had trouble showing that.",
         handler: async ({ event, rtSession, consult, sendWorkingFiller }) => {
             sendWorkingFiller();
+            const displayMode = readArgText(event.args, "display") === "fullscreen" ? "fullscreen" : "overlay";
             const showRequest = event.args &&
                 typeof event.args === "object" &&
                 typeof event.args.request === "string"
@@ -714,7 +717,7 @@ export function createMsteamsRealtimeCall(params) {
                 trustLocalMedia: true,
             });
             const resultMediaPaths = consultMediaPaths(result);
-            const shown = await forwardDisplayImages(resultMediaPaths, toTileCaption(result.text));
+            const shown = await forwardDisplayImages(resultMediaPaths, toTileCaption(result.text), displayMode);
             rtSession.submitToolResult(event.callId, {
                 text: shown > 0
                     ? result.text || "I'm showing it on your screen now."

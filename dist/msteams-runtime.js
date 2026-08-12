@@ -205,7 +205,7 @@ export class MsteamsVoiceRuntime {
             ...(images.length ? { images } : {}),
             logger: { warn: (m) => this.log.warn(m) },
             ...(this.cfg.voice.agentId ? { agentId: this.cfg.voice.agentId } : {}),
-            sessionKey: `msteams-chat:${message.tenantId}:${message.conversationId}`,
+            sessionKey: this.chatSessionKey(message),
             messageProvider: "msteams",
             lane: "chat",
             runIdPrefix: "msteams-chat",
@@ -371,7 +371,7 @@ export class MsteamsVoiceRuntime {
             const greeting = pending.mode === "notify" && pending.message
                 ? `Deliver this message to the person, then say goodbye and end the call: "${pending.message}"`
                 : (pending.message ?? this.cfg.voice.inboundGreeting);
-            this.calls.set(session.callId, this.createCall(session, greeting));
+            this.calls.set(session.callId, this.createCall(session, greeting, true));
             return;
         }
         const prior = this.lifecycle.getStatus(session.callId);
@@ -405,13 +405,13 @@ export class MsteamsVoiceRuntime {
         this.lifecycle.answer(session.callId);
         this.calls.set(session.callId, this.createCall(session, this.cfg.voice.inboundGreeting));
     }
-    createCall(session, greeting) {
+    createCall(session, greeting, deferGreetingUntilAnswered = false) {
         if (this.mode === "streaming") {
             return createMsteamsStreamingCall({ session, deps: this.buildStreamingDeps(session, greeting) });
         }
         return createMsteamsRealtimeCall({
             session,
-            deps: this.buildDeps(session, this.realtime?.provider, greeting),
+            deps: this.buildDeps(session, this.realtime?.provider, greeting, deferGreetingUntilAnswered),
         });
     }
     managedCallBySession = new Map();
@@ -515,6 +515,17 @@ export class MsteamsVoiceRuntime {
             });
         }
         return this.ttsProvider;
+    }
+    chatSessionKey(message) {
+        const scope = this.cfg.voice.sessionScope;
+        const tenant = message.tenantId;
+        if (scope === "per-phone") {
+            const who = message.sender?.aadObjectId;
+            if (who)
+                return `msteams-chat:${tenant}:user:${who}`;
+            return `msteams-chat:${tenant}:${message.conversationId}`;
+        }
+        return `msteams-chat:${tenant}:${message.conversationId}`;
     }
     streamingSessionKey(session) {
         const scope = this.cfg.voice.sessionScope;
@@ -623,13 +634,14 @@ export class MsteamsVoiceRuntime {
             logger: this.log,
         };
     }
-    buildDeps(session, provider, greetingInstructions) {
+    buildDeps(session, provider, greetingInstructions, greetingOnRecordingActive = false) {
         return {
             provider: provider,
             providerConfig: this.realtime?.providerConfig,
             cfg: this.api.config,
             instructions: this.cfg.voice.realtime.instructions,
             greetingInstructions,
+            greetingOnRecordingActive,
             postChatMessage: this.buildChatPoster(session),
             placeCall: this.cfg.outbound?.enabled &&
                 this.cfg.outbound.workerBaseUrl &&

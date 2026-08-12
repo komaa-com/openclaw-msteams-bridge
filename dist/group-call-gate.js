@@ -36,6 +36,10 @@ export function isAddressed(transcript, wakePhrases) {
 function isWordChar(ch) {
     return ch.length > 0 && /[\p{L}\p{N}]/u.test(ch);
 }
+export function isFollowUpWindowOpen(params) {
+    const { lastAddressedAt, followUpWindowMs, now } = params;
+    return (followUpWindowMs > 0 && lastAddressedAt !== undefined && now - lastAddressedAt <= followUpWindowMs);
+}
 export function shouldRespondToGroupTurn(params) {
     const { transcript, isGroup, config, lastAddressedAt, now } = params;
     const addressed = isAddressed(transcript, config.wakePhrases);
@@ -46,8 +50,10 @@ export function shouldRespondToGroupTurn(params) {
     if (addressed) {
         return { respond: true, addressed: true, gated: true };
     }
-    const inFollowUp = config.followUpWindowMs > 0 &&
-        lastAddressedAt !== undefined &&
-        now - lastAddressedAt <= config.followUpWindowMs;
+    const inFollowUp = isFollowUpWindowOpen({
+        lastAddressedAt,
+        followUpWindowMs: config.followUpWindowMs,
+        now,
+    });
     return { respond: inFollowUp, addressed: false, gated: true };
 }
