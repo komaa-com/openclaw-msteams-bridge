@@ -47,29 +47,6 @@ Details of each capability follow below.
 - **Secure transport** - a replay-proof HMAC handshake, a caller allowlist that is closed by
   default, and a recording-status gate that holds media until recording is active.
 
-## Upgrading from `msteams-voice`
-
-This release renames the plugin from `msteams-voice` to **`msteams-call`**, so an existing config
-needs three edits. OpenClaw looks the config up by plugin id, which is why this cannot be done for
-you:
-
-1. Rename the entry key: `plugins.entries."msteams-voice"` becomes `plugins.entries."msteams-call"`.
-2. If you used the `managedChat` block, rename it to `managedBot` - or better, move its `chatSecret`
-   to the top-level `secret`, which covers both lanes.
-3. **The calling path default changed**, from `/voice/msteams/stream` to `/msteams/calling`. This is
-   the step that breaks calls if you skip it, and it bites you precisely if you NEVER set `path` -
-   pinning it is what protects you. Two ways out, pick one:
-
-   - **Recommended.** Leave the default and update the **Agent calling URL** on your StandIn
-     connection to `wss://<your-host>/msteams/calling`.
-   - **No StandIn change.** Keep serving the old path by pinning it: `"path": "/voice/msteams/stream"`.
-
-   Only the new path is served. There is no alias, so a mismatch is a 404 on every call rather than a
-   quiet degradation.
-
-`secret` is the one connection secret, for every deployment. It is the only way to set
-both lanes at once.
-
 ## Getting started
 
 There are two ways to connect this plugin to Teams. Pick one - they differ in who owns the Teams bot.
@@ -88,7 +65,7 @@ products, which is why there is a single value to paste and no enable flag to re
 {
   "plugins": {
     "entries": {
-      "msteams-call": {
+      "msteams-bridge": {
         "config": {
           "enabled": true,
           // The connection secret from the StandIn portal. It turns on BOTH lanes:
@@ -164,12 +141,12 @@ quickstart above, skip straight from step 1 to step 3 and set `secret`.
    openclaw gateway restart
    ```
 
-4. **Configure it** under `plugins.entries."msteams-call".config`. The minimum that actually WORKS -
+4. **Configure it** under `plugins.entries."msteams-bridge".config`. The minimum that actually WORKS -
    a secret alone leaves `inboundPolicy` unset, which denies every inbound call, so the bridge
    connects and then answers nothing:
 
    ```jsonc
-   "msteams-call": {
+   "msteams-bridge": {
      "config": {
        "enabled": true,
        "secret": "PASTE_THE_STANDIN_CONNECTION_SECRET",   // covers calling AND messages
@@ -210,7 +187,7 @@ realtime provider resolves, else streaming.
 
 ## Configuration
 
-Config lives under `plugins.entries."msteams-call".config`. `secret` must match the value set
+Config lives under `plugins.entries."msteams-bridge".config`. `secret` must match the value set
 in your StandIn dashboard.
 
 `bindAddress` defaults to **loopback for both lanes**, because the documented posture is a tunnel that
@@ -220,7 +197,7 @@ terminates TLS publicly and proxies to `127.0.0.1` - nothing is exposed on your 
 You do **not** need OpenClaw's `voice-call` plugin. That one is telephony (Twilio, `fromNumber`,
 webhook URLs); this one is self-contained. If your config nests Teams settings inside it as
 `plugins.entries."voice-call".config.msteams`, lift that block up to
-`plugins.entries."msteams-call".config` and drop the `voice-call` entry.
+`plugins.entries."msteams-bridge".config` and drop the `voice-call` entry.
 
 ### Two models, two places
 
@@ -245,7 +222,7 @@ default (only with no agent configured at all).
 {
   "plugins": {
     "entries": {
-      "msteams-call": {
+      "msteams-bridge": {
         "config": {
           "enabled": true,
           "mode": "realtime",

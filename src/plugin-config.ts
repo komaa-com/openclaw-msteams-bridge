@@ -60,9 +60,8 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
     // The older `managedChat` alias is GONE from both here and the manifest schema. Keeping it in one
     // and not the other was the worst of both: configSchema sets additionalProperties:false, so a
     // config using the alias would have failed validation before this resolver ever saw it - dead code
-    // behind a closed door. Removing it outright is safe here because the plugin id itself changed in
-    // this release (msteams-voice -> msteams-call), so every existing config has to be edited anyway;
-    // renaming one more key while you are already in the file is not an extra migration.
+    // behind a closed door. Removing it outright costs nothing: the plugin has never been released
+    // under any id, so no config in the world uses the alias.
     //
     // `secret` fills BOTH lanes: paste the one value the portal gives you and calling AND messages
     // come up. That is the whole point of one secret, and there is no longer a second key that turns

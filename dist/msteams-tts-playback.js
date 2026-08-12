@@ -14,7 +14,7 @@ export async function playTtsToCall(deps, state, text) {
     state.turnId += 1;
     try {
         const emotion = inferEmotion(text);
-        deps.logger?.debug?.(`msteams-call: expression cue '${emotion}' for ${state.providerCallId}`);
+        deps.logger?.debug?.(`msteams-bridge: expression cue '${emotion}' for ${state.providerCallId}`);
         state.session.send({ type: "expression", emotion });
     }
     catch {
@@ -39,7 +39,7 @@ export async function playTtsToCall(deps, state, text) {
             marks = estimateVisemes(text, durationMs);
         }
         if (marks.length > 0) {
-            deps.logger?.debug?.(`msteams-call: speech.marks ${marks.length} visemes (${alignment ? "aligned" : "estimated"}) for ${state.providerCallId}`);
+            deps.logger?.debug?.(`msteams-bridge: speech.marks ${marks.length} visemes (${alignment ? "aligned" : "estimated"}) for ${state.providerCallId}`);
             state.session.send({ type: "speech.marks", ts: 0, marks });
         }
     }
@@ -63,7 +63,7 @@ async function streamPcmFrames(deps, state, pcm, signal) {
             payloadBase64: frame.toString("base64"),
         });
         if (!delivered) {
-            deps.logger?.warn(`msteams-call: audio.frame dropped for ${state.providerCallId}, Teams socket closed; aborting playback`);
+            deps.logger?.warn(`msteams-bridge: audio.frame dropped for ${state.providerCallId}, Teams socket closed; aborting playback`);
             throw new Error(`msteams audio send failed for ${state.providerCallId}: session socket closed`);
         }
         state.outboundSeq += 1;
