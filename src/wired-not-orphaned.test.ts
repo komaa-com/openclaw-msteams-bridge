@@ -93,3 +93,25 @@ describe("capabilities that exist are actually reachable", () => {
     expect(rt).toContain("private chatSessionKey(");
   });
 });
+
+describe("speaker attribution survives the runtime boundary", () => {
+  it("forwards the speaker name from audio frames instead of dropping it", () => {
+    // The dead link: onAudioFrame forwarded ONLY i.payload, so setCurrentSpeaker - implemented on both
+    // call paths, and used by both to prefix the transcript "Sara: ..." - had zero callers. The whole
+    // mechanism was built and waiting on one dropped field.
+    const rt = code("msteams-runtime.ts");
+    expect(rt).toContain("call.setCurrentSpeaker(speaker)");
+    expect(rt).toContain("i.speakerName");
+  });
+
+  it("only pushes the speaker when it changes", () => {
+    // Audio arrives ~50x/second; the speaker changes at conversational pace. Pushing every frame would
+    // be 50 redundant writes a second for one meaningful transition.
+    expect(code("msteams-runtime.ts")).toContain("lastSpeakerByCall");
+  });
+
+  it("releases the speaker map with the call", () => {
+    const rt = code("msteams-runtime.ts");
+    expect(rt).toContain("this.lastSpeakerByCall.delete(callId)");
+  });
+});

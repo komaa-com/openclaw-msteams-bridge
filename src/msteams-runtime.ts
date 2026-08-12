@@ -118,6 +118,8 @@ export class MsteamsVoiceRuntime {
     { to: string; message?: string; mode: PlaceCallMode }
   >();
   private readonly pendingOutboundTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Last speaker pushed per call, so a ~50/s audio stream only reports real changes. */
+  private readonly lastSpeakerByCall = new Map<string, string | undefined>();
   /** Most recent AUTHENTICATED Teams chat sender, for chat-to-call. See respondToManagedChat. */
   private lastChatSender?: {
     aadObjectId: string;
@@ -185,7 +187,23 @@ export class MsteamsVoiceRuntime {
       logger: this.log,
       onSessionStart: (s) => this.onSessionStart(s),
       onSessionEnd: (i) => this.onSessionEnd(i),
-      onAudioFrame: (i) => this.calls.get(i.callId)?.pushAudio(i.payload),
+      onAudioFrame: (i) => {
+        const call = this.calls.get(i.callId);
+        if (!call) return;
+        // Unmixed meeting audio names its speaker per frame. Both call paths already prefix the
+        // transcript with it ("Sara: ...") so the model can reason about who said what - they were
+        // just never TOLD, because this handler forwarded only the payload and dropped the name.
+        // setCurrentSpeaker existed on both paths with zero callers for exactly that reason.
+        //
+        // Change-gated: audio arrives ~50x/second and the speaker changes at conversational pace, so
+        // pushing every frame would be 50 redundant writes a second for one meaningful transition.
+        const speaker = i.speakerName?.trim() || undefined;
+        if (speaker !== this.lastSpeakerByCall.get(i.callId)) {
+          this.lastSpeakerByCall.set(i.callId, speaker);
+          call.setCurrentSpeaker(speaker);
+        }
+        call.pushAudio(i.payload);
+      },
       onVideoFrame: (i) => {
         this.vision.store({ ...i, callId: i.callId });
         this.calls.get(i.callId)?.notifyInboundFrame();
@@ -1030,6 +1048,7 @@ export class MsteamsVoiceRuntime {
     // Release the per-call vision frames (latest + keyframe history, ~1-2 MB/call). These were never
     // released outside tests, leaking for the process lifetime on every completed call.
     this.vision.release(callId);
+    this.lastSpeakerByCall.delete(callId);
   }
 }
 

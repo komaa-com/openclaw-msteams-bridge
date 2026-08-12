@@ -7,7 +7,7 @@
 //     it's absent we fall back to queueing the frame as a consult image for the next agent turn — the
 //     agent still sees it on stock openclaw (no longer build-gated).
 
-import type { MsteamsVideoFrame } from "./msteams-video-frame.js";
+import { describeMsteamsVideoFrameOwner, type MsteamsVideoFrame } from "./msteams-video-frame.js";
 import type { VisionBudget } from "./vision-budget.js";
 
 /** Agent consult image input (matches `consultRealtimeVoiceAgent({ images })`). */
@@ -37,18 +37,24 @@ export function collectLatestFrameImages(opts: {
   visionBudget?: VisionBudget;
   callId: string;
   now?: () => number;
-}): ConsultImage[] {
+}): { images: ConsultImage[]; owners: string[] } {
   const { getLatestFrame, visionBudget, callId } = opts;
-  if (!getLatestFrame) return [];
+  if (!getLatestFrame) return { images: [], owners: [] };
   const now = opts.now ?? (() => Date.now());
   const images: ConsultImage[] = [];
+  // Parallel to `images`. Attribution used to stop here: the frames carry participantName all the way
+  // into the store and it was dropped at this boundary, so on the streaming path the model received
+  // pictures with no idea whose screen or camera it was looking at - unusable in a meeting, which is
+  // the only place attribution matters.
+  const owners: string[] = [];
   for (const source of ["screenshare", "camera"] as const) {
     const frame = getLatestFrame(source);
     if (!frame) continue;
     if (visionBudget && !visionBudget.tryConsume(callId, now())) break;
     images.push(frameToConsultImage(frame));
+    owners.push(describeMsteamsVideoFrameOwner(frame) ?? (source === "screenshare" ? "a shared screen" : "a camera"));
   }
-  return images;
+  return { images, owners };
 }
 
 /**

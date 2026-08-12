@@ -209,9 +209,10 @@ describe("createMsteamsStreamingCall", () => {
   it("attaches shared-frame images to the agent consult", async () => {
     const session = fakeSession();
     const consult = vi.fn(async () => ({ text: "I see a chart." }));
-    const getVisionImages = vi.fn(() => [
-      { type: "image" as const, data: "IMG", mimeType: "image/jpeg" },
-    ]);
+    const getVisionImages = vi.fn(() => ({
+      images: [{ type: "image" as const, data: "IMG", mimeType: "image/jpeg" }],
+      owners: ["Sara's shared screen"],
+    }));
     const call = createMsteamsStreamingCall({
       session,
       deps: baseDeps({ consult, getVisionImages }),
@@ -225,6 +226,9 @@ describe("createMsteamsStreamingCall", () => {
     expect(consult.mock.calls[0]![0].images).toEqual([
       { type: "image", data: "IMG", mimeType: "image/jpeg" },
     ]);
+    // The model must be told WHOSE screen it is looking at - an unattributed image is actively
+    // misleading in a meeting, and this attribution used to die at the consult boundary.
+    expect(consult.mock.calls[0]![0].question).toContain("Sara's shared screen");
   });
 
   it("notifyDtmf surfaces the keypress to the agent as a turn", async () => {

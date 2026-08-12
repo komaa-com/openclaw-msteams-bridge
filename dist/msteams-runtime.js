@@ -45,6 +45,7 @@ export class MsteamsVoiceRuntime {
     sttSeq = 0;
     pendingOutbound = new Map();
     pendingOutboundTimers = new Map();
+    lastSpeakerByCall = new Map();
     lastChatSender;
     managedChat;
     constructor(api, cfg) {
@@ -90,7 +91,17 @@ export class MsteamsVoiceRuntime {
             logger: this.log,
             onSessionStart: (s) => this.onSessionStart(s),
             onSessionEnd: (i) => this.onSessionEnd(i),
-            onAudioFrame: (i) => this.calls.get(i.callId)?.pushAudio(i.payload),
+            onAudioFrame: (i) => {
+                const call = this.calls.get(i.callId);
+                if (!call)
+                    return;
+                const speaker = i.speakerName?.trim() || undefined;
+                if (speaker !== this.lastSpeakerByCall.get(i.callId)) {
+                    this.lastSpeakerByCall.set(i.callId, speaker);
+                    call.setCurrentSpeaker(speaker);
+                }
+                call.pushAudio(i.payload);
+            },
             onVideoFrame: (i) => {
                 this.vision.store({ ...i, callId: i.callId });
                 this.calls.get(i.callId)?.notifyInboundFrame();
@@ -677,6 +688,7 @@ export class MsteamsVoiceRuntime {
         this.calls.delete(callId);
         this.postableCalls.delete(callId);
         this.vision.release(callId);
+        this.lastSpeakerByCall.delete(callId);
     }
 }
 function pcmToWav(pcm, sampleRate) {
