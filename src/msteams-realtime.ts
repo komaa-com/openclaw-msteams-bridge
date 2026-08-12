@@ -505,6 +505,8 @@ export function createMsteamsRealtimeCall(params: {
    * shared video on stock — vision is no longer build-gated on the SDK member.
    */
   const pendingAmbientImages: ConsultImage[] = [];
+  /** Log the ambient-vision route (live push vs queued) once per call, not once per frame. */
+  let ambientRouteLogged = false;
   /** Phase 6b: last emotion cued to the worker, so we only send on change (early + self-correcting). */
   let lastSentExpression: string | undefined;
   let thinking = false;
@@ -925,7 +927,7 @@ export function createMsteamsRealtimeCall(params: {
         // Live push via the bridge's sendImage when present (the `next` build); otherwise queue the
         // frame as a consult image for the next agent turn so it still reaches the agent on stock
         // published openclaw (no longer silently dropped).
-        pushOrQueueBridgeImage(
+        const route = pushOrQueueBridgeImage(
           realtime,
           {
             dataBase64: frame.dataBase64,
@@ -934,6 +936,23 @@ export function createMsteamsRealtimeCall(params: {
           },
           pendingAmbientImages,
         );
+        // Say ONCE which route this host gives us. "Continuous vision" means the model sees the screen
+        // BETWEEN turns, and that needs sendImage on the realtime bridge - which no PUBLISHED openclaw
+        // has: the session exposes sendAudio/sendUserMessage/triggerGreeting and nothing that carries
+        // an image. sendUserMessage is not a substitute, because it calls requestResponseCreate, so
+        // every ambient frame would make the bot start talking unprompted.
+        //
+        // On such a host the frames are QUEUED and delivered with the next agent turn instead: the
+        // model still sees them, just not between turns. That is a real difference in behaviour and it
+        // was invisible - the push logged "ambient vision push" identically either way.
+        if (!ambientRouteLogged) {
+          ambientRouteLogged = true;
+          logger?.info?.(
+            route === "queued"
+              ? `MsteamsRealtime: this host has no realtime sendImage - ambient frames are queued for the next agent turn rather than pushed live (${callId})`
+              : `MsteamsRealtime: ambient vision pushing live to the model (${callId})`,
+          );
+        }
         // Latch only AFTER a successful send: latching first marked a failed push as "already
         // pushed", so the frame was lost (never retried by the backstop) while its budget hit
         // stayed spent — starving look_at_screen.

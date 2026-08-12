@@ -168,6 +168,7 @@ export function createMsteamsRealtimeCall(params) {
     const lastPushedFrameData = {};
     let visionPushTimer;
     const pendingAmbientImages = [];
+    let ambientRouteLogged = false;
     let lastSentExpression;
     let thinking = false;
     let humanCount = 1;
@@ -409,11 +410,17 @@ export function createMsteamsRealtimeCall(params) {
             logger?.debug?.(`MsteamsRealtime: ambient vision push (${label}) for ${callId}`);
             try {
                 const owner = describeMsteamsVideoFrameOwner(frame);
-                pushOrQueueBridgeImage(realtime, {
+                const route = pushOrQueueBridgeImage(realtime, {
                     dataBase64: frame.dataBase64,
                     mime: frame.mime,
                     text: owner ? `Live ${label} — ${owner}.` : `Live ${label} of the call.`,
                 }, pendingAmbientImages);
+                if (!ambientRouteLogged) {
+                    ambientRouteLogged = true;
+                    logger?.info?.(route === "queued"
+                        ? `MsteamsRealtime: this host has no realtime sendImage - ambient frames are queued for the next agent turn rather than pushed live (${callId})`
+                        : `MsteamsRealtime: ambient vision pushing live to the model (${callId})`);
+                }
                 lastPushedFrameData[source] = frame.dataBase64;
             }
             catch (err) {

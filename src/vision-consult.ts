@@ -92,6 +92,20 @@ export function withConsultImages<R extends { runEmbeddedAgent: (p: never) => un
   } as R;
 }
 
+/**
+ * How many queued ambient frames to retain when the host cannot take a live push.
+ *
+ * The queue only drains when a consult runs. On a realtime call where the caller shares a changing
+ * screen and never asks a question, nothing drains it - and at the default budget (30 frames/minute,
+ * 50-200 KB of base64 each) an hour-long meeting retained hundreds of megabytes PER CALL. It was an
+ * unbounded array.
+ *
+ * Six is what look_at_screen's history mode attaches, so the cap costs nothing a consult would have
+ * used. Oldest are dropped first: ambient context is about what is on screen NOW, and a stale frame
+ * from forty minutes ago is the least useful thing in the queue.
+ */
+export const MAX_QUEUED_AMBIENT_IMAGES = 6;
+
 export function pushOrQueueBridgeImage(
   bridge: unknown,
   image: BridgeImagePush,
@@ -103,5 +117,8 @@ export function pushOrQueueBridgeImage(
     return "pushed";
   }
   queue.push({ type: "image", data: image.dataBase64, mimeType: image.mime });
+  if (queue.length > MAX_QUEUED_AMBIENT_IMAGES) {
+    queue.splice(0, queue.length - MAX_QUEUED_AMBIENT_IMAGES);
+  }
   return "queued";
 }

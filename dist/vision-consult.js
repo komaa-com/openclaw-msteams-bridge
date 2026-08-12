@@ -28,6 +28,7 @@ export function withConsultImages(agentRuntime, images) {
         runEmbeddedAgent: (p) => agentRuntime.runEmbeddedAgent(p && typeof p === "object" && !p.images ? { ...p, images } : p),
     };
 }
+export const MAX_QUEUED_AMBIENT_IMAGES = 6;
 export function pushOrQueueBridgeImage(bridge, image, queue) {
     const fn = bridge.sendImage;
     if (typeof fn === "function") {
@@ -35,5 +36,8 @@ export function pushOrQueueBridgeImage(bridge, image, queue) {
         return "pushed";
     }
     queue.push({ type: "image", data: image.dataBase64, mimeType: image.mime });
+    if (queue.length > MAX_QUEUED_AMBIENT_IMAGES) {
+        queue.splice(0, queue.length - MAX_QUEUED_AMBIENT_IMAGES);
+    }
     return "queued";
 }

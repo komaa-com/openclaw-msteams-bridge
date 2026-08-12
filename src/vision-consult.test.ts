@@ -4,6 +4,9 @@ import { VisionBudget } from "./vision-budget.js";
 import {
   type ConsultImage,
   collectLatestFrameImages,
+  MAX_QUEUED_AMBIENT_IMAGES,
+  pushOrQueueBridgeImage,
+  type ConsultImage,
   frameToConsultImage,
   pushOrQueueBridgeImage,
 } from "./vision-consult.js";
@@ -81,5 +84,33 @@ describe("pushOrQueueBridgeImage", () => {
     const queue: ConsultImage[] = [];
     expect(() => pushOrQueueBridgeImage({ sendImage }, img, queue)).toThrow();
     expect(queue).toHaveLength(0);
+  });
+});
+
+describe("ambient queue is bounded", () => {
+  const img = (n: number) => ({ dataBase64: `IMG${n}`, mime: "image/jpeg", text: `f${n}` });
+
+  it("keeps only the newest frames when the host cannot push live", () => {
+    // The queue only drains when a consult runs. On a realtime call where the caller shares a changing
+    // screen and never asks a question, nothing drains it - and at the default budget (30 frames/min,
+    // 50-200 KB of base64 each) an hour-long meeting retained hundreds of megabytes PER CALL.
+    const queue: ConsultImage[] = [];
+    const hostWithoutSendImage = {};
+    for (let n = 0; n < MAX_QUEUED_AMBIENT_IMAGES + 4; n++) {
+      expect(pushOrQueueBridgeImage(hostWithoutSendImage, img(n), queue)).toBe("queued");
+    }
+    expect(queue).toHaveLength(MAX_QUEUED_AMBIENT_IMAGES);
+    // Oldest dropped: ambient context is about what is on screen NOW.
+    expect(queue.at(-1)!.data).toBe(`IMG${MAX_QUEUED_AMBIENT_IMAGES + 3}`);
+    expect(queue.some((i) => i.data === "IMG0")).toBe(false);
+  });
+
+  it("does not queue at all when the host can push live", () => {
+    const queue: ConsultImage[] = [];
+    const pushed: unknown[] = [];
+    const hostWithSendImage = { sendImage: (i: unknown) => pushed.push(i) };
+    expect(pushOrQueueBridgeImage(hostWithSendImage, img(1), queue)).toBe("pushed");
+    expect(queue).toHaveLength(0);
+    expect(pushed).toHaveLength(1);
   });
 });
