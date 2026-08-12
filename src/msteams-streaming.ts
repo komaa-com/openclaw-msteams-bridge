@@ -70,7 +70,8 @@ export interface MsteamsStreamingDeps {
    * the same "look at what's shared" awareness as the realtime path. Runtime supplies (vision store +
    * budget); omitted → audio-only.
    */
-  getVisionImages?: () => ConsultImage[];
+  /** Latest frames for this turn, with a human label per image ("Sara's shared screen"). */
+  getVisionImages?: () => { images: ConsultImage[]; owners: string[] };
   /**
    * Optional opening line the agent speaks first (model speaks first). Phrased as an instruction
    * (e.g. "Greet the caller and ask how you can help") — run through `consult` to produce real words.
@@ -228,9 +229,18 @@ export function createMsteamsStreamingCall(params: {
       transcript.push({ role: "user", text: attributed });
       deps.appendTranscript?.({ role: "caller", text: attributed, at: now() });
 
-      const images = deps.getVisionImages?.();
+      const vision = deps.getVisionImages?.();
+      const images = vision?.images;
+      // Tell the model WHOSE screen/camera it is looking at. Realtime does this through its `surface`
+      // string; streaming had no equivalent, so the attribution the frames carry all the way from the
+      // worker died at the consult boundary and the model saw anonymous pictures. In a 1:1 that is
+      // merely unhelpful; in a meeting it makes the images actively misleading.
+      const attributedQuestion =
+        vision && vision.owners.length > 0
+          ? `${attributed}\n[attached: ${vision.owners.join("; ")}]`
+          : attributed;
       const { text } = await deps.consult({
-        question,
+        question: attributedQuestion,
         transcript: [...transcript],
         ...(images && images.length ? { images } : {}),
       });

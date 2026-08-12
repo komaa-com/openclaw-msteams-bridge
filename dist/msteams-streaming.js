@@ -111,9 +111,13 @@ export function createMsteamsStreamingCall(params) {
         try {
             transcript.push({ role: "user", text: attributed });
             deps.appendTranscript?.({ role: "caller", text: attributed, at: now() });
-            const images = deps.getVisionImages?.();
+            const vision = deps.getVisionImages?.();
+            const images = vision?.images;
+            const attributedQuestion = vision && vision.owners.length > 0
+                ? `${attributed}\n[attached: ${vision.owners.join("; ")}]`
+                : attributed;
             const { text } = await deps.consult({
-                question,
+                question: attributedQuestion,
                 transcript: [...transcript],
                 ...(images && images.length ? { images } : {}),
             });

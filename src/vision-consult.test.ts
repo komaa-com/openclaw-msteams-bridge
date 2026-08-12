@@ -26,26 +26,32 @@ describe("collectLatestFrameImages", () => {
   it("gathers screen-share + camera and honors the vision budget", () => {
     const getLatestFrame = (s?: "camera" | "screenshare") =>
       s === "camera" ? frame("camera", "CAM") : frame("screenshare", "SCREEN");
-    const images = collectLatestFrameImages({ getLatestFrame, callId: "c1" });
+    const { images, owners } = collectLatestFrameImages({ getLatestFrame, callId: "c1" });
     // screen-share first, then camera (matches the realtime push order).
     expect(images.map((i) => i.data)).toEqual(["SCREEN", "CAM"]);
+    // Owners run parallel to images so the caller can say whose screen it attached. Without a
+    // participantName the label degrades to the source kind rather than vanishing.
+    expect(owners).toHaveLength(2);
+    expect(owners[0]).toMatch(/shared screen/);
+    expect(owners[1]).toMatch(/camera/);
   });
 
   it("stops at the budget cap", () => {
     const budget = new VisionBudget(1); // only one frame per minute
     const getLatestFrame = (s?: "camera" | "screenshare") =>
       s === "camera" ? frame("camera", "CAM") : frame("screenshare", "SCREEN");
-    const images = collectLatestFrameImages({
+    const { images, owners } = collectLatestFrameImages({
       getLatestFrame,
       visionBudget: budget,
       callId: "c1",
       now: () => 0,
     });
     expect(images.map((i) => i.data)).toEqual(["SCREEN"]); // camera dropped by budget
+    expect(owners).toHaveLength(1); // labels stay in step with the images they describe
   });
 
   it("returns nothing when there is no frame source", () => {
-    expect(collectLatestFrameImages({ callId: "c1" })).toEqual([]);
+    expect(collectLatestFrameImages({ callId: "c1" })).toEqual({ images: [], owners: [] });
   });
 });
 

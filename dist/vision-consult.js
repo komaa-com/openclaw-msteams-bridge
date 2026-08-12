@@ -1,12 +1,14 @@
+import { describeMsteamsVideoFrameOwner } from "./msteams-video-frame.js";
 export function frameToConsultImage(frame) {
     return { type: "image", data: frame.dataBase64, mimeType: frame.mime };
 }
 export function collectLatestFrameImages(opts) {
     const { getLatestFrame, visionBudget, callId } = opts;
     if (!getLatestFrame)
-        return [];
+        return { images: [], owners: [] };
     const now = opts.now ?? (() => Date.now());
     const images = [];
+    const owners = [];
     for (const source of ["screenshare", "camera"]) {
         const frame = getLatestFrame(source);
         if (!frame)
@@ -14,8 +16,9 @@ export function collectLatestFrameImages(opts) {
         if (visionBudget && !visionBudget.tryConsume(callId, now()))
             break;
         images.push(frameToConsultImage(frame));
+        owners.push(describeMsteamsVideoFrameOwner(frame) ?? (source === "screenshare" ? "a shared screen" : "a camera"));
     }
-    return images;
+    return { images, owners };
 }
 export function withConsultImages(agentRuntime, images) {
     if (!images?.length)
