@@ -28,6 +28,7 @@ import {
   buildRealtimeVoiceAgentConsultWorkingResponse,
   consultRealtimeVoiceAgent,
   createRealtimeVoiceBridgeSession,
+  REALTIME_VOICE_AGENT_CONSULT_TOOL,
   REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME,
   REALTIME_VOICE_AUDIO_FORMAT_PCM16_24KHZ,
   resamplePcm,
@@ -45,7 +46,7 @@ import type { VoiceCallConfig } from "./config.js";
 import type { CoreAgentDeps } from "./core-bridge.js";
 import { inferEmotion } from "./expression.js";
 import { consultMediaPaths } from "./realtime-voice-compat.js";
-import { type GroupCallGateConfig, isAddressed } from "./group-call-gate.js";
+import { type GroupCallGateConfig, isAddressed, isFollowUpWindowOpen } from "./group-call-gate.js";
 import { type ConsultImage, pushOrQueueBridgeImage, withConsultImages } from "./vision-consult.js";
 import { buildMinutesDocx, type MinutesTranscriptEntry } from "./meeting-minutes-docx.js";
 import {
@@ -588,8 +589,19 @@ export function createMsteamsRealtimeCall(params: {
   // "I can't share". (bugfix: screen-share "I can't share")
   const showEnabled =
     Boolean(deps.agentRuntime && deps.voiceConfig && deps.cfg) && consultToolPolicy !== "none";
+  // The agent consult itself. The dispatcher has always handled
+  // REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME, but the tool was only ever advertised through `deps.tools`
+  // - a slot the runtime never populates - so in production the model was never TOLD it could ask the
+  // agent anything. Every other capability here (look, show, task, minutes, chat) is a specialisation
+  // of that one, and it was the only one missing from the menu.
+  //
+  // Gated on the consult deps existing, NOT on toolPolicy: the policy governs which tools the consult
+  // RUN may use, not whether the model may ask a question at all. A locked-down call ("none") should
+  // still get answers - just answers the agent reasoned out without touching tools.
+  const consultEnabled = Boolean(deps.agentRuntime && deps.voiceConfig && deps.cfg);
   const bridgeTools = [
     ...(deps.tools ?? []),
+    ...(consultEnabled ? [REALTIME_VOICE_AGENT_CONSULT_TOOL] : []),
     ...(asyncTasksEnabled ? [MSTEAMS_AGENT_TASK_TOOL] : []),
     ...(visionEnabled ? [MSTEAMS_LOOK_TOOL] : []),
     ...(showEnabled ? [MSTEAMS_SHOW_TOOL] : []),
@@ -705,7 +717,9 @@ export function createMsteamsRealtimeCall(params: {
         if (humanCount >= 2 && groupGateActive) {
           const g = deps.groupCallGate!;
           const now = Date.now();
-          if (lastAddressedAt === undefined || now - lastAddressedAt > g.followUpWindowMs) {
+          if (
+            !isFollowUpWindowOpen({ lastAddressedAt, followUpWindowMs: g.followUpWindowMs, now })
+          ) {
             return;
           }
           // Hold the window open while the bot is actively speaking so a long reply isn't cut mid-
@@ -1227,7 +1241,11 @@ export function createMsteamsRealtimeCall(params: {
   }
 
   /** Show agent-produced images (local files or remote URLs) on the outbound tile (Phase 8). */
-  async function forwardDisplayImages(mediaPaths: string[], caption?: string): Promise<number> {
+  async function forwardDisplayImages(
+    mediaPaths: string[],
+    caption?: string,
+    displayMode: "overlay" | "fullscreen" = "overlay",
+  ): Promise<number> {
     type LoadedImage = NonNullable<Awaited<ReturnType<typeof loadDisplayImage>>>;
     const images: LoadedImage[] = [];
     for (const pathOrUrl of mediaPaths) {
@@ -1255,10 +1273,12 @@ export function createMsteamsRealtimeCall(params: {
           type: "display.image",
           dataBase64: img.bytes.toString("base64"),
           mime: img.mime,
-          // PiP by default (#17): the image rides as an inset over the live avatar instead of a
-          // fullscreen takeover, keeping the bot visibly present. An older worker ignores the
-          // field and shows fullscreen — same behavior as before.
-          mode: "overlay",
+          // PiP by DEFAULT (#17): the image rides as an inset over the live avatar instead of a
+          // fullscreen takeover, keeping the bot visibly present. But the model can now ask for
+          // fullscreen, and it should: an inset is unreadable for a dense screenshot or a document,
+          // which is exactly when a caller says "show me". This was hardcoded to "overlay", so the
+          // worker's fullscreen path - which it has always implemented - was unreachable.
+          mode: displayMode,
           // Hold each non-final slideshow frame for a fixed beat (plus overlap, so the next frame
           // lands before this one expires); the last keeps the worker default.
           ...(sequence && !isLast
@@ -1302,6 +1322,10 @@ export function createMsteamsRealtimeCall(params: {
       sendWorkingFiller();
       // show_to_caller sends { request }; the consult contract expects question/prompt/query/task,
       // so map request -> question (otherwise the consult throws "question required").
+      // Which surface the model asked for. Unknown/absent -> overlay, so a model that ignores the arg
+      // behaves exactly as before.
+      const displayMode: "overlay" | "fullscreen" =
+        readArgText(event.args, "display") === "fullscreen" ? "fullscreen" : "overlay";
       const showRequest =
         event.args &&
         typeof event.args === "object" &&
@@ -1323,7 +1347,11 @@ export function createMsteamsRealtimeCall(params: {
       });
       // mediaPaths is a realtime-voice SDK member not yet in published openclaw typings (compat helper).
       const resultMediaPaths = consultMediaPaths(result);
-      const shown = await forwardDisplayImages(resultMediaPaths, toTileCaption(result.text));
+      const shown = await forwardDisplayImages(
+        resultMediaPaths,
+        toTileCaption(result.text),
+        displayMode,
+      );
       rtSession.submitToolResult(event.callId, {
         text:
           shown > 0

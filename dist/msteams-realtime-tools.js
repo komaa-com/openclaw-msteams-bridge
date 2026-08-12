@@ -113,6 +113,14 @@ export const MSTEAMS_SHOW_TOOL = {
                 type: "string",
                 description: "What to show the caller, e.g. 'a screenshot of your screen' or 'the chart you generated'.",
             },
+            display: {
+                type: "string",
+                enum: ["overlay", "fullscreen"],
+                description: "How to show it. 'overlay' (default) insets the image over your video tile so you stay " +
+                    "visible - right for a quick glance. 'fullscreen' replaces the tile with the image - use it " +
+                    "when detail matters and the caller needs to READ something: a dense screenshot, a document, " +
+                    "a chart with small labels, code.",
+            },
         },
         required: ["request"],
     },

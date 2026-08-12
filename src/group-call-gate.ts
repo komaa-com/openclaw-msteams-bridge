@@ -89,6 +89,27 @@ function isWordChar(ch: string): boolean {
  * `lastAddressedAt` is the epoch-ms timestamp of the last addressed turn (undefined if never), and
  * `now` is the current epoch ms (injected for testability).
  */
+/**
+ * Is the follow-up window still open?
+ *
+ * Extracted because the two call paths ask DIFFERENT questions and only this part is common. Streaming
+ * has a transcript and asks "does this turn address the bot" (shouldRespondToGroupTurn, below).
+ * Realtime gates at the AUDIO EGRESS, where there is no transcript at all - wake detection already
+ * happened upstream and stamped lastAddressedAt - so it can only ask "is the window still open".
+ * Sharing this predicate is the honest deduplication; forcing the realtime site through
+ * shouldRespondToGroupTurn would mean inventing a transcript it does not have.
+ */
+export function isFollowUpWindowOpen(params: {
+  lastAddressedAt: number | undefined;
+  followUpWindowMs: number;
+  now: number;
+}): boolean {
+  const { lastAddressedAt, followUpWindowMs, now } = params;
+  return (
+    followUpWindowMs > 0 && lastAddressedAt !== undefined && now - lastAddressedAt <= followUpWindowMs
+  );
+}
+
 export function shouldRespondToGroupTurn(params: {
   transcript: string;
   isGroup: boolean;
@@ -106,9 +127,10 @@ export function shouldRespondToGroupTurn(params: {
   if (addressed) {
     return { respond: true, addressed: true, gated: true };
   }
-  const inFollowUp =
-    config.followUpWindowMs > 0 &&
-    lastAddressedAt !== undefined &&
-    now - lastAddressedAt <= config.followUpWindowMs;
+  const inFollowUp = isFollowUpWindowOpen({
+    lastAddressedAt,
+    followUpWindowMs: config.followUpWindowMs,
+    now,
+  });
   return { respond: inFollowUp, addressed: false, gated: true };
 }

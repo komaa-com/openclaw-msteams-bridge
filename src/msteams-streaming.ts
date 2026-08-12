@@ -26,7 +26,7 @@ import {
 import type { MsteamsRealtimeCall } from "./msteams-realtime.js";
 import type { MsteamsTtsProvider } from "./msteams-tts.js";
 import { playTtsToCall, type TtsPlaybackTarget } from "./msteams-tts-playback.js";
-import { type GroupCallGateConfig, isAddressed } from "./group-call-gate.js";
+import { type GroupCallGateConfig, shouldRespondToGroupTurn } from "./group-call-gate.js";
 import type { ConsultImage } from "./vision-consult.js";
 
 /** Default energy VAD / echo-guard tuning. */
@@ -155,15 +155,24 @@ export function createMsteamsStreamingCall(params: {
     deps.groupCallGate.requireAddress &&
     deps.groupCallGate.wakePhrases.some((p) => p.trim().length > 0);
 
-  /** In a meeting, is this caller turn for the bot (wake phrase, or within the follow-up window)? */
+  /** In a meeting, is this caller turn for the bot (wake phrase, or within the follow-up window)?
+   *
+   * Delegates to the pure, unit-tested gate rather than restating it. This used to be an inline copy,
+   * which is how the two drifted into "the behaviour is real but the tested function has no callers" -
+   * the tests were exercising code the product did not run. */
   function addressed(text: string): boolean {
-    if (!gateActive || humanCount < 2) return true; // 1:1 (or no gate) is never gated
-    const gate = deps.groupCallGate!;
-    if (isAddressed(text, gate.wakePhrases)) {
+    const verdict = shouldRespondToGroupTurn({
+      transcript: text,
+      isGroup: humanCount >= 2,
+      config: deps.groupCallGate ?? { requireAddress: false, wakePhrases: [], followUpWindowMs: 0 },
+      lastAddressedAt,
+      now: now(),
+    });
+    // Stamping the window is the caller's job: the gate is pure, and only we know this turn was real.
+    if (verdict.addressed) {
       lastAddressedAt = now();
-      return true;
     }
-    return lastAddressedAt !== undefined && now() - lastAddressedAt <= gate.followUpWindowMs;
+    return verdict.respond;
   }
 
   // VAD accumulation.
