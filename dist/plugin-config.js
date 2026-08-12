@@ -20,6 +20,7 @@ export function resolvePluginConfig(rawInput) {
             ...(c.messagesPort !== undefined ? { port: Number(c.messagesPort) } : {}),
             ...(str(c.messagesPath) ? { path: str(c.messagesPath) } : {}),
             ...(str(c.gatewayReplyUrl) ? { gatewayReplyUrl: str(c.gatewayReplyUrl) } : {}),
+            transcribeVoiceMessages: c.transcribeVoiceMessages === true,
         }),
         outbound: c.outbound,
         limits: {

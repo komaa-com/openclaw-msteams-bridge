@@ -283,6 +283,10 @@
       "messagesBindAddress": {
         "type": "string",
         "description": "Bind address for the messages lane. Defaults to the root `bindAddress`, so both lanes share one interface; set this only to split them."
+      },
+      "transcribeVoiceMessages": {
+        "type": "boolean",
+        "description": "Transcribe inbound Teams voice messages and fold the text into the agent's turn. Off by default: each clip costs an STT call, and a voice note can be minutes long."
       }
     }
   },
