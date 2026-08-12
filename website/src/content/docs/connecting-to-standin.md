@@ -84,7 +84,7 @@ They are two lanes of a single binding, not two products. Per-lane overrides (`s
 but most installs never need them.
 
 ```jsonc
-"msteams-call": {
+"msteams-bridge": {
   "config": {
     "enabled": true,
     "secret": "paste-the-value-from-the-StandIn-portal"

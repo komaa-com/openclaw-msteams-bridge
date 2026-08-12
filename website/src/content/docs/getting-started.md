@@ -25,7 +25,7 @@ portal, and paste the one secret it gives you:
 {
   "plugins": {
     "entries": {
-      "msteams-call": {
+      "msteams-bridge": {
         "config": {
           "enabled": true,
           // Covers BOTH lanes: calling and messages.
@@ -87,13 +87,13 @@ limit is reached, the agent speaks a short goodbye and the call ends gracefully.
 
 ## 3. Minimal configuration
 
-Config lives under `plugins.entries."msteams-call".config`. A minimal realtime setup:
+Config lives under `plugins.entries."msteams-bridge".config`. A minimal realtime setup:
 
 ```jsonc
 {
   "plugins": {
     "entries": {
-      "msteams-call": {
+      "msteams-bridge": {
         "config": {
           "enabled": true,
           "mode": "realtime",

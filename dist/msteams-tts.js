@@ -14,7 +14,7 @@ export function createMsteamsTtsProvider(params) {
             const attemptedChain = result.attemptedProviders && result.attemptedProviders.length > 0
                 ? result.attemptedProviders.join(" -> ")
                 : `${result.fallbackFrom} -> ${result.provider}`;
-            logger?.warn?.(`[msteams-call] TTS fallback used from=${result.fallbackFrom} to=${result.provider} attempts=${attemptedChain}`);
+            logger?.warn?.(`[msteams-bridge] TTS fallback used from=${result.fallbackFrom} to=${result.provider} attempts=${attemptedChain}`);
         }
         const pcm16k = result.sampleRate === MSTEAMS_TTS_SAMPLE_RATE_HZ
             ? result.audioBuffer

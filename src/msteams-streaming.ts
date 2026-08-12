@@ -195,7 +195,7 @@ export function createMsteamsStreamingCall(params: {
       await playTtsToCall({ ttsProvider: deps.ttsProvider, logger: log }, playback, text);
     } catch (err) {
       // Socket closed mid-playback (caller hung up) or synthesis failed — surface, don't crash.
-      log?.warn(`[msteams-call] streaming playback failed for ${session.callId}: ${String(err)}`);
+      log?.warn(`[msteams-bridge] streaming playback failed for ${session.callId}: ${String(err)}`);
     } finally {
       if (playback.ttsAbort === null) speaking = false;
     }
@@ -210,7 +210,7 @@ export function createMsteamsStreamingCall(params: {
       transcript.push({ role: "user", text: attributed });
       deps.appendTranscript?.({ role: "caller", text: attributed, at: now() });
       log?.debug?.(
-        `[msteams-call] streaming: caller turn not addressed to the bot — not answering (${session.callId})`,
+        `[msteams-bridge] streaming: caller turn not addressed to the bot — not answering (${session.callId})`,
       );
       return;
     }
@@ -232,7 +232,7 @@ export function createMsteamsStreamingCall(params: {
       deps.appendTranscript?.({ role: "bot", text: reply, at: now() });
       await speak(reply);
     } catch (err) {
-      log?.warn(`[msteams-call] streaming turn failed for ${session.callId}: ${String(err)}`);
+      log?.warn(`[msteams-bridge] streaming turn failed for ${session.callId}: ${String(err)}`);
     } finally {
       processing = false;
     }
@@ -250,7 +250,7 @@ export function createMsteamsStreamingCall(params: {
     try {
       text = (await transcribe(pcm)).trim();
     } catch (err) {
-      log?.warn(`[msteams-call] streaming STT failed for ${session.callId}: ${String(err)}`);
+      log?.warn(`[msteams-bridge] streaming STT failed for ${session.callId}: ${String(err)}`);
       return;
     }
     if (text) await runTurn(text, { gated: true });
@@ -270,13 +270,13 @@ export function createMsteamsStreamingCall(params: {
       if (text) void runTurn(text, { gated: true });
     },
     onError: (e: Error) =>
-      log?.warn(`[msteams-call] streaming STT session error for ${session.callId}: ${e.message}`),
+      log?.warn(`[msteams-bridge] streaming STT session error for ${session.callId}: ${e.message}`),
   });
   if (sttSession) {
     void sttSession
       .connect()
       .catch((e) =>
-        log?.warn(`[msteams-call] streaming STT connect failed for ${session.callId}: ${String(e)}`),
+        log?.warn(`[msteams-bridge] streaming STT connect failed for ${session.callId}: ${String(e)}`),
       );
   }
 

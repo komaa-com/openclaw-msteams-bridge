@@ -65,7 +65,7 @@ export function createMsteamsTtsProvider(params: {
           ? result.attemptedProviders.join(" -> ")
           : `${result.fallbackFrom} -> ${result.provider}`;
       logger?.warn?.(
-        `[msteams-call] TTS fallback used from=${result.fallbackFrom} to=${result.provider} attempts=${attemptedChain}`,
+        `[msteams-bridge] TTS fallback used from=${result.fallbackFrom} to=${result.provider} attempts=${attemptedChain}`,
       );
     }
 

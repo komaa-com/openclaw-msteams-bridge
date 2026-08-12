@@ -132,7 +132,7 @@ export class MsteamsVoiceRuntime {
     private readonly api: OpenClawPluginApi,
     private readonly cfg: ResolvedPluginConfig,
   ) {
-    const logger = api.runtime.logging.getChildLogger({ plugin: "msteams-call" });
+    const logger = api.runtime.logging.getChildLogger({ plugin: "msteams-bridge" });
     this.log = {
       info: (m) => logger.info(m),
       warn: (m) => logger.warn(m),
@@ -216,7 +216,7 @@ export class MsteamsVoiceRuntime {
     if (this.mode === "realtime" && !this.realtime?.provider) {
       const providerId = this.cfg.voice.realtime.provider;
       this.log.warn(
-        `[msteams-call] mode is "realtime" but no realtime voice provider resolved` +
+        `[msteams-bridge] mode is "realtime" but no realtime voice provider resolved` +
           (providerId
             ? ` (configured provider "${providerId}" has no usable credentials)`
             : ` (no realtime provider configured)`) +
@@ -229,7 +229,7 @@ export class MsteamsVoiceRuntime {
       // Same fail-LOUD posture as the realtime-provider check above - the operator set
       // managedBot.enabled and would otherwise get a silently dead chat surface.
       this.log.warn(
-        "[msteams-call] managedBot.enabled is set but no secret resolved - the messages lane is OFF. " +
+        "[msteams-bridge] managedBot.enabled is set but no secret resolved - the messages lane is OFF. " +
           "Set `secret` to the value StandIn shows you; it covers calling and messages both.",
       );
     }
@@ -250,7 +250,7 @@ export class MsteamsVoiceRuntime {
         await this.media.start();
         rollback.push(() => this.media.stop());
       } else {
-        this.log.warn("[msteams-call] no calling secret - messages lane only, calls will not be answered");
+        this.log.warn("[msteams-bridge] no calling secret - messages lane only, calls will not be answered");
       }
 
       if (this.cfg.managedChat.enabled) {
@@ -276,7 +276,7 @@ export class MsteamsVoiceRuntime {
       }
       throw err;
     }
-    this.log.info(`[msteams-call] started (mode=${this.mode})`);
+    this.log.info(`[msteams-bridge] started (mode=${this.mode})`);
   }
 
   async stop(): Promise<void> {
@@ -383,16 +383,16 @@ export class MsteamsVoiceRuntime {
   ): Promise<{ callId: string }> {
     const ob = this.cfg.outbound;
     if (!ob?.enabled)
-      throw new Error("msteams-call: outbound calling is disabled (set outbound.enabled)");
+      throw new Error("msteams-bridge: outbound calling is disabled (set outbound.enabled)");
     if (!ob.workerBaseUrl)
-      throw new Error("msteams-call: outbound.workerBaseUrl is not configured");
-    if (!ob.tenantId) throw new Error("msteams-call: outbound.tenantId is not configured");
+      throw new Error("msteams-bridge: outbound.workerBaseUrl is not configured");
+    if (!ob.tenantId) throw new Error("msteams-bridge: outbound.tenantId is not configured");
     if (!this.cfg.media.sharedSecret)
-      throw new Error("msteams-call: secret is not configured");
+      throw new Error("msteams-bridge: secret is not configured");
     const userObjectId = to.replace(/^user:/i, "").trim();
-    if (!userObjectId) throw new Error("msteams-call: target userObjectId (to) is required");
+    if (!userObjectId) throw new Error("msteams-bridge: target userObjectId (to) is required");
     if (this.lifecycle.activeCount() >= this.cfg.limits.maxConcurrentCalls)
-      throw new Error("msteams-call: max concurrent calls reached; not placing outbound call");
+      throw new Error("msteams-bridge: max concurrent calls reached; not placing outbound call");
 
     // HMAC over `${timestampMs}.${userObjectId}` — same scheme as the media WS handshake.
     const timestampMs = Date.now();
@@ -423,7 +423,7 @@ export class MsteamsVoiceRuntime {
       if (!response.ok) {
         const text = await response.text().catch(() => "");
         throw new Error(
-          `msteams-call: worker returned ${response.status}${text ? ` — ${text.slice(0, 200)}` : ""}`,
+          `msteams-bridge: worker returned ${response.status}${text ? ` — ${text.slice(0, 200)}` : ""}`,
         );
       }
       const payload = (await response.json().catch(() => ({}))) as { callId?: string };
@@ -432,7 +432,7 @@ export class MsteamsVoiceRuntime {
       await release();
     }
     if (!workerCallId)
-      throw new Error("msteams-call: worker response did not include a callId");
+      throw new Error("msteams-bridge: worker response did not include a callId");
 
     const mode: PlaceCallMode = opts?.mode ?? ob.defaultMode ?? "notify";
     this.lifecycle.initiate({
@@ -451,7 +451,7 @@ export class MsteamsVoiceRuntime {
     timer.unref?.();
     this.pendingOutboundTimers.set(workerCallId, timer);
     this.log.info(
-      `[msteams-call] outbound call placed callId=${workerCallId} -> ${userObjectId} (${mode})`,
+      `[msteams-bridge] outbound call placed callId=${workerCallId} -> ${userObjectId} (${mode})`,
     );
     return { callId: workerCallId };
   }
@@ -469,7 +469,7 @@ export class MsteamsVoiceRuntime {
     if (!this.pendingOutbound.has(callId)) return;   // already finalized, or never ours
     this.pendingOutbound.delete(callId);
     this.clearOutboundTimer(callId);
-    this.log.info(`[msteams-call] outbound call ${callId} ended as ${outcome} (worker outcome)`);
+    this.log.info(`[msteams-bridge] outbound call ${callId} ended as ${outcome} (worker outcome)`);
     // The worker already knows the call is over, so unlike the timeout path there is nothing to cancel.
     this.lifecycle.end(callId, WORKER_OUTCOME_TO_END_REASON[outcome] ?? "no-answer");
   }
@@ -479,7 +479,7 @@ export class MsteamsVoiceRuntime {
     this.pendingOutbound.delete(callId);
     this.clearOutboundTimer(callId);
     this.log.warn(
-      `[msteams-call] outbound call ${callId} not answered within timeout; finalizing (no-answer/voicemail)`,
+      `[msteams-bridge] outbound call ${callId} not answered within timeout; finalizing (no-answer/voicemail)`,
     );
     // H7a: the call may still be RINGING on the Teams worker side, and an unanswered outbound never
     // got a threadId (so DELETE /Calls?threadId can't reach it). Best-effort cancel it by callId via
@@ -522,17 +522,17 @@ export class MsteamsVoiceRuntime {
       try {
         if (!response.ok) {
           this.log.warn(
-            `[msteams-call] cancel-by-callId ${callId} returned ${response.status}`,
+            `[msteams-bridge] cancel-by-callId ${callId} returned ${response.status}`,
           );
         } else {
-          this.log.info(`[msteams-call] cancelled ringing outbound ${callId}`);
+          this.log.info(`[msteams-bridge] cancelled ringing outbound ${callId}`);
         }
       } finally {
         await release();
       }
     } catch (err) {
       this.log.warn(
-        `[msteams-call] cancel-by-callId ${callId} failed: ${(err as Error).message}`,
+        `[msteams-bridge] cancel-by-callId ${callId} failed: ${(err as Error).message}`,
       );
     }
   }
@@ -558,7 +558,7 @@ export class MsteamsVoiceRuntime {
     this.trackManagedCall(session, true);
     // Realtime mode requires a resolved provider; streaming mode does not.
     if (this.mode === "realtime" && !this.realtime?.provider) {
-      this.log.error("[msteams-call] no realtime voice provider resolved — rejecting call");
+      this.log.error("[msteams-bridge] no realtime voice provider resolved — rejecting call");
       session.close("realtime-unavailable");
       return;
     }
@@ -584,7 +584,7 @@ export class MsteamsVoiceRuntime {
     if (prior?.isTerminal) {
       const rec = this.lifecycle.getRecord(session.callId);
       this.log.warn(
-        `[msteams-call] ignoring late media attach for ${session.callId} — call already finalized` +
+        `[msteams-bridge] ignoring late media attach for ${session.callId} — call already finalized` +
           ` (${rec?.endReason ?? "ended"}); closing`,
       );
       session.close(rec?.direction === "outbound" ? "answer-timeout" : "already-ended");
@@ -595,7 +595,7 @@ export class MsteamsVoiceRuntime {
     const from = session.caller?.aadId ?? "";
     if (!isInboundCallAllowed(this.cfg.voice.inboundPolicy, this.cfg.voice.allowFrom, from)) {
       this.log.warn(
-        `[msteams-call] ${describeInboundRejection(this.cfg.voice.inboundPolicy, from)}`,
+        `[msteams-bridge] ${describeInboundRejection(this.cfg.voice.inboundPolicy, from)}`,
       );
       session.close("not-allowed");
       return;
@@ -609,7 +609,7 @@ export class MsteamsVoiceRuntime {
         to: "",
       });
     } catch (err) {
-      this.log.warn(`[msteams-call] cannot accept call: ${String(err)}`);
+      this.log.warn(`[msteams-bridge] cannot accept call: ${String(err)}`);
       session.close("busy");
       return;
     }
@@ -823,10 +823,10 @@ export class MsteamsVoiceRuntime {
     });
     if (res.ok) {
       this.transcription = { provider: res.provider, providerConfig: res.providerConfig };
-      this.log.info(`[msteams-call] streaming STT provider: ${res.provider.id}`);
+      this.log.info(`[msteams-bridge] streaming STT provider: ${res.provider.id}`);
     } else {
       this.log.info(
-        `[msteams-call] no streaming STT provider resolved (${res.code}); using file-based STT fallback`,
+        `[msteams-bridge] no streaming STT provider resolved (${res.code}); using file-based STT fallback`,
       );
     }
   }
@@ -850,7 +850,7 @@ export class MsteamsVoiceRuntime {
       // Fallback: VAD-segmented utterance → temp WAV → file STT (used when no provider resolved).
       transcribe: async (pcm16k: Buffer): Promise<string> => {
         const wav = pcmToWav(pcm16k, MSTEAMS_PCM_SAMPLE_RATE_HZ);
-        const tmp = path.join(os.tmpdir(), `msteams-call-${session.callId}-${this.sttSeq++}.wav`);
+        const tmp = path.join(os.tmpdir(), `msteams-bridge-${session.callId}-${this.sttSeq++}.wav`);
         await fs.writeFile(tmp, wav);
         try {
           const res = await this.api.runtime.mediaUnderstanding.transcribeAudioFile({

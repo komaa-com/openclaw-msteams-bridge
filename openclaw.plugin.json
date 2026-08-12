@@ -1,6 +1,6 @@
 {
-  "id": "msteams-call",
-  "name": "Teams Call by StandIn",
+  "id": "msteams-bridge",
+  "name": "Teams Bridge by StandIn",
   "description": "Turn a Microsoft Teams call into a real two-way video conversation: the agent sees your camera and screen-share, talks in real time (speech-to-speech or streaming STT to agent to TTS), and appears as a lip-synced avatar. Vision, meeting recap, outbound call-backs, wake-phrase etiquette, HMAC-secured media bridge.",
   "activation": {
     "onStartup": true

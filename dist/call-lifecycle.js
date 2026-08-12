@@ -1,7 +1,7 @@
 import { TERMINAL_STATES, } from "./types.js";
 const MAX_TRANSCRIPT_ENTRIES = 200;
 const REAPER_CHECK_INTERVAL_MS = 15_000;
-const STORE_NAME = "msteams-voice/calls";
+const STORE_NAME = "msteams-bridge/calls";
 const ALLOWED_TRANSITIONS = {
     initiated: ["ringing", "answered", "active", "failed", "completed"],
     ringing: ["answered", "active", "failed", "completed"],
@@ -12,7 +12,7 @@ const ALLOWED_TRANSITIONS = {
 };
 export class MaxConcurrentCallsError extends Error {
     constructor(limit) {
-        super(`msteams-call: max concurrent calls reached (${limit})`);
+        super(`msteams-bridge: max concurrent calls reached (${limit})`);
         this.name = "MaxConcurrentCallsError";
     }
 }
@@ -126,12 +126,12 @@ export class CallLifecycle {
                 this.opts.maxDurationMs > 0 &&
                 now - rec.answeredAt > this.opts.maxDurationMs;
             if (unanswered) {
-                this.rt.log.info(`msteams-call: reaping unanswered call ${rec.callId}`);
+                this.rt.log.info(`msteams-bridge: reaping unanswered call ${rec.callId}`);
                 this.end(rec.callId, "no-answer");
                 this.opts.onReap?.(rec.callId, "no-answer");
             }
             else if (overDuration) {
-                this.rt.log.info(`msteams-call: reaping over-duration call ${rec.callId}`);
+                this.rt.log.info(`msteams-bridge: reaping over-duration call ${rec.callId}`);
                 this.end(rec.callId, "timeout");
                 this.opts.onReap?.(rec.callId, "timeout");
             }
@@ -141,7 +141,7 @@ export class CallLifecycle {
         if (rec.state === next)
             return;
         if (!ALLOWED_TRANSITIONS[rec.state].includes(next)) {
-            this.rt.log.warn(`msteams-call: illegal transition ${rec.state} -> ${next} (${rec.callId})`);
+            this.rt.log.warn(`msteams-bridge: illegal transition ${rec.state} -> ${next} (${rec.callId})`);
             return;
         }
         rec.state = next;

@@ -3,7 +3,7 @@ title: "Configuration Reference"
 description: "Every configuration option of the plugin, with types, defaults, and meaning."
 ---
 
-All options live under `plugins.entries."msteams-call".config`. The schema is
+All options live under `plugins.entries."msteams-bridge".config`. The schema is
 `additionalProperties: false`, so an unknown key is rejected. Defaults below come from the config
 resolver; secret-valued keys accept either a literal string or an OpenClaw secret reference.
 
@@ -110,7 +110,7 @@ These accept a literal string or an OpenClaw secret reference: `sharedSecret`,
 {
   "plugins": {
     "entries": {
-      "msteams-call": {
+      "msteams-bridge": {
         "config": {
           "enabled": true,
           "mode": "realtime",
