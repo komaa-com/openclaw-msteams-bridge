@@ -797,7 +797,15 @@ export function createMsteamsRealtimeCall(params) {
                     logger?.warn(`MsteamsRealtime: background task produced nothing to speak for ${callId}; not calling back`);
                     return;
                 }
-                const placed = await deps.placeCall(deliveryTarget, { message: text, mode: "notify" });
+                const originThread = session.threadId?.trim();
+                const fallback = originThread && originThread.startsWith("19:") && session.tenantId
+                    ? { tenantId: session.tenantId, conversationId: originThread }
+                    : undefined;
+                const placed = await deps.placeCall(deliveryTarget, {
+                    message: text,
+                    mode: "notify",
+                    ...(fallback ? { fallback } : {}),
+                });
                 logger?.info?.(`MsteamsRealtime: calling ${deliveryTarget} back for ${callId} (outbound call ${placed.callId})`);
             }
             catch (err) {

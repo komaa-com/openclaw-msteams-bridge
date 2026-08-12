@@ -85,7 +85,11 @@ export default definePluginEntry({
                         return { content: [{ type: "text", text: reason }], isError: true };
                     }
                     try {
-                        const placed = await runtime.placeCall(target.to, { message, mode: "notify" });
+                        const placed = await runtime.placeCall(target.to, {
+                            message,
+                            mode: "notify",
+                            fallback: target.fallback,
+                        });
                         return {
                             content: [
                                 {

@@ -123,7 +123,12 @@ export default definePluginEntry({
             return { content: [{ type: "text", text: reason }], isError: true } as never;
           }
           try {
-            const placed = await runtime!.placeCall(target.to, { message, mode: "notify" });
+            const placed = await runtime!.placeCall(target.to, {
+              message,
+              mode: "notify",
+              // If they miss the call, the answer lands back in this same chat rather than evaporating.
+              fallback: target.fallback,
+            });
             return {
               content: [
                 {
