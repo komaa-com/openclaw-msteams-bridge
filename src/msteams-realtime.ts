@@ -47,6 +47,7 @@ import type { CoreAgentDeps } from "./core-bridge.js";
 import { inferEmotion } from "./expression.js";
 import { consultMediaPaths } from "./realtime-voice-compat.js";
 import { type GroupCallGateConfig, isAddressed, isFollowUpWindowOpen } from "./group-call-gate.js";
+import { estimateVisemes } from "./viseme-estimate.js";
 import { type ConsultImage, pushOrQueueBridgeImage, withConsultImages } from "./vision-consult.js";
 import { buildMinutesDocx, type MinutesTranscriptEntry } from "./meeting-minutes-docx.js";
 import {
@@ -516,6 +517,8 @@ export function createMsteamsRealtimeCall(params: {
     deps.groupCallGate.wakePhrases.some((p) => p.trim().length > 0);
   /** Active speaker (unmixed-audio worker); labels the caller turn the model transcribes next. */
   let currentSpeakerName: string | undefined;
+  /** Audio milliseconds sent for the assistant's CURRENT turn, for the viseme timeline. */
+  let assistantTurnAudioMs = 0;
   /** Outbound greeting fires once, on answer (setRecordingActive); guards against a re-trigger. */
   let greetingTriggered = false;
   /**
@@ -737,7 +740,11 @@ export function createMsteamsRealtimeCall(params: {
         });
         outboundSeq += 1;
         // 16-bit mono: 2 bytes/sample.
-        outboundTimestampMs += Math.round((pcm16k.length / 2 / MSTEAMS_SAMPLE_RATE_HZ) * 1000);
+        const chunkMs = Math.round((pcm16k.length / 2 / MSTEAMS_SAMPLE_RATE_HZ) * 1000);
+        outboundTimestampMs += chunkMs;
+        // A viseme timeline needs a duration to spread mouth shapes over, and in realtime the only
+        // honest source is the audio actually sent for this turn.
+        assistantTurnAudioMs += chunkMs;
       },
       clearAudio: () => {
         // Barge-in: the model truncated its turn — tell the worker to flush the
@@ -778,6 +785,31 @@ export function createMsteamsRealtimeCall(params: {
             // non-fatal
           }
         }
+      }
+      // Viseme lip-sync on the REALTIME path. speech.marks was only ever emitted from the streaming
+      // TTS path, and realtime is the DEFAULT mode - so by default the avatar's mouth never received a
+      // timeline at all.
+      //
+      // Realtime gives no character alignment (the model streams speech, not timings), so this is the
+      // estimator - the same fallback the streaming path uses when the TTS provider returns none -
+      // spread over the audio actually sent for this turn, the only duration we genuinely know.
+      //
+      // Cosmetic and best-effort by design: audio never waits on it, a receiver that does not
+      // understand the message ignores it, and if the transcript finalises a beat before the last audio
+      // chunk the timeline is marginally short. It is a lip shape, not a subtitle.
+      if (role === "assistant" && isFinal && !closed && assistantTurnAudioMs > 0) {
+        try {
+          const marks = estimateVisemes(text, assistantTurnAudioMs);
+          if (marks.length > 0) {
+            logger?.debug?.(
+              `MsteamsRealtime: speech.marks ${marks.length} visemes (estimated over ${assistantTurnAudioMs}ms) for ${callId}`,
+            );
+            session.send({ type: "speech.marks", ts: 0, marks });
+          }
+        } catch {
+          // non-fatal: viseme marks are a cosmetic lip-shape hint
+        }
+        assistantTurnAudioMs = 0;
       }
       if (isFinal) {
         // Unmixed-audio attribution: prefix the caller turn with the speaker who was active while
