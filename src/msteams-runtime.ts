@@ -10,6 +10,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { MSTEAMS_POST_CHAT_TOOL_NAME } from "./msteams-realtime-tools.js";
 import {
+  fetchAttachmentAudio,
   fetchAttachmentImages,
   ManagedChatServer,
   postManagedMessage,
@@ -29,7 +30,7 @@ import {
 import { resolveConfiguredCapabilityProvider } from "openclaw/plugin-sdk/provider-selection-runtime";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import type { CallEndReason } from "./types.js";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createHmac } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -351,7 +352,12 @@ export class MsteamsVoiceRuntime {
     const cardActionNote = message.cardAction
       ? `[card button pressed - submit payload: ${JSON.stringify(message.cardAction)}]`
       : "";
-    const question = [message.text, cardActionNote, attachmentNote].filter(Boolean).join("\n");
+    // Voice messages: transcribe and fold the words into the turn, so "listen to this" is a question
+    // the agent can actually answer instead of a filename it can only name back.
+    const voiceNote = await this.transcribeVoiceAttachments(message, cfg);
+    const question = [message.text, cardActionNote, voiceNote, attachmentNote]
+      .filter(Boolean)
+      .join("\n");
     // 4.7's agent-side leg: fetch relayable images from their gateway-signed URLs into the consult, so
     // the agent SEES a pasted screenshot instead of reading a URL it cannot open (best-effort; the
     // text names every attachment either way).
@@ -906,6 +912,63 @@ export class MsteamsVoiceRuntime {
       });
     }
     return this.ttsProvider;
+  }
+
+  /**
+   * Transcribe inbound Teams voice messages into a line the agent can read.
+   *
+   * Opt-in (managedChat.transcribeVoiceMessages) because each clip is an STT call and a voice note
+   * can run for minutes - real per-message cost an operator should choose, not discover on a bill.
+   *
+   * A clip that cannot be fetched or transcribed KEEPS its attachment placeholder: the existing
+   * attachment note still names it, so the agent can say "you sent a voice message I couldn't play"
+   * instead of silently answering as though nothing was attached. Failing loudly to the model is the
+   * point - a dropped voice note is indistinguishable from an empty message otherwise.
+   *
+   * Returns "" when the feature is off, nothing is audio, or every clip failed.
+   */
+  private async transcribeVoiceAttachments(
+    message: ManagedInbound,
+    cfg: OpenClawConfig,
+  ): Promise<string> {
+    if (!this.cfg.managedChat.transcribeVoiceMessages) return "";
+    const clips = await fetchAttachmentAudio(message.attachments, {
+      gatewayOrigin: this.cfg.managedChat.gatewayReplyUrl,
+    });
+    if (clips.length === 0) return "";
+
+    const lines: string[] = [];
+    for (const clip of clips) {
+      // The host's STT takes a PATH, so the bytes have to land on disk. Suffix from the mime type:
+      // transcribers routinely sniff the container by extension, and an .ogg named .wav decodes to
+      // nothing with no error worth reading.
+      const ext = clip.mime.split("/")[1]?.replace(/[^a-z0-9]/g, "") || "bin";
+      const tmp = path.join(os.tmpdir(), `msteams-voice-${randomUUID()}.${ext}`);
+      try {
+        await fs.writeFile(tmp, clip.bytes);
+        const res = await this.api.runtime.mediaUnderstanding.transcribeAudioFile({
+          filePath: tmp,
+          cfg,
+        });
+        const text = (res.text ?? "").trim();
+        if (text) {
+          lines.push(`[voice message${clip.name ? ` "${clip.name}"` : ""}, transcribed]: ${text}`);
+        } else {
+          lines.push(`[voice message${clip.name ? ` "${clip.name}"` : ""}: no speech detected]`);
+        }
+      } catch (err) {
+        this.log.warn(
+          `[msteams-bridge] voice-message transcription failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        // Deliberately NOT silent: the agent is told the clip exists and could not be read.
+        lines.push(
+          `[voice message${clip.name ? ` "${clip.name}"` : ""} could not be transcribed - tell the sender you could not play it]`,
+        );
+      } finally {
+        await fs.unlink(tmp).catch(() => {});
+      }
+    }
+    return lines.join("\n");
   }
 
   /**

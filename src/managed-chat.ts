@@ -23,6 +23,13 @@ export const SCHEMA_VERSION = 1;
 
 export interface ManagedChatConfig {
   enabled: boolean;
+  /**
+   * Transcribe inbound Teams voice messages and fold the text into the agent's turn.
+   *
+   * Off by default and deliberately so: each clip is an STT call, and a voice note can be minutes
+   * long, so this is real per-message cost that an operator should opt into rather than discover.
+   */
+  transcribeVoiceMessages?: boolean;
   /** enabled:true with no chatSecret - resolved disabled, but the runtime warns loudly. */
   configuredWithoutSecret?: boolean;
   port: number;
@@ -211,6 +218,60 @@ export async function fetchAttachmentImages(
     }
   }
   return images;
+}
+
+/** A voice clip fetched from the gateway, ready to hand to file-based STT. */
+export interface FetchedAudio {
+  /** Attachment name as Teams reported it, for the placeholder when transcription fails. */
+  name?: string;
+  bytes: Buffer;
+  mime: string;
+}
+
+/**
+ * Fetch inbound voice-message attachments so they can be transcribed.
+ *
+ * Same posture as fetchAttachmentImages, and for the same reasons: origin-pinned to the configured
+ * gateway (the URL is gateway-SIGNED, but that signature is verified BY the gateway - it proves
+ * nothing here, and the URL arrives inside a message), redirect-refusing, size-capped while reading
+ * rather than after, and count-capped so one message cannot multiply into unbounded work.
+ *
+ * Audio gets a larger byte cap than images because a voice note is minutes of audio, and a smaller
+ * count cap because each one costs an STT call.
+ */
+export async function fetchAttachmentAudio(
+  attachments: ManagedInbound["attachments"],
+  opts?: { fetchFn?: typeof fetch; maxBytes?: number; maxClips?: number; gatewayOrigin?: string },
+): Promise<FetchedAudio[]> {
+  const fetchFn = opts?.fetchFn ?? fetch;
+  const maxBytes = opts?.maxBytes ?? 16 * 1024 * 1024;
+  const maxClips = opts?.maxClips ?? 2;
+  const clips: FetchedAudio[] = [];
+  for (const a of attachments ?? []) {
+    if (clips.length >= maxClips) break;
+    if (a.kind !== "audio" || a.relayable === false || !a.url) continue;
+    if (!originAllowed(a.url, opts?.gatewayOrigin)) continue;
+    try {
+      const res = await fetchFn(a.url, { signal: AbortSignal.timeout(20_000), redirect: "error" });
+      if (!res.ok) continue;
+      const mime = String(
+        (a as { contentType?: string }).contentType ?? res.headers.get("content-type") ?? "",
+      )
+        .split(";")[0]
+        .trim()
+        .toLowerCase();
+      // Refuse anything that is not audio BEFORE reading a byte of it.
+      if (!mime.startsWith("audio/") && !mime.startsWith("video/")) continue;
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > maxBytes) continue;
+      const buf = await readCapped(res, maxBytes);
+      if (!buf || buf.length === 0) continue;
+      clips.push({ name: a.name ?? undefined, bytes: buf, mime });
+    } catch {
+      // Best-effort: the turn still runs, and the text keeps naming the attachment.
+    }
+  }
+  return clips;
 }
 
 /** True when the URL is on the gateway we are configured to talk to (or no origin is pinned). */
@@ -590,6 +651,7 @@ export function resolveManagedChatConfig(raw: unknown): ManagedChatConfig {
   return {
     configuredWithoutSecret: c.enabled === true && chatSecret.length === 0,
     enabled: chatSecret.length > 0 && !explicitlyOff,
+    transcribeVoiceMessages: c.transcribeVoiceMessages === true,
     port: Number(c.port ?? 9444),
     // Default to LOOPBACK, the same default the calling lane has. Leaving this undefined handed it to
     // server.listen(port, undefined), which binds every interface - so a config that named no bind

@@ -114,6 +114,41 @@ export async function fetchAttachmentImages(attachments, opts) {
     }
     return images;
 }
+export async function fetchAttachmentAudio(attachments, opts) {
+    const fetchFn = opts?.fetchFn ?? fetch;
+    const maxBytes = opts?.maxBytes ?? 16 * 1024 * 1024;
+    const maxClips = opts?.maxClips ?? 2;
+    const clips = [];
+    for (const a of attachments ?? []) {
+        if (clips.length >= maxClips)
+            break;
+        if (a.kind !== "audio" || a.relayable === false || !a.url)
+            continue;
+        if (!originAllowed(a.url, opts?.gatewayOrigin))
+            continue;
+        try {
+            const res = await fetchFn(a.url, { signal: AbortSignal.timeout(20_000), redirect: "error" });
+            if (!res.ok)
+                continue;
+            const mime = String(a.contentType ?? res.headers.get("content-type") ?? "")
+                .split(";")[0]
+                .trim()
+                .toLowerCase();
+            if (!mime.startsWith("audio/") && !mime.startsWith("video/"))
+                continue;
+            const declared = Number(res.headers.get("content-length"));
+            if (Number.isFinite(declared) && declared > maxBytes)
+                continue;
+            const buf = await readCapped(res, maxBytes);
+            if (!buf || buf.length === 0)
+                continue;
+            clips.push({ name: a.name ?? undefined, bytes: buf, mime });
+        }
+        catch {
+        }
+    }
+    return clips;
+}
 function originAllowed(url, gatewayOrigin) {
     if (!gatewayOrigin)
         return true;
@@ -357,6 +392,7 @@ export function resolveManagedChatConfig(raw) {
     return {
         configuredWithoutSecret: c.enabled === true && chatSecret.length === 0,
         enabled: chatSecret.length > 0 && !explicitlyOff,
+        transcribeVoiceMessages: c.transcribeVoiceMessages === true,
         port: Number(c.port ?? 9444),
         bindAddress: typeof c.bindAddress === "string" ? c.bindAddress : "127.0.0.1",
         path: typeof c.path === "string" ? c.path : "/msteams/messages",

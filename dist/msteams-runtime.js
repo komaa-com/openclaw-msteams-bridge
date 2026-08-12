@@ -1,10 +1,10 @@
 import { MSTEAMS_POST_CHAT_TOOL_NAME } from "./msteams-realtime-tools.js";
-import { fetchAttachmentImages, ManagedChatServer, postManagedMessage, } from "./managed-chat.js";
+import { fetchAttachmentAudio, fetchAttachmentImages, ManagedChatServer, postManagedMessage, } from "./managed-chat.js";
 import { consultRealtimeVoiceAgent, resolveConfiguredRealtimeVoiceProvider, resolveRealtimeVoiceAgentConsultToolsAllow, } from "openclaw/plugin-sdk/realtime-voice";
 import { getRealtimeTranscriptionProvider, listRealtimeTranscriptionProviders, } from "openclaw/plugin-sdk/realtime-transcription";
 import { resolveConfiguredCapabilityProvider } from "openclaw/plugin-sdk/provider-selection-runtime";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createHmac } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -204,7 +204,10 @@ export class MsteamsVoiceRuntime {
         const cardActionNote = message.cardAction
             ? `[card button pressed - submit payload: ${JSON.stringify(message.cardAction)}]`
             : "";
-        const question = [message.text, cardActionNote, attachmentNote].filter(Boolean).join("\n");
+        const voiceNote = await this.transcribeVoiceAttachments(message, cfg);
+        const question = [message.text, cardActionNote, voiceNote, attachmentNote]
+            .filter(Boolean)
+            .join("\n");
         const images = await fetchAttachmentImages(message.attachments, {
             gatewayOrigin: this.cfg.managedChat.gatewayReplyUrl,
         });
@@ -566,6 +569,42 @@ export class MsteamsVoiceRuntime {
             });
         }
         return this.ttsProvider;
+    }
+    async transcribeVoiceAttachments(message, cfg) {
+        if (!this.cfg.managedChat.transcribeVoiceMessages)
+            return "";
+        const clips = await fetchAttachmentAudio(message.attachments, {
+            gatewayOrigin: this.cfg.managedChat.gatewayReplyUrl,
+        });
+        if (clips.length === 0)
+            return "";
+        const lines = [];
+        for (const clip of clips) {
+            const ext = clip.mime.split("/")[1]?.replace(/[^a-z0-9]/g, "") || "bin";
+            const tmp = path.join(os.tmpdir(), `msteams-voice-${randomUUID()}.${ext}`);
+            try {
+                await fs.writeFile(tmp, clip.bytes);
+                const res = await this.api.runtime.mediaUnderstanding.transcribeAudioFile({
+                    filePath: tmp,
+                    cfg,
+                });
+                const text = (res.text ?? "").trim();
+                if (text) {
+                    lines.push(`[voice message${clip.name ? ` "${clip.name}"` : ""}, transcribed]: ${text}`);
+                }
+                else {
+                    lines.push(`[voice message${clip.name ? ` "${clip.name}"` : ""}: no speech detected]`);
+                }
+            }
+            catch (err) {
+                this.log.warn(`[msteams-bridge] voice-message transcription failed: ${err instanceof Error ? err.message : String(err)}`);
+                lines.push(`[voice message${clip.name ? ` "${clip.name}"` : ""} could not be transcribed - tell the sender you could not play it]`);
+            }
+            finally {
+                await fs.unlink(tmp).catch(() => { });
+            }
+        }
+        return lines.join("\n");
     }
     chatSessionKey(message) {
         const scope = this.cfg.voice.sessionScope;

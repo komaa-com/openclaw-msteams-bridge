@@ -84,6 +84,9 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       // while only managedBot.gatewayReplyUrl was declared - and with additionalProperties false, a
       // config that followed the docs failed validation outright.
       ...(str(c.gatewayReplyUrl) ? { gatewayReplyUrl: str(c.gatewayReplyUrl) } : {}),
+      // Top-level opt-in: a voice message is a chat concept, but the cost is per message, so it sits
+      // beside the other flat keys rather than buried in the compatibility block.
+      transcribeVoiceMessages: c.transcribeVoiceMessages === true,
     }),
     outbound: c.outbound,
     limits: {
