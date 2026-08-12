@@ -1473,6 +1473,44 @@ describe("createMsteamsRealtimeCall", () => {
     expect(expressions().filter((e) => e.emotion === "surprised")).toHaveLength(1);
   });
 
+  it("emits a viseme timeline for its own speech (realtime is the DEFAULT mode)", () => {
+    // speech.marks used to come only from the streaming TTS path, so on the default realtime path the
+    // avatar's mouth never received a timeline at all - the headline "lip-synced avatar" was, by
+    // default, not lip-synced.
+    const ctx = createMockSession();
+    const mock = createMockProvider();
+    createMsteamsRealtimeCall({
+      session: ctx.session,
+      deps: { provider: mock.provider, providerConfig: {} },
+    });
+    const req = mock.getRequest();
+
+    const marks = () =>
+      ctx.sent.filter(
+        (m): m is { type: string; marks: unknown[] } =>
+          typeof m === "object" && m !== null && (m as { type?: unknown }).type === "speech.marks",
+      );
+
+    // The model speaks: 24 kHz mono 16-bit, so 96 000 bytes ~= 2 s of audio.
+    req.onAudio(Buffer.alloc(96_000));
+    // ...and no timeline until we know what was said.
+    expect(marks()).toHaveLength(0);
+
+    req.onTranscript?.("assistant", "Hello there, how can I help?", true);
+    expect(marks()).toHaveLength(1);
+    expect(marks()[0]!.marks.length).toBeGreaterThan(0);
+
+    // The turn's audio budget resets, so a final transcript with no new audio emits nothing rather
+    // than re-spreading the previous turn's duration over new words.
+    req.onTranscript?.("assistant", "Anything else?", true);
+    expect(marks()).toHaveLength(1);
+
+    // A caller turn never produces marks - only the bot's own speech drives its mouth.
+    req.onAudio(Buffer.alloc(96_000));
+    req.onTranscript?.("user", "yes please", true);
+    expect(marks()).toHaveLength(1);
+  });
+
   it("show_to_caller displays an agent-produced image on the tile", async () => {
     consultSpy.mockClear();
     // A real 1×1 PNG on disk — the agent run "produces" it; the bridge reads + displays it.

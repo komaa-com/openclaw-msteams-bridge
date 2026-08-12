@@ -7,6 +7,7 @@ import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import { inferEmotion } from "./expression.js";
 import { consultMediaPaths } from "./realtime-voice-compat.js";
 import { isAddressed, isFollowUpWindowOpen } from "./group-call-gate.js";
+import { estimateVisemes } from "./viseme-estimate.js";
 import { pushOrQueueBridgeImage, withConsultImages } from "./vision-consult.js";
 import { buildMinutesDocx } from "./meeting-minutes-docx.js";
 import { MSTEAMS_PCM_SAMPLE_RATE_HZ, } from "./msteams-media-stream.js";
@@ -175,6 +176,7 @@ export function createMsteamsRealtimeCall(params) {
         deps.groupCallGate.requireAddress &&
         deps.groupCallGate.wakePhrases.some((p) => p.trim().length > 0);
     let currentSpeakerName;
+    let assistantTurnAudioMs = 0;
     let greetingTriggered = false;
     let callerTurnStarted = false;
     let lastUserEntrySpeaker;
@@ -292,7 +294,9 @@ export function createMsteamsRealtimeCall(params) {
                     payloadBase64: pcm16k.toString("base64"),
                 });
                 outboundSeq += 1;
-                outboundTimestampMs += Math.round((pcm16k.length / 2 / MSTEAMS_SAMPLE_RATE_HZ) * 1000);
+                const chunkMs = Math.round((pcm16k.length / 2 / MSTEAMS_SAMPLE_RATE_HZ) * 1000);
+                outboundTimestampMs += chunkMs;
+                assistantTurnAudioMs += chunkMs;
             },
             clearAudio: () => {
                 turnId += 1;
@@ -321,6 +325,18 @@ export function createMsteamsRealtimeCall(params) {
                     catch {
                     }
                 }
+            }
+            if (role === "assistant" && isFinal && !closed && assistantTurnAudioMs > 0) {
+                try {
+                    const marks = estimateVisemes(text, assistantTurnAudioMs);
+                    if (marks.length > 0) {
+                        logger?.debug?.(`MsteamsRealtime: speech.marks ${marks.length} visemes (estimated over ${assistantTurnAudioMs}ms) for ${callId}`);
+                        session.send({ type: "speech.marks", ts: 0, marks });
+                    }
+                }
+                catch {
+                }
+                assistantTurnAudioMs = 0;
             }
             if (isFinal) {
                 recordTranscript(role, role === "user" && currentSpeakerName ? `${currentSpeakerName}: ${text}` : text, currentSpeakerName);
