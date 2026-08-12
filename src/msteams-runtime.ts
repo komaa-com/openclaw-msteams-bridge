@@ -115,7 +115,13 @@ export class MsteamsVoiceRuntime {
   /** Calls we placed via the worker, awaiting their media WS session.start to attach. */
   private readonly pendingOutbound = new Map<
     string,
-    { to: string; message?: string; mode: PlaceCallMode }
+    {
+      to: string;
+      message?: string;
+      mode: PlaceCallMode;
+      /** Where to put the result if the callee never answers. See finalizeUnansweredOutbound. */
+      fallback?: { tenantId: string; conversationId: string };
+    }
   >();
   private readonly pendingOutboundTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Last speaker pushed per call, so a ~50/s audio stream only reports real changes. */
@@ -125,6 +131,7 @@ export class MsteamsVoiceRuntime {
     aadObjectId: string;
     displayName?: string;
     tenantId: string;
+    conversationId: string;
     atMs: number;
   };
   /** StandIn managed chat endpoint (protocol/chat-schema.yaml); undefined unless configured. */
@@ -327,6 +334,7 @@ export class MsteamsVoiceRuntime {
         aadObjectId: message.sender.aadObjectId,
         displayName: message.sender.displayName,
         tenantId: message.tenantId,
+        conversationId: message.conversationId,
         atMs: Date.now(),
       };
     }
@@ -397,7 +405,15 @@ export class MsteamsVoiceRuntime {
    */
   async placeCall(
     to: string,
-    opts?: { message?: string; mode?: PlaceCallMode },
+    opts?: {
+      message?: string;
+      mode?: PlaceCallMode;
+      /**
+       * Teams conversation to fall back to when the callee does not answer. Without it an unanswered
+       * call-back silently discards work the agent already did - see finalizeUnansweredOutbound.
+       */
+      fallback?: { tenantId: string; conversationId: string };
+    },
   ): Promise<{ callId: string }> {
     const ob = this.cfg.outbound;
     if (!ob?.enabled)
@@ -461,7 +477,12 @@ export class MsteamsVoiceRuntime {
       to,
       message: opts?.message,
     });
-    this.pendingOutbound.set(workerCallId, { to, message: opts?.message, mode });
+    this.pendingOutbound.set(workerCallId, {
+      to,
+      message: opts?.message,
+      mode,
+      fallback: opts?.fallback,
+    });
     const timer = setTimeout(
       () => this.finalizeUnansweredOutbound(workerCallId as string),
       ob.answerTimeoutMs ?? OUTBOUND_ANSWER_TIMEOUT_DEFAULT_MS,
@@ -484,27 +505,87 @@ export class MsteamsVoiceRuntime {
    * "answered" is not terminal: the media socket attaches and onSessionStart owns it from there. */
   private onCallOutcome(callId: string, outcome: string): void {
     if (outcome === "answered") return;
-    if (!this.pendingOutbound.has(callId)) return;   // already finalized, or never ours
+    const pending = this.pendingOutbound.get(callId);
+    if (!pending) return;   // already finalized, or never ours
     this.pendingOutbound.delete(callId);
     this.clearOutboundTimer(callId);
     this.log.info(`[msteams-bridge] outbound call ${callId} ended as ${outcome} (worker outcome)`);
+    // Declined or busy: the person is there and chose not to take it, so the result still matters.
+    void this.deliverUnansweredResult(callId, pending, outcome);
     // The worker already knows the call is over, so unlike the timeout path there is nothing to cancel.
     this.lifecycle.end(callId, WORKER_OUTCOME_TO_END_REASON[outcome] ?? "no-answer");
   }
 
   private finalizeUnansweredOutbound(callId: string): void {
-    if (!this.pendingOutbound.has(callId)) return;
+    const pending = this.pendingOutbound.get(callId);
+    if (!pending) return;
     this.pendingOutbound.delete(callId);
     this.clearOutboundTimer(callId);
     this.log.warn(
-      `[msteams-bridge] outbound call ${callId} not answered within timeout; finalizing (no-answer/voicemail)`,
+      `[msteams-bridge] outbound call ${callId} not answered within timeout; finalizing`,
     );
+    void this.deliverUnansweredResult(callId, pending, "no-answer");
     // H7a: the call may still be RINGING on the Teams worker side, and an unanswered outbound never
     // got a threadId (so DELETE /Calls?threadId can't reach it). Best-effort cancel it by callId via
     // the worker's cancel-by-callId endpoint so the callee stops ringing. Fire-and-forget: a late
     // answer is still denied in onSessionStart, and a cancel failure must never break finalization.
     void this.cancelRingingOutbound(callId);
     this.lifecycle.end(callId, "no-answer");
+  }
+
+  /**
+   * The callee never took the call - put the result somewhere they will find it.
+   *
+   * This is the honest version of "voicemail". There is no voicemail here and never was: Microsoft
+   * does not route a bot-initiated Graph call to the callee's mailbox, and this plugin actively
+   * CANCELS the ringing call at answerTimeoutMs, which would prevent it even if it did. What actually
+   * happened was that the agent finished a piece of work, rang someone, got no answer, and threw the
+   * answer away - the worst possible outcome, because the work was already done and the person had
+   * been told to expect it.
+   *
+   * So: deliver it as a Teams message into the conversation the request came from. The caller asked
+   * "call me when it's done"; they get called, and if they miss it the answer is waiting in chat
+   * rather than lost.
+   *
+   * Best-effort and non-throwing - this runs from a timer and from a worker callback, and a failed
+   * courtesy delivery must never break call finalization.
+   */
+  private async deliverUnansweredResult(
+    callId: string,
+    pending: { to: string; message?: string; fallback?: { tenantId: string; conversationId: string } },
+    reason: string,
+  ): Promise<void> {
+    const text = pending.message?.trim();
+    if (!text) return;                       // nothing was going to be said anyway
+    const chat = this.cfg.managedChat;
+    const fallback = pending.fallback;
+    if (!fallback || !chat.enabled || !chat.chatSecret) {
+      // Say so once, at warn: silently dropping a completed result is exactly what this exists to stop,
+      // and an operator who sees this knows the managed messages lane is what would fix it.
+      this.log.warn(
+        `[msteams-bridge] outbound ${callId} ended as ${reason} and the result could not be delivered ` +
+          `(no fallback conversation${chat.enabled ? "" : "; messages lane disabled"}) — the answer is lost`,
+      );
+      return;
+    }
+    try {
+      const ok = await postManagedMessage({
+        chatSecret: chat.chatSecret,
+        gatewayReplyUrl: chat.gatewayReplyUrl,
+        tenantId: fallback.tenantId,
+        conversationId: fallback.conversationId,
+        text: `I tried to call you with this and could not reach you:\n\n${text}`,
+        // Keyed by the call, so a retry cannot double-post the same answer.
+        idempotencyKey: `noanswer-${callId}`,
+      });
+      this.log[ok ? "info" : "warn"](
+        `[msteams-bridge] outbound ${callId} ended as ${reason}; result ${ok ? "delivered to chat" : "delivery REJECTED by the gateway"}`,
+      );
+    } catch (err) {
+      this.log.warn(
+        `[msteams-bridge] outbound ${callId} fallback delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**
@@ -786,7 +867,9 @@ export class MsteamsVoiceRuntime {
    * The freshness window matters for the same reason: openclaw tools are global and carry no session, so
    * without it a task hours later could ring someone about a conversation they have forgotten.
    */
-  resolveChatCallbackTarget(): { to: string; displayName?: string } | { error: string } {
+  resolveChatCallbackTarget():
+    | { to: string; displayName?: string; fallback: { tenantId: string; conversationId: string } }
+    | { error: string } {
     if (!this.cfg.outbound?.enabled || !this.cfg.outbound.workerBaseUrl || !this.cfg.outbound.tenantId) {
       return {
         error:
@@ -805,7 +888,12 @@ export class MsteamsVoiceRuntime {
           "I will call you.",
       };
     }
-    return { to: `user:${sender.aadObjectId}`, displayName: sender.displayName };
+    return {
+      to: `user:${sender.aadObjectId}`,
+      displayName: sender.displayName,
+      // Where the answer goes if they do not pick up: the very conversation they asked in.
+      fallback: { tenantId: sender.tenantId, conversationId: sender.conversationId },
+    };
   }
 
   private getTtsProvider(): MsteamsTtsProvider {

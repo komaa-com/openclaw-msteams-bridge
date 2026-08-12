@@ -192,6 +192,7 @@ export class MsteamsVoiceRuntime {
                 aadObjectId: message.sender.aadObjectId,
                 displayName: message.sender.displayName,
                 tenantId: message.tenantId,
+                conversationId: message.conversationId,
                 atMs: Date.now(),
             };
         }
@@ -291,7 +292,12 @@ export class MsteamsVoiceRuntime {
             to,
             message: opts?.message,
         });
-        this.pendingOutbound.set(workerCallId, { to, message: opts?.message, mode });
+        this.pendingOutbound.set(workerCallId, {
+            to,
+            message: opts?.message,
+            mode,
+            fallback: opts?.fallback,
+        });
         const timer = setTimeout(() => this.finalizeUnansweredOutbound(workerCallId), ob.answerTimeoutMs ?? OUTBOUND_ANSWER_TIMEOUT_DEFAULT_MS);
         timer.unref?.();
         this.pendingOutboundTimers.set(workerCallId, timer);
@@ -301,21 +307,51 @@ export class MsteamsVoiceRuntime {
     onCallOutcome(callId, outcome) {
         if (outcome === "answered")
             return;
-        if (!this.pendingOutbound.has(callId))
+        const pending = this.pendingOutbound.get(callId);
+        if (!pending)
             return;
         this.pendingOutbound.delete(callId);
         this.clearOutboundTimer(callId);
         this.log.info(`[msteams-bridge] outbound call ${callId} ended as ${outcome} (worker outcome)`);
+        void this.deliverUnansweredResult(callId, pending, outcome);
         this.lifecycle.end(callId, WORKER_OUTCOME_TO_END_REASON[outcome] ?? "no-answer");
     }
     finalizeUnansweredOutbound(callId) {
-        if (!this.pendingOutbound.has(callId))
+        const pending = this.pendingOutbound.get(callId);
+        if (!pending)
             return;
         this.pendingOutbound.delete(callId);
         this.clearOutboundTimer(callId);
-        this.log.warn(`[msteams-bridge] outbound call ${callId} not answered within timeout; finalizing (no-answer/voicemail)`);
+        this.log.warn(`[msteams-bridge] outbound call ${callId} not answered within timeout; finalizing`);
+        void this.deliverUnansweredResult(callId, pending, "no-answer");
         void this.cancelRingingOutbound(callId);
         this.lifecycle.end(callId, "no-answer");
+    }
+    async deliverUnansweredResult(callId, pending, reason) {
+        const text = pending.message?.trim();
+        if (!text)
+            return;
+        const chat = this.cfg.managedChat;
+        const fallback = pending.fallback;
+        if (!fallback || !chat.enabled || !chat.chatSecret) {
+            this.log.warn(`[msteams-bridge] outbound ${callId} ended as ${reason} and the result could not be delivered ` +
+                `(no fallback conversation${chat.enabled ? "" : "; messages lane disabled"}) — the answer is lost`);
+            return;
+        }
+        try {
+            const ok = await postManagedMessage({
+                chatSecret: chat.chatSecret,
+                gatewayReplyUrl: chat.gatewayReplyUrl,
+                tenantId: fallback.tenantId,
+                conversationId: fallback.conversationId,
+                text: `I tried to call you with this and could not reach you:\n\n${text}`,
+                idempotencyKey: `noanswer-${callId}`,
+            });
+            this.log[ok ? "info" : "warn"](`[msteams-bridge] outbound ${callId} ended as ${reason}; result ${ok ? "delivered to chat" : "delivery REJECTED by the gateway"}`);
+        }
+        catch (err) {
+            this.log.warn(`[msteams-bridge] outbound ${callId} fallback delivery failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
     }
     async cancelRingingOutbound(callId) {
         const ob = this.cfg.outbound;
@@ -514,7 +550,11 @@ export class MsteamsVoiceRuntime {
                     "I will call you.",
             };
         }
-        return { to: `user:${sender.aadObjectId}`, displayName: sender.displayName };
+        return {
+            to: `user:${sender.aadObjectId}`,
+            displayName: sender.displayName,
+            fallback: { tenantId: sender.tenantId, conversationId: sender.conversationId },
+        };
     }
     getTtsProvider() {
         if (!this.ttsProvider) {

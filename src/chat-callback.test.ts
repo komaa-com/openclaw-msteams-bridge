@@ -86,3 +86,49 @@ describe("chat-to-call target resolution", () => {
     expect(r).toHaveProperty("to", "user:aad-victim");
   });
 });
+
+/**
+ * No-answer fallback delivery - the honest replacement for "voicemail".
+ *
+ * There is no voicemail here and never was: Microsoft does not route a bot-initiated Graph call to the
+ * callee's mailbox, and the plugin CANCELS the ringing call at answerTimeoutMs, which would prevent it
+ * even if it did. What actually happened was that the agent finished the work, rang someone, got no
+ * answer, and discarded the answer - the worst outcome available, since the work was already done and
+ * the person had been told to expect it.
+ */
+describe("no-answer fallback delivery", () => {
+  /** Mirrors deliverUnansweredResult's decision, which is the part worth pinning. */
+  function willDeliver(params: {
+    message?: string;
+    fallback?: { tenantId: string; conversationId: string };
+    chatEnabled: boolean;
+    chatSecret?: string;
+  }): boolean {
+    const text = params.message?.trim();
+    if (!text) return false;
+    return Boolean(params.fallback && params.chatEnabled && params.chatSecret);
+  }
+
+  const fallback = { tenantId: "t-1", conversationId: "19:meeting_abc@thread.v2" };
+
+  it("delivers a completed result when there is somewhere to put it", () => {
+    expect(willDeliver({ message: "It is 5:41 PM.", fallback, chatEnabled: true, chatSecret: "s" })).toBe(true);
+  });
+
+  it("does not deliver when there was nothing to say", () => {
+    // Ringing someone to play them silence is not a delivery, and neither is posting an empty message.
+    expect(willDeliver({ message: "   ", fallback, chatEnabled: true, chatSecret: "s" })).toBe(false);
+    expect(willDeliver({ fallback, chatEnabled: true, chatSecret: "s" })).toBe(false);
+  });
+
+  it("does not deliver without an addressable conversation", () => {
+    // A 1:1 call's threadId is the call id, which the gateway cannot post into - so the caller passes
+    // no fallback at all rather than a target that would 404.
+    expect(willDeliver({ message: "answer", chatEnabled: true, chatSecret: "s" })).toBe(false);
+  });
+
+  it("does not deliver when the messages lane is off", () => {
+    expect(willDeliver({ message: "answer", fallback, chatEnabled: false, chatSecret: "s" })).toBe(false);
+    expect(willDeliver({ message: "answer", fallback, chatEnabled: true })).toBe(false);
+  });
+});

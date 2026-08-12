@@ -342,7 +342,12 @@ export interface MsteamsRealtimeDeps {
    * promised to the caller and then silently dropped. */
   placeCall?: (
     to: string,
-    opts?: { message?: string; mode?: "notify" | "conversation" },
+    opts?: {
+      message?: string;
+      mode?: "notify" | "conversation";
+      /** Teams conversation to deliver into if the callee never answers. */
+      fallback?: { tenantId: string; conversationId: string };
+    },
   ) => Promise<{ callId: string }>;
   /** Inbound-call policy applied before bridging (mirrors the streaming path). */
   inboundPolicy?: "disabled" | "allowlist" | "pairing" | "open";
@@ -1488,7 +1493,20 @@ export function createMsteamsRealtimeCall(params: {
           );
           return;
         }
-        const placed = await deps.placeCall(deliveryTarget, { message: text, mode: "notify" });
+        // If they miss the call-back, put the answer in the meeting/chat thread this task came from.
+        // Only a real Teams conversation ("19:...") is addressable - a 1:1 call's threadId is the call
+        // id, which the gateway cannot post into - so anything else simply has no fallback and the
+        // delivery attempt says so rather than pretending.
+        const originThread = session.threadId?.trim();
+        const fallback =
+          originThread && originThread.startsWith("19:") && session.tenantId
+            ? { tenantId: session.tenantId, conversationId: originThread }
+            : undefined;
+        const placed = await deps.placeCall(deliveryTarget, {
+          message: text,
+          mode: "notify",
+          ...(fallback ? { fallback } : {}),
+        });
         logger?.info?.(
           `MsteamsRealtime: calling ${deliveryTarget} back for ${callId} (outbound call ${placed.callId})`,
         );
