@@ -252,6 +252,17 @@ export interface SpeechMark {
 }
 
 /**
+ * Sent right before close. Reason is opaque text (e.g. 'call-ended', 'transport-failure').
+ */
+export interface SessionEndMessage {
+  type: "session.end";
+  /**
+   * Opaque close reason text.
+   */
+  reason: string;
+}
+
+/**
  * Bidirectional. Sender increments seq; receiver may use it to detect drops. payloadBase64 is the
  * base64-encoded PCM16K (16kHz, 16-bit, mono, little-endian) audio bytes, usually one 20ms frame =
  * 640 bytes raw = ~856 chars base64.
@@ -405,6 +416,7 @@ export interface PongMessage {
  * Every message a plugin may send to the worker.
  */
 export type OutboundMessage =
+  | SessionEndMessage
   | AudioFrameMessage
   | AssistantCancelMessage
   | ExpressionMessage
