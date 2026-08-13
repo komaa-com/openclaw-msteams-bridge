@@ -1,7 +1,7 @@
 // GENERATED from the shared wire-protocol schema - do not hand-edit.
 // The wire protocol the StandIn media bridge speaks with this plugin.
 /**
- * Wire protocol between the StandIn media bridge and this OpenClaw msteams voice plugin.
+ * Wire protocol between the StandIn media bridge and this OpenClaw msteams-bridge plugin.
  * One WebSocket per active Teams call. JSON-encoded discriminated union on the 'type' field. Zod
  * schemas validate the inbound (worker -> plugin) direction; the outbound (plugin -> worker)
  * message shapes are exported as types.
