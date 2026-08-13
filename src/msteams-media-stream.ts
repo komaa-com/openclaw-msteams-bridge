@@ -200,6 +200,17 @@ interface ConnectionMeta {
   /** Set once onSessionEnd has fired, so socket close does not double-deliver it. */
   ended: boolean;
   preStartTimer: ReturnType<typeof setTimeout>;
+  /**
+   * Set by the explicit `recording.status` handler, checked before `session.start` seeds the value.
+   *
+   * `session.start` carries a SETUP-TIME SNAPSHOT of the recording status, and the worker is free to
+   * send `recording.status` first (it races the session frame). Letting the snapshot win closed the
+   * Media Access gate for the whole call: audio, vision, consults and DTMF were all refused silently
+   * with no way back, because nothing re-sends `recording.status` for a status that never changed.
+   */
+  recordingStatusExplicit: boolean;
+  /** The last explicit `recording.status` seen on this connection (only meaningful with the latch). */
+  recordingStatus?: MsteamsRecordingStatus;
 }
 
 export class MsteamsMediaStream {
@@ -548,7 +559,13 @@ export class MsteamsMediaStream {
     if (typeof preStartTimer.unref === "function") {
       preStartTimer.unref();
     }
-    this.connectionMeta.set(callId, { ip, started: false, ended: false, preStartTimer });
+    this.connectionMeta.set(callId, {
+      ip,
+      started: false,
+      ended: false,
+      preStartTimer,
+      recordingStatusExplicit: false,
+    });
     this.config.logger?.info(`MsteamsMediaStream: connection open ${callId}`);
 
     // Heartbeat liveness: mark alive on connect + on every protocol pong. The interval in start() pings each
@@ -645,6 +662,11 @@ export class MsteamsMediaStream {
           meta.started = true;
           clearTimeout(meta.preStartTimer);
         }
+        // An explicit recording.status that already arrived is the LIVE value; session.start carries
+        // a setup-time snapshot and must never downgrade it (in either direction).
+        const seededRecordingStatus = meta?.recordingStatusExplicit
+          ? meta.recordingStatus
+          : parsed.recordingStatus;
         this.config.onSessionStart?.({
           callId,
           threadId: parsed.threadId,
@@ -657,14 +679,26 @@ export class MsteamsMediaStream {
             displayName: blankToNull(parsed.caller.displayName),
             tenantId: blankToNull(parsed.caller.tenantId),
           },
-          recordingStatus: parsed.recordingStatus,
+          recordingStatus: seededRecordingStatus,
           direction: parsed.direction,
           send: (message) => this.sendTo(callId, message),
           close: (reason) => this.closeSession(callId, reason),
         });
+        // Replay a pre-start recording.status now that the call handle exists. onRecordingStatus is
+        // routed by callId into a map only session.start populates, so the original delivery was
+        // dropped on the floor — and the per-call work that only runs on a status CHANGE (the
+        // deferred outbound greeting, the ambient-vision flush) would never have run at all.
+        if (meta?.recordingStatusExplicit && meta.recordingStatus) {
+          this.config.onRecordingStatus?.({ callId, status: meta.recordingStatus });
+        }
         break;
       }
       case "recording.status": {
+        const meta = this.connectionMeta.get(callId);
+        if (meta) {
+          meta.recordingStatusExplicit = true;
+          meta.recordingStatus = parsed.status;
+        }
         this.config.onRecordingStatus?.({ callId, status: parsed.status });
         break;
       }

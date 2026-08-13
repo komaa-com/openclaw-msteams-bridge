@@ -81,8 +81,11 @@ suppression, the group-call gate, DTMF, and bilingual EN/AR handling.
 
 Inbound camera and screen-share (VBSS) frames arrive as `video.frame` messages and land in a
 per-source latest-frame buffer with a scene-change keyframe history (`vision-store`,
-`msteams-video-frame.ts`). Spend is capped per call (`vision-budget.ts`, `maxVisionPerMinute`). The
-agent reaches vision through tools (`look_at_screen`) and, in realtime mode, an ambient view.
+`msteams-video-frame.ts`). Spend is capped per call (`vision-budget.ts`, `maxVisionPerMinute`, default
+30) - and `0` on that key means OFF, not unlimited: it is the only kill switch for vision spend, so
+reading it the other way round would hand uncapped spend to whoever set it intending to disable the
+feature. The agent reaches vision through tools (`look_at_screen`) and, opt-in via `ambientVision`, an
+ambient view that keeps pushing changed frames between turns.
 
 ## Rendering (avatar cues)
 

@@ -1,8 +1,9 @@
 // Smoke test: the runtime constructs against a faked plugin API and the entry config resolves.
 // Live media WS / realtime bridging is exercised in integration, not here.
 import { describe, expect, it, vi } from "vitest";
-import { MsteamsVoiceRuntime } from "./msteams-runtime.js";
+import { MsteamsBridgeRuntime } from "./msteams-runtime.js";
 import { resolvePluginConfig } from "./plugin-config.js";
+import { MAX_VISION_PER_MINUTE_DEFAULT } from "./vision-budget.js";
 
 vi.mock("openclaw/plugin-sdk/ssrf-runtime", () => ({ fetchWithSsrFGuard: vi.fn() }));
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
@@ -42,7 +43,7 @@ function fakeApi() {
   } as any;
 }
 
-describe("MsteamsVoiceRuntime", () => {
+describe("MsteamsBridgeRuntime", () => {
   it("resolves config and constructs without throwing", () => {
     const api = fakeApi();
     const cfg = resolvePluginConfig(api.pluginConfig);
@@ -50,7 +51,7 @@ describe("MsteamsVoiceRuntime", () => {
     expect(cfg.media.port).toBe(0);
     expect(cfg.media.sharedSecret).toBe("s3cret");
     expect(cfg.voice.realtime.toolPolicy).toBe("none");
-    expect(() => new MsteamsVoiceRuntime(api, cfg)).not.toThrow();
+    expect(() => new MsteamsBridgeRuntime(api, cfg)).not.toThrow();
   });
 
   // The global post_chat_message tool resolves through postableCalls. That map was written only by the
@@ -67,7 +68,7 @@ describe("MsteamsVoiceRuntime", () => {
       managedBot: { gatewayReplyUrl: "https://gw.example.com/api/chat/reply" },
     };
     const cfg = resolvePluginConfig(api.pluginConfig);
-    const runtime = new MsteamsVoiceRuntime(api, cfg) as unknown as {
+    const runtime = new MsteamsBridgeRuntime(api, cfg) as unknown as {
       trackManagedCall: (s: unknown, add: boolean) => void;
       resolvePostableCall: () => { post?: unknown; error?: string };
     };
@@ -84,7 +85,7 @@ describe("MsteamsVoiceRuntime", () => {
     const api = fakeApi();
     api.pluginConfig = { ...api.pluginConfig, secret: "s3cret", managedBot: { gatewayReplyUrl: "https://gw/x" } };
     const cfg = resolvePluginConfig(api.pluginConfig);
-    const runtime = new MsteamsVoiceRuntime(api, cfg) as unknown as {
+    const runtime = new MsteamsBridgeRuntime(api, cfg) as unknown as {
       trackManagedCall: (s: unknown, add: boolean) => void;
       resolvePostableCall: () => { post?: unknown; error?: string };
     };
@@ -125,7 +126,7 @@ function apiWithOutbound() {
   return api;
 }
 
-describe("MsteamsVoiceRuntime.placeCall (outbound)", () => {
+describe("MsteamsBridgeRuntime.placeCall (outbound)", () => {
   it("posts a signed place-call and registers an outbound record", async () => {
     vi.mocked(fetchWithSsrFGuard).mockResolvedValue({
       response: { ok: true, json: async () => ({ callId: "wc-1" }), text: async () => "" },
@@ -133,7 +134,7 @@ describe("MsteamsVoiceRuntime.placeCall (outbound)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     const api = apiWithOutbound();
-    const rt = new MsteamsVoiceRuntime(api, resolvePluginConfig(api.pluginConfig));
+    const rt = new MsteamsBridgeRuntime(api, resolvePluginConfig(api.pluginConfig));
 
     const res = await rt.placeCall("user:abc-123", { message: "Your report is ready" });
 
@@ -149,7 +150,7 @@ describe("MsteamsVoiceRuntime.placeCall (outbound)", () => {
 
   it("throws when outbound is disabled", async () => {
     const api = fakeApi(); // no outbound config
-    const rt = new MsteamsVoiceRuntime(api, resolvePluginConfig(api.pluginConfig));
+    const rt = new MsteamsBridgeRuntime(api, resolvePluginConfig(api.pluginConfig));
     await expect(rt.placeCall("user:x")).rejects.toThrow(/outbound calling is disabled/);
   });
 });
@@ -167,12 +168,12 @@ function fakeVideoFrame(callId: string): any {
   };
 }
 
-describe("MsteamsVoiceRuntime teardown (H7 reaper + vision leak)", () => {
+describe("MsteamsBridgeRuntime teardown (H7 reaper + vision leak)", () => {
   function runtimeWithLiveCall() {
     const api = fakeApi();
     const cfg = resolvePluginConfig(api.pluginConfig);
     cfg.limits.maxDurationMs = 1000; // enable the over-duration reaper
-    const rt = new MsteamsVoiceRuntime(api, cfg);
+    const rt = new MsteamsBridgeRuntime(api, cfg);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const inner = rt as any;
     const lifecycle = inner.lifecycle;
@@ -210,7 +211,7 @@ describe("MsteamsVoiceRuntime teardown (H7 reaper + vision leak)", () => {
   });
 });
 
-describe("MsteamsVoiceRuntime.start (realtime provider warning)", () => {
+describe("MsteamsBridgeRuntime.start (realtime provider warning)", () => {
   it("warns loudly when mode:'realtime' is set but no provider resolves", async () => {
     const api = fakeApi();
     const logger = api.runtime.logging.getChildLogger();
@@ -222,7 +223,7 @@ describe("MsteamsVoiceRuntime.start (realtime provider warning)", () => {
     // that key removed there is no half-on configuration, and a fixed 9444 collides with any real
     // gateway running on the same machine.
     api.pluginConfig.messagesPort = 0;
-    const rt = new MsteamsVoiceRuntime(api, resolvePluginConfig(api.pluginConfig));
+    const rt = new MsteamsBridgeRuntime(api, resolvePluginConfig(api.pluginConfig));
     await rt.start();
     try {
       expect(logger.warn).toHaveBeenCalledWith(
@@ -234,10 +235,106 @@ describe("MsteamsVoiceRuntime.start (realtime provider warning)", () => {
   });
 });
 
-describe("MsteamsVoiceRuntime.onSessionStart (late outbound answer)", () => {
+/**
+ * The vision spend cap has to survive the trip from plugin config to the object that enforces it.
+ * `VisionBudget`'s own unit tests prove 0 means OFF, but they pass just as happily if the runtime
+ * never hands 0 over - and coercing it away is a one-character mistake (`||` for `??`) that reads as
+ * a harmless default. These assertions go through the real constructor and read the budget the call
+ * path actually uses, so they fail the moment that wiring is dropped or coerced.
+ */
+describe("MsteamsBridgeRuntime vision spend cap (config reaches the budget intact)", () => {
+  function budgetFor(pluginConfig: Record<string, unknown>) {
+    const api = fakeApi();
+    api.pluginConfig = { ...api.pluginConfig, ...pluginConfig };
+    const rt = new MsteamsBridgeRuntime(api, resolvePluginConfig(api.pluginConfig));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inner = rt as any;
+    return { rt, inner, budget: inner.visionBudget, vision: inner.vision };
+  }
+
+  it("carries a configured 0 through as OFF, not as the default cap", () => {
+    // The footgun in full: `|| MAX_VISION_PER_MINUTE_DEFAULT` here would turn the operator's kill
+    // switch into 30 paid vision calls a minute. `??` is what keeps 0 alive.
+    const { budget } = budgetFor({ maxVisionPerMinute: 0 });
+    expect(budget.enabled).toBe(false);
+    expect(budget.tryConsume("c1", 1000)).toBe(false);
+  });
+
+  it("carries a configured cap through exactly", () => {
+    const { budget } = budgetFor({ maxVisionPerMinute: 2 });
+    expect(budget.enabled).toBe(true);
+    expect(budget.tryConsume("c1", 1000)).toBe(true);
+    expect(budget.tryConsume("c1", 1000)).toBe(true);
+    expect(budget.tryConsume("c1", 1000)).toBe(false); // the third is over the configured cap
+  });
+
+  it("falls back to the shared default when the key is absent", () => {
+    const { budget } = budgetFor({});
+    for (let i = 0; i < MAX_VISION_PER_MINUTE_DEFAULT; i++) {
+      expect(budget.tryConsume("c1", 1000)).toBe(true);
+    }
+    expect(budget.tryConsume("c1", 1000)).toBe(false); // and no more than the default
+  });
+
+  it("gives the store the SAME budget instance, so look_at_screen and ambient share one window", () => {
+    // Two VisionBudget objects over one call would mean two independent caps and double the spend.
+    // Fails if `this.vision.setBudget(this.visionBudget)` is dropped: the store would lazily build
+    // its own.
+    const { budget, vision } = budgetFor({ maxVisionPerMinute: 1 });
+    expect(vision.budget()).toBe(budget);
+    expect(budget.tryConsume("c1", 1000)).toBe(true);
+    expect(vision.budget().tryConsume("c1", 1000)).toBe(false); // the one slot was already spent
+  });
+
+  it("warns at startup when continuous vision is on but the cap switches all spend off", async () => {
+    // The two keys cancel each other out and every resulting skip is debug-level, so without this the
+    // operator sees a healthy startup and a bot that never once looks at anything.
+    const api = fakeApi();
+    const logger = api.runtime.logging.getChildLogger();
+    api.pluginConfig = {
+      ...api.pluginConfig,
+      ambientVision: true,
+      maxVisionPerMinute: 0,
+      port: 0,
+      messagesPort: 0,
+    };
+    const rt = new MsteamsBridgeRuntime(api, resolvePluginConfig(api.pluginConfig));
+    await rt.start();
+    try {
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("0 is the kill switch"),
+      );
+    } finally {
+      await rt.stop();
+    }
+  });
+
+  it("stays quiet when the cap is a real number", async () => {
+    const api = fakeApi();
+    const logger = api.runtime.logging.getChildLogger();
+    api.pluginConfig = {
+      ...api.pluginConfig,
+      ambientVision: true,
+      maxVisionPerMinute: 5,
+      port: 0,
+      messagesPort: 0,
+    };
+    const rt = new MsteamsBridgeRuntime(api, resolvePluginConfig(api.pluginConfig));
+    await rt.start();
+    try {
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("0 is the kill switch"),
+      );
+    } finally {
+      await rt.stop();
+    }
+  });
+});
+
+describe("MsteamsBridgeRuntime.onSessionStart (late outbound answer)", () => {
   it("denies a late media attach for an outbound call whose answer-timeout already fired", () => {
     const api = apiWithOutbound();
-    const rt = new MsteamsVoiceRuntime(api, resolvePluginConfig(api.pluginConfig));
+    const rt = new MsteamsBridgeRuntime(api, resolvePluginConfig(api.pluginConfig));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const inner = rt as any;
     inner.mode = "streaming"; // skip the realtime-provider guard so we reach the late-answer branch
@@ -268,7 +365,76 @@ describe("MsteamsVoiceRuntime.onSessionStart (late outbound answer)", () => {
   });
 });
 
-describe("MsteamsVoiceRuntime.finalizeUnansweredOutbound (H7a cancel-by-callId)", () => {
+/**
+ * A worker is free to re-send session.start for a call that is already live (a reconnect, a retried
+ * frame). CallLifecycle.initiate RETURNS the existing record rather than throwing, so before the
+ * guard the duplicate fell all the way through to `calls.set(callId, createCall(...))`:
+ *
+ *   - the replacement handle re-seeded `recordingActive` from the session frame, discarding whatever
+ *     `recording.status` had already set — session.start silently overwriting an explicit recording
+ *     status, which is the race this repo just fixed at the media-stream layer; and
+ *   - the previous handle was dropped with no close(), leaking a provider socket per duplicate.
+ */
+describe("MsteamsBridgeRuntime.onSessionStart (duplicate session.start)", () => {
+  function liveCallRuntime() {
+    const api = fakeApi();
+    // Accept the inbound caller, so the run reaches the duplicate guard rather than policy refusal.
+    api.pluginConfig = { ...api.pluginConfig, inboundPolicy: "open" };
+    const rt = new MsteamsBridgeRuntime(api, resolvePluginConfig(api.pluginConfig));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inner = rt as any;
+    inner.mode = "streaming"; // no realtime provider is configured in fakeApi
+    // Stand in for the per-call handle so the assertion is about identity and teardown, not about
+    // booting a real STT/TTS bridge. The guard under test is in onSessionStart itself.
+    const handles: Array<{ closed: string[] }> = [];
+    inner.createCall = () => {
+      const handle = { closed: [] as string[], close: (r?: string) => handle.closed.push(r ?? "") };
+      handles.push(handle);
+      return handle;
+    };
+    return { api, rt, inner, handles };
+  }
+
+  function inboundSession(recordingStatus: "active" | "inactive") {
+    return {
+      callId: "c-dup",
+      threadId: "thread-dup",
+      tenantId: "tenant-1",
+      caller: { aadId: "aad-dup", displayName: "Caller" },
+      recordingStatus,
+      send: () => true,
+      close: vi.fn(),
+    };
+  }
+
+  it("ignores a second session.start and keeps the original call handle", () => {
+    const { inner, handles } = liveCallRuntime();
+
+    inner.onSessionStart(inboundSession("active"));
+    expect(handles).toHaveLength(1);
+    const first = inner.calls.get("c-dup");
+    expect(first).toBe(handles[0]);
+
+    // The duplicate arrives, reporting the STALE setup-time snapshot.
+    inner.onSessionStart(inboundSession("inactive"));
+
+    expect(handles).toHaveLength(1); // no second handle was built...
+    expect(inner.calls.get("c-dup")).toBe(first); // ...and the live one was not replaced
+    expect(inner.calls.size).toBe(1);
+    expect(handles[0]!.closed).toEqual([]); // nor orphaned: nothing leaked, nothing torn down
+  });
+
+  it("says so at warn, so a worker stuck in a session.start loop is visible", () => {
+    const { api, inner } = liveCallRuntime();
+    const logger = api.runtime.logging.getChildLogger();
+    inner.onSessionStart(inboundSession("active"));
+    logger.warn.mockClear();
+    inner.onSessionStart(inboundSession("active"));
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("duplicate session.start"));
+  });
+});
+
+describe("MsteamsBridgeRuntime.finalizeUnansweredOutbound (H7a cancel-by-callId)", () => {
   it("sends a signed DELETE /api/calls/{callId} to cancel the still-ringing outbound", () => {
     vi.mocked(fetchWithSsrFGuard).mockClear();
     vi.mocked(fetchWithSsrFGuard).mockResolvedValue({
@@ -277,7 +443,7 @@ describe("MsteamsVoiceRuntime.finalizeUnansweredOutbound (H7a cancel-by-callId)"
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     const api = apiWithOutbound();
-    const rt = new MsteamsVoiceRuntime(api, resolvePluginConfig(api.pluginConfig));
+    const rt = new MsteamsBridgeRuntime(api, resolvePluginConfig(api.pluginConfig));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const inner = rt as any;
     inner.mode = "streaming";

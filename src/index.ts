@@ -2,17 +2,17 @@
 //
 // Registers a host-managed background service so the runtime's lifecycle (start on boot, stop on
 // shutdown/reload) is wired by OpenClaw — this is the teardown hook. On start the service brings up
-// the MsteamsVoiceRuntime (Teams media WS server, CallLifecycle, per-call bridge); on stop it tears
+// the MsteamsBridgeRuntime (Teams media WS server, CallLifecycle, per-call bridge); on stop it tears
 // it all down (closes calls, stops the lifecycle reaper, closes the WS server).
 
 import { definePluginEntry } from "openclaw/plugin-sdk/core";
-import { MsteamsVoiceRuntime } from "./msteams-runtime.js";
+import { MsteamsBridgeRuntime } from "./msteams-runtime.js";
 import { resolvePluginConfig } from "./plugin-config.js";
 import { MSTEAMS_POST_CHAT_TOOL_NAME } from "./msteams-realtime-tools.js";
 
 export default definePluginEntry({
   id: "msteams-bridge",
-  name: "Teams Call by StandIn",
+  name: "Teams Bridge by StandIn",
   description: "Microsoft Teams calls and chat for your OpenClaw agent, through StandIn.",
   register(api) {
     const cfg = resolvePluginConfig((api as { pluginConfig?: unknown }).pluginConfig);
@@ -34,7 +34,7 @@ export default definePluginEntry({
       logger.warn("msteams-bridge: no calling secret - the messages lane starts, calls will not be answered");
     }
 
-    let runtime: MsteamsVoiceRuntime | undefined;
+    let runtime: MsteamsBridgeRuntime | undefined;
 
     // The in-call "post to the Teams chat" tool, for the STREAMING path.
     //
@@ -153,7 +153,7 @@ export default definePluginEntry({
     api.registerService({
       id: "msteams-bridge",
       start: async () => {
-        runtime = new MsteamsVoiceRuntime(api, cfg);
+        runtime = new MsteamsBridgeRuntime(api, cfg);
         await runtime.start();
       },
       // Teardown: host calls stop() on shutdown/reload → close calls, stop reaper, close WS server.

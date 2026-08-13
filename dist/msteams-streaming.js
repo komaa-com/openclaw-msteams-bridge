@@ -44,7 +44,7 @@ export function createMsteamsStreamingCall(params) {
     let speaking = false;
     let processing = false;
     let greeted = false;
-    let recordingActive = false;
+    let recordingActive = session.recordingStatus === "active";
     let currentSpeaker;
     let humanCount = 1;
     let lastAddressedAt;
@@ -184,8 +184,7 @@ export function createMsteamsStreamingCall(params) {
                 return;
             if (requireRecording && !recordingActive)
                 return;
-            if (!requireRecording)
-                maybeGreet();
+            maybeGreet();
             const rms = frameRms(pcm16k);
             if (speaking) {
                 if (echoGuard && rms < bargeInRms)
@@ -222,6 +221,8 @@ export function createMsteamsStreamingCall(params) {
         },
         notifyDtmf: (digit) => {
             if (closed || processing || speaking)
+                return;
+            if (requireRecording && !recordingActive)
                 return;
             void runTurn(`The caller pressed the key "${digit}".`);
         },

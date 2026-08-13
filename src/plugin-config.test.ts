@@ -26,6 +26,31 @@ describe("resolvePluginConfig", () => {
   });
 });
 
+describe("vision spend keys", () => {
+  it("keeps a configured 0 instead of coercing it to the default", () => {
+    // The footgun this guards: `maxVisionPerMinute || 30` would turn the operator's kill switch into
+    // the default cap, and the old VisionBudget would then have read 0 as UNLIMITED anyway. Both ends
+    // have to keep the literal 0 for "off" to mean off.
+    expect(resolvePluginConfig({ maxVisionPerMinute: 0 }).voice.msteams?.maxVisionPerMinute).toBe(0);
+  });
+
+  it("leaves the cap undefined when unset, so the runtime default applies", () => {
+    expect(resolvePluginConfig({}).voice.msteams?.maxVisionPerMinute).toBeUndefined();
+  });
+
+  it("passes a real cap through", () => {
+    expect(resolvePluginConfig({ maxVisionPerMinute: 5 }).voice.msteams?.maxVisionPerMinute).toBe(5);
+  });
+
+  it("continuous vision is off unless explicitly enabled", () => {
+    expect(resolvePluginConfig({}).voice.msteams?.ambientVision).toBe(false);
+    expect(resolvePluginConfig({ ambientVision: false }).voice.msteams?.ambientVision).toBe(false);
+    // Not a truthy coercion: only a real boolean true opts in to per-scene-change spend.
+    expect(resolvePluginConfig({ ambientVision: "yes" }).voice.msteams?.ambientVision).toBe(false);
+    expect(resolvePluginConfig({ ambientVision: true }).voice.msteams?.ambientVision).toBe(true);
+  });
+});
+
 describe("flat messages-lane keys", () => {
   it("accepts gatewayReplyUrl at the root, as the config reference documents it", () => {
     // The docs put it at the root beside messagesPort/messagesPath; only managedBot.gatewayReplyUrl was

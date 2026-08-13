@@ -2,8 +2,25 @@ import { describe, expect, it } from "vitest";
 import { VisionBudget } from "./vision-budget.js";
 
 describe("VisionBudget", () => {
-  it("allows everything when unlimited (<= 0)", () => {
+  it("0 turns vision spend OFF (it is the kill switch, not 'unlimited')", () => {
+    // Regression, and the reason this class changed: 0 used to mean UNLIMITED, so an operator who set
+    // maxVisionPerMinute to 0 to switch vision off got uncapped spend on the one key that costs money.
     const b = new VisionBudget(0);
+    expect(b.enabled).toBe(false);
+    for (let i = 0; i < 100; i++) {
+      expect(b.tryConsume("c", 1000 + i)).toBe(false);
+    }
+  });
+
+  it("a negative cap is off too, not a wrap-around to unlimited", () => {
+    const b = new VisionBudget(-1);
+    expect(b.enabled).toBe(false);
+    expect(b.tryConsume("c", 1000)).toBe(false);
+  });
+
+  it("a large cap is how you ask for 'effectively unlimited'", () => {
+    const b = new VisionBudget(10_000);
+    expect(b.enabled).toBe(true);
     for (let i = 0; i < 100; i++) {
       expect(b.tryConsume("c", 1000 + i)).toBe(true);
     }

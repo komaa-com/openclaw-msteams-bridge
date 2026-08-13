@@ -283,7 +283,13 @@ export class MsteamsMediaStream {
         if (typeof preStartTimer.unref === "function") {
             preStartTimer.unref();
         }
-        this.connectionMeta.set(callId, { ip, started: false, ended: false, preStartTimer });
+        this.connectionMeta.set(callId, {
+            ip,
+            started: false,
+            ended: false,
+            preStartTimer,
+            recordingStatusExplicit: false,
+        });
         this.config.logger?.info(`MsteamsMediaStream: connection open ${callId}`);
         const live = ws;
         live.isAlive = true;
@@ -355,6 +361,9 @@ export class MsteamsMediaStream {
                         meta.started = true;
                         clearTimeout(meta.preStartTimer);
                     }
+                    const seededRecordingStatus = meta?.recordingStatusExplicit
+                        ? meta.recordingStatus
+                        : parsed.recordingStatus;
                     this.config.onSessionStart?.({
                         callId,
                         threadId: parsed.threadId,
@@ -364,14 +373,22 @@ export class MsteamsMediaStream {
                             displayName: blankToNull(parsed.caller.displayName),
                             tenantId: blankToNull(parsed.caller.tenantId),
                         },
-                        recordingStatus: parsed.recordingStatus,
+                        recordingStatus: seededRecordingStatus,
                         direction: parsed.direction,
                         send: (message) => this.sendTo(callId, message),
                         close: (reason) => this.closeSession(callId, reason),
                     });
+                    if (meta?.recordingStatusExplicit && meta.recordingStatus) {
+                        this.config.onRecordingStatus?.({ callId, status: meta.recordingStatus });
+                    }
                     break;
                 }
                 case "recording.status": {
+                    const meta = this.connectionMeta.get(callId);
+                    if (meta) {
+                        meta.recordingStatusExplicit = true;
+                        meta.recordingStatus = parsed.status;
+                    }
                     this.config.onRecordingStatus?.({ callId, status: parsed.status });
                     break;
                 }

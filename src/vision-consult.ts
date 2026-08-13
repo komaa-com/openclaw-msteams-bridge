@@ -31,15 +31,21 @@ export function frameToConsultImage(frame: { dataBase64: string; mime: string })
 /**
  * Gather the latest screen-share + camera frames as consult images, honoring the per-call vision
  * budget. Used by the streaming path to give the agent "look at what's shared" awareness on each turn.
+ *
+ * This is streaming mode's AMBIENT view — the caller never asked to be looked at, and it bills a
+ * vision call on every turn a frame changed — so it is behind the same `ambientVision` opt-in as the
+ * realtime push. `ambientVision` is required rather than defaulted, so a caller that stops passing it
+ * fails to compile instead of silently going back to spending.
  */
 export function collectLatestFrameImages(opts: {
+  ambientVision: boolean;
   getLatestFrame?: (source?: "camera" | "screenshare") => MsteamsVideoFrame | undefined;
   visionBudget?: VisionBudget;
   callId: string;
   now?: () => number;
 }): { images: ConsultImage[]; owners: string[] } {
-  const { getLatestFrame, visionBudget, callId } = opts;
-  if (!getLatestFrame) return { images: [], owners: [] };
+  const { ambientVision, getLatestFrame, visionBudget, callId } = opts;
+  if (!ambientVision || !getLatestFrame) return { images: [], owners: [] };
   const now = opts.now ?? (() => Date.now());
   const images: ConsultImage[] = [];
   // Parallel to `images`. Attribution used to stop here: the frames carry participantName all the way

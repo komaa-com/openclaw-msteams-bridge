@@ -1,8 +1,8 @@
 // Resolve the raw plugin config (api.pluginConfig, validated against openclaw.plugin.json's
-// configSchema) into (a) the runtime/media settings and (b) the `MsteamsVoiceConfig` the CVI bridge
+// configSchema) into (a) the runtime/media settings and (b) the `MsteamsBridgeConfig` the CVI bridge
 // reads. Boundary adapter — tolerant casts on untyped raw input.
 
-import type { MsteamsVoiceConfig } from "./config.js";
+import type { MsteamsBridgeConfig } from "./config.js";
 import { resolveManagedChatConfig, type ManagedChatConfig } from "./managed-chat.js";
 
 export interface ResolvedPluginConfig {
@@ -20,7 +20,7 @@ export interface ResolvedPluginConfig {
     defaultMode?: "notify" | "conversation";
   };
   limits: { maxConcurrentCalls: number; maxDurationMs: number; staleCallReaperMs: number };
-  voice: MsteamsVoiceConfig;
+  voice: MsteamsBridgeConfig;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -121,7 +121,7 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
           maxResults: 3,
           sources: ["memory", "sessions"],
           fallbackToConsult: false,
-        }) as MsteamsVoiceConfig["realtime"]["fastContext"],
+        }) as MsteamsBridgeConfig["realtime"]["fastContext"],
       },
       stt: c.stt,
       // Manifest exposes these flat (own plugin namespace); build the nested `msteams` object the
@@ -130,7 +130,15 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       msteams: {
         requireRecordingStatus: c.requireRecordingStatus,
         groupCall: c.groupCall,
+        // `0` here means vision spend OFF, not unlimited - the sentinel that used to read the other
+        // way round and handed an operator uncapped spend on the key they set to disable it. The
+        // resolver keeps the raw number (undefined falls back to MAX_VISION_PER_MINUTE_DEFAULT at the
+        // runtime), so `0` survives to VisionBudget instead of being coerced away by a `||`.
         maxVisionPerMinute: c.maxVisionPerMinute,
+        // Continuous vision is opt-in: it spends a vision call per scene change for the whole call.
+        // Explicit `=== true`, like transcribeVoiceMessages - anything else, including a missing key,
+        // leaves it off.
+        ambientVision: c.ambientVision === true,
         meetingRecap: c.meetingRecap,
         bilingual: c.bilingual,
       },

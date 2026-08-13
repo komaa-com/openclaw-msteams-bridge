@@ -3,8 +3,8 @@ export function frameToConsultImage(frame) {
     return { type: "image", data: frame.dataBase64, mimeType: frame.mime };
 }
 export function collectLatestFrameImages(opts) {
-    const { getLatestFrame, visionBudget, callId } = opts;
-    if (!getLatestFrame)
+    const { ambientVision, getLatestFrame, visionBudget, callId } = opts;
+    if (!ambientVision || !getLatestFrame)
         return { images: [], owners: [] };
     const now = opts.now ?? (() => Date.now());
     const images = [];

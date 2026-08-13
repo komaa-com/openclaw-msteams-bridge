@@ -997,6 +997,99 @@ describe("MsteamsMediaStream", () => {
     ws.close();
   });
 
+  // THE RECORDING-STATUS RACE. recording.status is free to arrive before session.start, and
+  // session.start carries only a setup-time SNAPSHOT of the field. Letting the snapshot win closed
+  // the Media Access gate for the whole call — audio, vision, consults and DTMF all refused silently,
+  // with no way back, because nothing re-sends a status that never changed.
+  it("an explicit recording.status before session.start is not overwritten by the session.start seed", async () => {
+    const port = randomPort();
+    let seeded: string | undefined;
+    let seenAtStart = false;
+    // Order matters as much as the value: the replay has to land AFTER the call handle exists.
+    const events: string[] = [];
+    server = await startServer({
+      port,
+      onSessionStart: (s) => {
+        seeded = s.recordingStatus;
+        seenAtStart = true;
+        events.push("session.start");
+      },
+      onRecordingStatus: (info) => {
+        events.push(`recording.status=${info.status}:started=${seenAtStart}`);
+      },
+    });
+
+    const callId = "call-race";
+    const ws = openAuthed(port, callId);
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+    });
+
+    // The live value arrives FIRST.
+    ws.send(JSON.stringify({ type: "recording.status", status: "active" }));
+    await waitFor(() => events.length > 0);
+
+    // ...and session.start then reports the stale snapshot.
+    ws.send(
+      JSON.stringify({
+        type: "session.start",
+        callId,
+        threadId: "thread-race",
+        caller: { aadId: "aad-race" },
+        recordingStatus: "inactive",
+      }),
+    );
+    await waitFor(() => seeded !== undefined);
+
+    // The seed handed to the call is the LIVE value, not the snapshot.
+    expect(seeded).toBe("active");
+    // And the pre-start status is replayed once the call handle exists, so the per-call work that
+    // only runs on a status CHANGE (deferred outbound greeting, ambient-vision flush) still runs.
+    expect(events).toEqual([
+      "recording.status=active:started=false", // the original delivery, dropped on the floor downstream
+      "session.start",
+      "recording.status=active:started=true", // the replay the call handle can actually receive
+    ]);
+
+    ws.close();
+  });
+
+  // The latch is a latch, not a one-way switch: a worker that stopped recording before session.start
+  // must not have the gate opened by a stale "active" snapshot either.
+  it("a pre-start recording.status of inactive also wins over an active session.start seed", async () => {
+    const port = randomPort();
+    let seeded: string | undefined = "unset";
+    server = await startServer({
+      port,
+      onSessionStart: (s) => {
+        seeded = s.recordingStatus;
+      },
+    });
+
+    const callId = "call-race-off";
+    const ws = openAuthed(port, callId);
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+    });
+
+    ws.send(JSON.stringify({ type: "recording.status", status: "inactive" }));
+    ws.send(
+      JSON.stringify({
+        type: "session.start",
+        callId,
+        threadId: "thread-race-off",
+        caller: { aadId: "aad-race-off" },
+        recordingStatus: "active",
+      }),
+    );
+    await waitFor(() => seeded !== "unset");
+    expect(seeded).toBe("inactive");
+
+    ws.close();
+  });
+
   it("authenticates a signature that is upper-case hex (HMAC normalization, matches Hermes)", async () => {
     // Hermes verify_upgrade does .strip().lower() on the signature; a worker that hex-encodes upper-
     // case must still authenticate. Previously the raw header was compared and this failed.

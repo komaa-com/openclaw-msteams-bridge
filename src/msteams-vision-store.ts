@@ -20,7 +20,10 @@ export class MsteamsVisionStore {
   private readonly history = new Map<string, MsteamsVideoFrame[]>();
   private budgetInstance: VisionBudget | null = null;
 
-  /** @param maxPerMinute lazy read of `msteams.maxVisionPerMinute` (config may be wired after construction). */
+  /**
+   * @param maxPerMinute lazy read of `msteams.maxVisionPerMinute` (config may be wired after
+   * construction). `0` means vision spend OFF, not unlimited.
+   */
   constructor(private readonly maxPerMinute: () => number) {}
 
   /** Retain the latest frame per source for a call. Caller must have passed the recording gate. */

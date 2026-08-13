@@ -61,6 +61,7 @@ export function resolvePluginConfig(rawInput) {
                 requireRecordingStatus: c.requireRecordingStatus,
                 groupCall: c.groupCall,
                 maxVisionPerMinute: c.maxVisionPerMinute,
+                ambientVision: c.ambientVision === true,
                 meetingRecap: c.meetingRecap,
                 bilingual: c.bilingual,
             },

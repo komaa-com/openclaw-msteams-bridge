@@ -395,7 +395,7 @@ export function createMsteamsRealtimeCall(params) {
         },
     });
     function pushLatestFrameToModel() {
-        if (closed || recordingGateBlocks() || !deps.getLatestFrame) {
+        if (closed || !deps.ambientVision || recordingGateBlocks() || !deps.getLatestFrame) {
             return;
         }
         for (const source of ["screenshare", "camera"]) {
@@ -463,7 +463,7 @@ export function createMsteamsRealtimeCall(params) {
         catch {
         }
     }
-    if (deps.getLatestFrame) {
+    if (deps.getLatestFrame && deps.ambientVision) {
         visionPushTimer = setInterval(pushLatestFrameToModel, REALTIME_VISION_PUSH_INTERVAL_MS);
         visionPushTimer.unref?.();
     }
@@ -482,10 +482,28 @@ export function createMsteamsRealtimeCall(params) {
                 rtSession.submitToolResult(event.callId, { text: opts.unavailableText });
                 return;
             }
+            let charged = false;
+            const visionSpend = {
+                tryConsume: () => {
+                    if (deps.visionBudget && !deps.visionBudget.tryConsume(callId, Date.now())) {
+                        return false;
+                    }
+                    charged = true;
+                    return true;
+                },
+                refund: () => {
+                    if (!charged) {
+                        return;
+                    }
+                    charged = false;
+                    deps.visionBudget?.refund(callId);
+                },
+            };
             try {
                 await opts.handler({
                     event,
                     rtSession,
+                    visionSpend,
                     consult: {
                         agentRuntime,
                         voiceConfig,
@@ -502,6 +520,7 @@ export function createMsteamsRealtimeCall(params) {
                 });
             }
             catch (err) {
+                visionSpend.refund();
                 logger?.warn(`MsteamsRealtime: ${opts.label} failed for ${callId} — ${err instanceof Error ? err.message : String(err)}`);
                 rtSession.submitToolResult(event.callId, { text: opts.errorText });
             }
@@ -563,7 +582,7 @@ export function createMsteamsRealtimeCall(params) {
         unavailableText: "The assistant can't look at video right now.",
         errorText: "Sorry, I had trouble seeing that.",
         requireFrameSource: true,
-        handler: async ({ event, rtSession, consult, sendWorkingFiller }) => {
+        handler: async ({ event, rtSession, consult, sendWorkingFiller, visionSpend }) => {
             const sourceArg = readArgText(event.args, "source");
             const source = sourceArg === "camera" || sourceArg === "screenshare" ? sourceArg : undefined;
             const historyScope = readArgText(event.args, "scope") === "history";
@@ -580,7 +599,7 @@ export function createMsteamsRealtimeCall(params) {
                 rtSession.submitToolResult(event.callId, { text: lastLookText });
                 return;
             }
-            if (deps.visionBudget && !deps.visionBudget.tryConsume(callId, Date.now())) {
+            if (!visionSpend.tryConsume()) {
                 logger?.debug?.(`MsteamsRealtime: look over vision budget for ${callId}`);
                 rtSession.submitToolResult(event.callId, MSTEAMS_LOOK_BUDGETED);
                 return;
@@ -1045,7 +1064,11 @@ export function createMsteamsRealtimeCall(params) {
             currentSpeakerName = name;
         },
         setRecordingActive: (active) => {
+            const gateJustOpened = active && !recordingActive;
             recordingActive = active;
+            if (gateJustOpened) {
+                pushLatestFrameToModel();
+            }
             if (active &&
                 deps.greetingOnRecordingActive &&
                 deps.greetingInstructions &&

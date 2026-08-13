@@ -4,10 +4,8 @@ import { VisionBudget } from "./vision-budget.js";
 import {
   type ConsultImage,
   collectLatestFrameImages,
-  MAX_QUEUED_AMBIENT_IMAGES,
-  pushOrQueueBridgeImage,
-  type ConsultImage,
   frameToConsultImage,
+  MAX_QUEUED_AMBIENT_IMAGES,
   pushOrQueueBridgeImage,
 } from "./vision-consult.js";
 
@@ -29,7 +27,11 @@ describe("collectLatestFrameImages", () => {
   it("gathers screen-share + camera and honors the vision budget", () => {
     const getLatestFrame = (s?: "camera" | "screenshare") =>
       s === "camera" ? frame("camera", "CAM") : frame("screenshare", "SCREEN");
-    const { images, owners } = collectLatestFrameImages({ getLatestFrame, callId: "c1" });
+    const { images, owners } = collectLatestFrameImages({
+      ambientVision: true,
+      getLatestFrame,
+      callId: "c1",
+    });
     // screen-share first, then camera (matches the realtime push order).
     expect(images.map((i) => i.data)).toEqual(["SCREEN", "CAM"]);
     // Owners run parallel to images so the caller can say whose screen it attached. Without a
@@ -44,6 +46,7 @@ describe("collectLatestFrameImages", () => {
     const getLatestFrame = (s?: "camera" | "screenshare") =>
       s === "camera" ? frame("camera", "CAM") : frame("screenshare", "SCREEN");
     const { images, owners } = collectLatestFrameImages({
+      ambientVision: true,
       getLatestFrame,
       visionBudget: budget,
       callId: "c1",
@@ -54,7 +57,29 @@ describe("collectLatestFrameImages", () => {
   });
 
   it("returns nothing when there is no frame source", () => {
-    expect(collectLatestFrameImages({ callId: "c1" })).toEqual({ images: [], owners: [] });
+    expect(collectLatestFrameImages({ ambientVision: true, callId: "c1" })).toEqual({
+      images: [],
+      owners: [],
+    });
+  });
+
+  it("collects nothing, and spends nothing, when continuous vision is off", () => {
+    // Streaming mode's ambient view: the caller never asked to be looked at, so with the feature off
+    // the turn must carry no images AND must not touch the budget - a skipped attach that still burns
+    // a slot would starve the look_at_screen the agent actually asked for.
+    const budget = new VisionBudget(5);
+    const { images, owners } = collectLatestFrameImages({
+      ambientVision: false,
+      getLatestFrame: () => frame("screenshare", "SCREEN"),
+      visionBudget: budget,
+      callId: "c1",
+      now: () => 0,
+    });
+    expect(images).toEqual([]);
+    expect(owners).toEqual([]);
+    for (let i = 0; i < 5; i++) {
+      expect(budget.tryConsume("c1", 0)).toBe(true); // all five slots still there
+    }
   });
 });
 
