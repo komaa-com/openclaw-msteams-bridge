@@ -83,6 +83,7 @@ describe("ambient vision push: budget refund when a present sendImage throws", (
         requireRecordingStatus: false,
         getLatestFrame: (s) => (s === "screenshare" ? frame : undefined),
         visionBudget: budget,
+        ambientVision: true, // continuous vision is opt-in; the push path only runs when it is on
       },
     });
 

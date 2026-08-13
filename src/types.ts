@@ -1,4 +1,4 @@
-// Core call types for the self-contained Teams voice plugin.
+// Core call types for the self-contained Teams bridge plugin.
 // (CallRecord is trimmed to what a Teams realtime plugin needs.)
 
 export type CallState =

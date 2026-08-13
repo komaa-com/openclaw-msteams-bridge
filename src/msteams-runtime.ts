@@ -1,4 +1,4 @@
-// MsteamsVoiceRuntime, self-contained orchestration for the standalone plugin: a full msteams
+// MsteamsBridgeRuntime, self-contained orchestration for the standalone plugin: a full msteams
 // provider and call-manager. Owns the Teams media WebSocket, drives CallLifecycle, and
 // bridges each call to the realtime voice model via createMsteamsRealtimeCall.
 //
@@ -55,7 +55,7 @@ import { createMsteamsStreamingCall, type MsteamsStreamingDeps } from "./msteams
 import { createMsteamsTtsProvider, type MsteamsTtsProvider } from "./msteams-tts.js";
 import { MsteamsVisionStore } from "./msteams-vision-store.js";
 import { resolveVoiceResponseModel } from "./response-model.js";
-import { VisionBudget } from "./vision-budget.js";
+import { MAX_VISION_PER_MINUTE_DEFAULT, VisionBudget } from "./vision-budget.js";
 import type { ResolvedPluginConfig } from "./plugin-config.js";
 
 /** The worker's outcome vocabulary, mapped onto this plugin's own end reasons.
@@ -81,11 +81,16 @@ const OUTBOUND_ANSWER_TIMEOUT_DEFAULT_MS = 120_000;
 
 export type PlaceCallMode = "notify" | "conversation";
 
-export class MsteamsVoiceRuntime {
+export class MsteamsBridgeRuntime {
   private readonly lifecycle: CallLifecycle;
   private readonly media: MsteamsMediaStream;
   private readonly vision: MsteamsVisionStore;
   private readonly visionBudget: VisionBudget;
+  /**
+   * Continuous vision opt-in, read once and handed to BOTH voice paths (the realtime ambient push and
+   * the streaming per-turn attach), so the two cannot disagree about whether the feature is on.
+   */
+  private readonly ambientVision: boolean;
   private readonly calls = new Map<string, MsteamsRealtimeCall>();
 
   /**
@@ -149,9 +154,16 @@ export class MsteamsVoiceRuntime {
       error: (m) => logger.error(m),
       debug: (m) => logger.debug?.(m),
     };
-    this.visionBudget = new VisionBudget(this.cfg.voice.msteams?.maxVisionPerMinute ?? 30);
-    this.vision = new MsteamsVisionStore(() => this.cfg.voice.msteams?.maxVisionPerMinute ?? 30);
+    // `?? DEFAULT`, never `|| DEFAULT`: a configured 0 has to survive to the budget, because 0 is how
+    // an operator turns vision spend off. It used to mean "unlimited", which is the opposite.
+    this.visionBudget = new VisionBudget(
+      this.cfg.voice.msteams?.maxVisionPerMinute ?? MAX_VISION_PER_MINUTE_DEFAULT,
+    );
+    this.vision = new MsteamsVisionStore(
+      () => this.cfg.voice.msteams?.maxVisionPerMinute ?? MAX_VISION_PER_MINUTE_DEFAULT,
+    );
     this.vision.setBudget(this.visionBudget);
+    this.ambientVision = this.cfg.voice.msteams?.ambientVision === true;
 
     this.lifecycle = new CallLifecycle(
       {
@@ -257,6 +269,18 @@ export class MsteamsVoiceRuntime {
       this.log.warn(
         "[msteams-bridge] managedBot.enabled is set but no secret resolved - the messages lane is OFF. " +
           "Set `secret` to the value StandIn shows you; it covers calling and messages both.",
+      );
+    }
+    // Same fail-LOUD posture for the one config pair that can silently cancel itself out. Continuous
+    // vision is ON and the spend cap is 0, which switches ALL vision spend off - so not a single
+    // ambient frame or look_at_screen will ever run, and every skip is a debug-level line nobody
+    // reads. This combination is only reachable by an operator who read `maxVisionPerMinute: 0` the
+    // old way, as "unlimited"; say so rather than let them conclude the feature is broken.
+    if (this.ambientVision && !this.visionBudget.enabled) {
+      this.log.warn(
+        `[msteams-bridge] ambientVision is on but maxVisionPerMinute is ${this.cfg.voice.msteams?.maxVisionPerMinute} - vision spend is OFF, so no frame will ever reach the agent ` +
+          `and look_at_screen will refuse every call. 0 is the kill switch, NOT "unlimited"; remove the key for the default of ` +
+          `${MAX_VISION_PER_MINUTE_DEFAULT}/min, or set a large number for a cap that never bites.`,
       );
     }
 
@@ -659,6 +683,19 @@ export class MsteamsVoiceRuntime {
   }
 
   private onSessionStart(session: MsteamsSession): void {
+    // A second session.start for a call that is already live must be IGNORED, not re-accepted. The
+    // lifecycle returns the existing record rather than throwing, so the duplicate used to fall all
+    // the way through to `this.calls.set(callId, this.createCall(...))`: the replacement handle
+    // re-seeded its recording status from the session frame (discarding whatever recording.status had
+    // already set — session.start silently overwriting an explicit status), and the previous handle
+    // was orphaned with no close(), leaking a provider socket per duplicate. Checked ahead of the
+    // lifecycle call so the inbound AND outbound attach-back branches are both covered.
+    if (this.calls.has(session.callId)) {
+      this.log.warn(
+        `[msteams-bridge] duplicate session.start for ${session.callId} ignored — the call is already live`,
+      );
+      return;
+    }
     // Make this call resolvable by the registered OpenClaw tool for the duration of the call.
     this.trackManagedCall(session, true);
     // Realtime mode requires a resolved provider; streaming mode does not.
@@ -943,7 +980,7 @@ export class MsteamsVoiceRuntime {
       // transcribers routinely sniff the container by extension, and an .ogg named .wav decodes to
       // nothing with no error worth reading.
       const ext = clip.mime.split("/")[1]?.replace(/[^a-z0-9]/g, "") || "bin";
-      const tmp = path.join(os.tmpdir(), `msteams-voice-${randomUUID()}.${ext}`);
+      const tmp = path.join(os.tmpdir(), `msteams-bridge-voicemsg-${randomUUID()}.${ext}`);
       try {
         await fs.writeFile(tmp, clip.bytes);
         const res = await this.api.runtime.mediaUnderstanding.transcribeAudioFile({
@@ -1114,6 +1151,7 @@ export class MsteamsVoiceRuntime {
       groupCallGate: resolveGroupCallGateConfig(this.cfg.voice.msteams?.groupCall),
       getVisionImages: () =>
         collectLatestFrameImages({
+          ambientVision: this.ambientVision,
           getLatestFrame: (s) => this.vision.getLatest(session.callId, s),
           visionBudget: this.visionBudget,
           callId: session.callId,
@@ -1167,6 +1205,7 @@ export class MsteamsVoiceRuntime {
       echoBargeInRms: this.cfg.voice.realtime.echoBargeInRms,
       groupCallGate: resolveGroupCallGateConfig(this.cfg.voice.msteams?.groupCall),
       visionBudget: this.visionBudget,
+      ambientVision: this.ambientVision,
       getLatestFrame: (src) => this.vision.getLatest(session.callId, src),
       getFrameHistory: (limit) => this.vision.getHistory(session.callId, limit),
       agentRuntime: this.api.runtime.agent,

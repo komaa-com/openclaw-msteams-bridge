@@ -8,8 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg)](https://www.typescriptlang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-**`@komaa/openclaw-msteams-bridge`** is a Microsoft Teams voice and video agent (CVI) for
-[OpenClaw](https://openclaw.ai). It turns an
+Put your [OpenClaw](https://openclaw.ai) agent on a real **Microsoft Teams call**. It turns an
 ordinary Teams call into a true two-way video conversation: the agent sees what you show it, talks
 back in real time, and appears in the call as an animated, lip-synced avatar.
 
@@ -18,11 +17,11 @@ vendored runtime, no trusted-plugin privileges required.
 
 ## Three pillars
 
-| Pillar | The agent | What it does in the call |
-|:--|:--|:--|
-| **Perception** | sees you | Reads camera and screen-share (VBSS) frames: `look_at_screen` on demand, a keyframe per turn in streaming mode, an ambient view in realtime mode. Frames are attributed per participant and vision spend is capped per call. |
-| **Dialogue** | talks with you | Holds a spoken conversation - realtime speech-to-speech or a streaming STT to agent to TTS pipeline. Barge-in, verbal interrupts, a "speak only when addressed" gate, DTMF entry, English and Arabic, and greeting attendees by name. |
-| **Rendering** | is seen by you | Appears as a lip-synced avatar tile. Emits expression cues, viseme lip-sync, and `show_to_caller` overlays, which the hosted StandIn bridge draws into the video the caller sees. |
+| Pillar | What it does in the call |
+|:--|:--|
+| **Perception**<br>*the agent sees you* | Reads camera and screen-share (VBSS) frames: `look_at_screen` on demand, a keyframe per turn in streaming mode, an ambient view in realtime mode. Frames are attributed per participant and vision spend is capped per call. |
+| **Dialogue**<br>*the agent talks with you* | Holds a spoken conversation - realtime speech-to-speech or a streaming STT to agent to TTS pipeline. Barge-in, verbal interrupts, a "speak only when addressed" gate, DTMF entry, English and Arabic, and greeting attendees by name. |
+| **Rendering**<br>*the agent is seen by you* | Appears as a lip-synced avatar tile. Emits expression cues, viseme lip-sync, and `show_to_caller` overlays, which the hosted StandIn bridge draws into the video the caller sees. |
 
 Details of each capability follow below.
 
@@ -61,22 +60,77 @@ That one secret covers **both lanes** of the connection: calls arrive on the cal
 Teams messages on the messages endpoint. They are two lanes of a single StandIn binding, not two
 products, which is why there is a single value to paste and no enable flag to remember.
 
+This is the whole configuration. It is what runs on a working install, with the tuning knobs left
+out - every other setting has a default that is already correct.
+
 ```jsonc
 {
   "plugins": {
+    // `allow` is what lets OpenClaw load the plugin at all; `entries` configures it.
+    "allow": ["msteams-bridge"],
     "entries": {
       "msteams-bridge": {
+        // NOTE: `enabled` sits beside `config`, not inside it.
+        "enabled": true,
         "config": {
-          "enabled": true,
-          // The connection secret from the StandIn portal. It turns on BOTH lanes:
+          // The connection secret from the StandIn portal. One value, BOTH lanes:
           // calling (ws://:9442/msteams/calling) and messages (http://:9444/msteams/messages).
-          "secret": "paste-the-value-from-the-StandIn-portal"
+          "secret": "paste-the-value-from-the-StandIn-portal",
+
+          // REQUIRED, and the most common reason a first call fails. Without a realtime
+          // provider the plugin still starts and still connects, then rejects every inbound
+          // call with "realtime-unavailable" - it logs the reason once at startup and is
+          // otherwise silent. `mode` is inferred: a resolved realtime provider means
+          // "realtime", none means "streaming".
+          "realtime": {
+            "provider": "openai",
+            "providers": {
+              "openai": {
+                "apiKey": "sk-..."
+              }
+            }
+          }
         }
       }
     }
   }
 }
 ```
+
+**Using Azure OpenAI instead?** Realtime is served from a *different* host than your chat
+deployments - `<resource>.cognitiveservices.azure.com`, not `<resource>.openai.azure.com`, which
+returns 404 on the websocket handshake - and on its own api-version. Replace the `openai` provider
+block with:
+
+```jsonc
+"openai": {
+  "apiKey": "your-azure-openai-key",
+  "azureEndpoint": "https://<resource>.cognitiveservices.azure.com",
+  "azureDeployment": "gpt-realtime",
+  "azureApiVersion": "2025-04-01-preview",
+  "voice": "cedar"
+}
+```
+
+Azure needs no `whisper` or `tts-1` deployment for this: `gpt-realtime` is speech-to-speech, so it
+is the only deployment involved.
+
+**Check it before you call.** Restart the gateway after any config change, then:
+
+```bash
+openclaw plugins list          # msteams-bridge should be "enabled" and loaded
+```
+
+The startup log should show both lanes listening:
+
+```
+[msteams-bridge] MsteamsMediaStream listening host=127.0.0.1 port=9442 path=/msteams/calling
+[msteams-bridge] msteams managed chat: listening on 127.0.0.1:9444/msteams/messages
+[msteams-bridge] started (mode=realtime)
+```
+
+If `mode=streaming` appears when you expected realtime, the provider did not resolve - check the
+`apiKey`.
 
 Then expose both endpoints to the internet (a public host, or a tunnel) and register them on your
 connection in the StandIn portal as the **Agent calling URL** and **Agent messages URL**.
@@ -362,7 +416,7 @@ Full reference in the [Configuration Reference](https://komaa-com.github.io/open
 | `mode` | `realtime` or `streaming` (auto if omitted) |
 | `port` | WebSocket port (default `9442`) |
 | `bindAddress` | bind address; use `0.0.0.0` for the hosted bridge |
-| `path` | Calling WebSocket path (default `/msteams/calling`; was `/voice/msteams/stream` before the rename - see [Upgrading](#upgrading-from-msteams-voice)) |
+| `path` | Calling WebSocket path (default `/msteams/calling`) |
 | `secret` | HMAC secret for BOTH lanes; must match StandIn |
 | `requireRecordingStatus` | engage only once recording is active |
 | `inboundPolicy` | `disabled`, `allowlist`, `pairing`, `open`. `pairing` currently behaves exactly like `allowlist` (the plugin issues no pairing codes or approvals for calls; callers must be in `allowFrom`) |
@@ -371,7 +425,8 @@ Full reference in the [Configuration Reference](https://komaa-com.github.io/open
 | `sessionScope` | `per-phone`, `per-call`, `per-thread` |
 | `maxConcurrentCalls` | concurrent-call cap |
 | `maxDurationSeconds` | max answered-call duration |
-| `maxVisionPerMinute` | vision spend cap |
+| `maxVisionPerMinute` | paid vision calls per call per minute (default `30`), shared by `look_at_screen`, the ambient push and the streaming per-turn attach. **`0` switches vision spend OFF** - it is the kill switch, not "unlimited". There is no unlimited setting; set a large number for a cap that never bites |
+| `ambientVision` | keep pushing the newest changed camera / screen-share frame at the agent between turns, so it stays visually aware without being asked. Off by default - it spends a vision call per scene change. `look_at_screen` works either way |
 | `meetingRecap` | post end-of-call minutes |
 | `bilingual` | Arabic / English |
 

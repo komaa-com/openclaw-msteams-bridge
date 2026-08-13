@@ -210,8 +210,9 @@ export function toTileCaption(text: string | undefined): string | undefined {
 /**
  * Backstop interval for the ambient vision poll. The primary trigger is now
  * {@link MsteamsRealtimeCall.notifyInboundFrame}, pushed on scene change as frames arrive; this timer
- * just catches anything missed. Only fires when the frame changed and the vision budget allows, so a
- * static screen costs nothing; the budget (`maxVisionPerMinute`) is the real cap on a changing screen.
+ * just catches anything missed. Only armed when `ambientVision` is on, and only fires when the frame
+ * changed and the vision budget allows, so a static screen costs nothing; the budget
+ * (`maxVisionPerMinute`, 0 = off) is the real cap on a changing screen.
  */
 const REALTIME_VISION_PUSH_INTERVAL_MS = 6000;
 
@@ -395,8 +396,19 @@ export interface MsteamsRealtimeDeps {
    */
   groupCallGate?: GroupCallGateConfig;
 
-  /** Per-call vision spend cap shared across calls (look_at_screen). Undefined = unlimited. */
+  /**
+   * Per-call vision spend cap, shared by `look_at_screen` and the ambient push so one cannot starve
+   * the other. A budget built with `maxVisionPerMinute: 0` refuses everything - 0 is the kill switch.
+   * Omitted only in tests that do not exercise vision; the runtime always supplies one.
+   */
   visionBudget?: VisionBudget;
+
+  /**
+   * Continuous vision: push the newest changed frame at the model between turns, without the caller
+   * asking. OFF unless explicitly enabled (`msteams.ambientVision`), because it spends a vision call
+   * per scene change for the whole call. `look_at_screen` is unaffected either way.
+   */
+  ambientVision?: boolean;
 
   logger?: MsteamsLogger;
 }
@@ -406,9 +418,10 @@ export interface MsteamsRealtimeCall {
   /** Forward one inbound PCM 16 kHz frame from the caller into the model. */
   pushAudio(pcm16k: Buffer): void;
   /**
-   * Signal that a new inbound video frame is available (scene change). Pushes it to the model right
-   * away if it changed and the vision budget allows — so the model sees changes promptly instead of
-   * waiting for the ambient backstop poll.
+   * Signal that a new inbound video frame is available (scene change). With ambient vision enabled,
+   * pushes it to the model right away if it changed and the vision budget allows — so the model sees
+   * changes promptly instead of waiting for the ambient backstop poll. A no-op when it is off: the
+   * frame is still stored, and `look_at_screen` can still reach it.
    */
   notifyInboundFrame(): void;
   /** Live human participant count (excludes the bot); drives the deterministic group-call gate. */
@@ -906,7 +919,10 @@ export function createMsteamsRealtimeCall(params: {
    * response: the model uses the frame on its next natural turn.
    */
   function pushLatestFrameToModel(): void {
-    if (closed || recordingGateBlocks() || !deps.getLatestFrame) {
+    // Ambient vision is opt-in. Checked HERE and not only where the backstop timer is armed, because
+    // notifyInboundFrame() drives this on every scene change and would otherwise keep spending with
+    // the feature switched off.
+    if (closed || !deps.ambientVision || recordingGateBlocks() || !deps.getLatestFrame) {
       return;
     }
     // Push BOTH sources the caller is sharing (screen-share first, then camera) so the model is
@@ -1015,10 +1031,26 @@ export function createMsteamsRealtimeCall(params: {
     }
   }
 
-  if (deps.getLatestFrame) {
+  if (deps.getLatestFrame && deps.ambientVision) {
     visionPushTimer = setInterval(pushLatestFrameToModel, REALTIME_VISION_PUSH_INTERVAL_MS);
     // Don't keep the process alive for this cosmetic-awareness timer.
     visionPushTimer.unref?.();
+  }
+
+  /**
+   * A vision charge a tool handler made against the shared per-call budget.
+   *
+   * Latched, so the single catch in {@link withConsultGuards} can hand the charge back exactly once
+   * when the run throws — and so a handler that never spends anything (consult, minutes, post-chat)
+   * refunds nothing. `look_at_screen` and the ambient push draw on ONE per-call window, so a look
+   * that charged and then failed used to drain the whole minute while the model retried, taking
+   * ambient vision down with it.
+   */
+  interface VisionSpend {
+    /** Charge one vision slot. False when the window is exhausted, or vision spend is off entirely. */
+    tryConsume(): boolean;
+    /** Give back a charge that never became an answer. Idempotent; a no-op when nothing was charged. */
+    refund(): void;
   }
 
   /** Deps + identity every agent-running tool handler needs, resolved non-null by the guard. */
@@ -1038,6 +1070,11 @@ export function createMsteamsRealtimeCall(params: {
    * (and partially missed) this boilerplate. The wrapped handler receives the resolved deps plus a
    * sendWorkingFiller() it calls once its own cheap pre-checks (cache, budget, frame presence)
    * pass, so the caller is not left in silence during a full agent run.
+   *
+   * A handler that pays for a vision run spends it through `visionSpend`, which latches the charge so
+   * the shared catch below can hand it back when the run throws. Both halves of vision draw on ONE
+   * per-call window, so an unrefunded failure meant a model retrying a broken look drained the whole
+   * minute and took ambient vision down with it.
    */
   function withConsultGuards(opts: {
     label: string;
@@ -1050,6 +1087,7 @@ export function createMsteamsRealtimeCall(params: {
       rtSession: RealtimeVoiceBridgeSession;
       consult: GuardedConsultDeps;
       sendWorkingFiller: () => void;
+      visionSpend: VisionSpend;
     }) => Promise<void>;
   }): (event: RealtimeVoiceToolCallEvent, rtSession: RealtimeVoiceBridgeSession) => Promise<void> {
     return async (event, rtSession) => {
@@ -1071,10 +1109,30 @@ export function createMsteamsRealtimeCall(params: {
         rtSession.submitToolResult(event.callId, { text: opts.unavailableText });
         return;
       }
+      // Per invocation, never shared: two tool calls in flight at once must not be able to refund
+      // each other's charge.
+      let charged = false;
+      const visionSpend: VisionSpend = {
+        tryConsume: () => {
+          if (deps.visionBudget && !deps.visionBudget.tryConsume(callId, Date.now())) {
+            return false;
+          }
+          charged = true;
+          return true;
+        },
+        refund: () => {
+          if (!charged) {
+            return;
+          }
+          charged = false;
+          deps.visionBudget?.refund(callId);
+        },
+      };
       try {
         await opts.handler({
           event,
           rtSession,
+          visionSpend,
           consult: {
             agentRuntime,
             voiceConfig,
@@ -1094,6 +1152,10 @@ export function createMsteamsRealtimeCall(params: {
           },
         });
       } catch (err) {
+        // The run threw, so no answer was produced and the vision spend never happened — hand it
+        // back. Deliberately mirrors the ambient push, which refunds and pointedly does NOT set its
+        // success latch: the charge is undone, and nothing is recorded as delivered.
+        visionSpend.refund();
         logger?.warn(
           `MsteamsRealtime: ${opts.label} failed for ${callId} — ${err instanceof Error ? err.message : String(err)}`,
         );
@@ -1174,7 +1236,7 @@ export function createMsteamsRealtimeCall(params: {
     unavailableText: "The assistant can't look at video right now.",
     errorText: "Sorry, I had trouble seeing that.",
     requireFrameSource: true,
-    handler: async ({ event, rtSession, consult, sendWorkingFiller }) => {
+    handler: async ({ event, rtSession, consult, sendWorkingFiller, visionSpend }) => {
       const sourceArg = readArgText(event.args, "source");
       const source = sourceArg === "camera" || sourceArg === "screenshare" ? sourceArg : undefined;
       // Retroactive vision: scope "history" reviews the recent scene-change keyframes (oldest first)
@@ -1197,8 +1259,11 @@ export function createMsteamsRealtimeCall(params: {
         return;
       }
 
-      // Cost cap: a changed frame means a fresh (expensive) vision run — gate it on the vision budget.
-      if (deps.visionBudget && !deps.visionBudget.tryConsume(callId, Date.now())) {
+      // Cost cap: a changed frame means a fresh (expensive) vision run — gate it on the vision
+      // budget. Charged through visionSpend rather than the budget directly, so the shared catch
+      // below can refund it when the run throws; charging the budget straight meant a failing look
+      // kept its spend and starved the ambient push that draws on the same window.
+      if (!visionSpend.tryConsume()) {
         logger?.debug?.(`MsteamsRealtime: look over vision budget for ${callId}`);
         rtSession.submitToolResult(event.callId, MSTEAMS_LOOK_BUDGETED);
         return;
@@ -1850,7 +1915,15 @@ export function createMsteamsRealtimeCall(params: {
       currentSpeakerName = name;
     },
     setRecordingActive: (active: boolean) => {
+      const gateJustOpened = active && !recordingActive;
       recordingActive = active;
+      // The media gate may have just opened on a screen that has not changed since its last frame
+      // arrived, and a static screen sends no new frame to re-trigger the ambient push — every frame
+      // received while the gate was shut was refused by pushLatestFrameToModel. Flush once here so
+      // the model actually sees what is already on screen.
+      if (gateJustOpened) {
+        pushLatestFrameToModel();
+      }
       // Outbound call-back: the callee has now ANSWERED — speak the deferred greeting (the delivered
       // result), so it isn't lost to a ringing phone and the model doesn't sit idle free-associating.
       if (

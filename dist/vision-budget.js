@@ -1,12 +1,16 @@
+export const MAX_VISION_PER_MINUTE_DEFAULT = 30;
 export class VisionBudget {
     maxPerMinute;
     hitsByCall = new Map();
     constructor(maxPerMinute) {
         this.maxPerMinute = maxPerMinute;
     }
+    get enabled() {
+        return this.maxPerMinute > 0;
+    }
     tryConsume(callId, nowMs) {
         if (this.maxPerMinute <= 0) {
-            return true;
+            return false;
         }
         const recent = (this.hitsByCall.get(callId) ?? []).filter((t) => nowMs - t < 60_000);
         if (recent.length >= this.maxPerMinute) {

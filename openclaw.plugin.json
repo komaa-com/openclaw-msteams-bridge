@@ -1,7 +1,7 @@
 {
   "id": "msteams-bridge",
-  "name": "Teams Bridge by StandIn",
-  "description": "Turn a Microsoft Teams call into a real two-way video conversation: the agent sees your camera and screen-share, talks in real time (speech-to-speech or streaming STT to agent to TTS), and appears as a lip-synced avatar. Vision, meeting recap, outbound call-backs, wake-phrase etiquette, HMAC-secured media bridge.",
+  "name": "Microsoft Teams Bridge by StandIn",
+  "description": "Put your OpenClaw agent in a real Microsoft Teams call: it sees your screen-share and camera, holds a live spoken conversation, and appears as a lip-synced avatar. Realtime speech-to-speech or streaming STT-to-TTS, meeting recaps, outbound call-backs, HMAC-secured.",
   "activation": {
     "onStartup": true
   },
@@ -130,7 +130,12 @@
       },
       "maxVisionPerMinute": {
         "type": "integer",
-        "minimum": 0
+        "minimum": 0,
+        "description": "Per-call cap on paid vision calls over a sliding 60 seconds, shared by look_at_screen, the ambient push and the streaming per-turn attach (default 30). 0 turns vision spend OFF - it is the kill switch, NOT unlimited. There is no unlimited setting; set a large number if you want a cap that never bites."
+      },
+      "ambientVision": {
+        "type": "boolean",
+        "description": "Keep pushing the newest changed camera / screen-share frame at the model between turns, so it stays visually aware without being asked. Off by default: it spends a vision call per scene change for the whole call. look_at_screen works either way."
       },
       "meetingRecap": {
         "type": "boolean"

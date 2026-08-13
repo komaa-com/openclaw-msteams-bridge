@@ -146,7 +146,14 @@ export function createMsteamsStreamingCall(params: {
   let speaking = false;
   let processing = false;
   let greeted = false;
-  let recordingActive = false;
+  /**
+   * Teams recording status (Media Access API gate). Seeded from `session.start` exactly as the
+   * realtime path does — a worker that reports "active" at setup and never sends a separate
+   * `recording.status` otherwise leaves this path permanently deaf and silent, while the same worker
+   * behaviour works fine in realtime mode. The media-stream layer resolves `session.recordingStatus`
+   * against its explicit-status latch, so this seed can never downgrade a live value.
+   */
+  let recordingActive = session.recordingStatus === "active";
   let currentSpeaker: string | undefined;
   let humanCount = 1;
   let lastAddressedAt: number | undefined;
@@ -303,9 +310,11 @@ export function createMsteamsStreamingCall(params: {
     pushAudio: (pcm16k: Buffer) => {
       if (closed) return;
       if (requireRecording && !recordingActive) return; // Media Access gate
-      // When recording isn't required there is no recording.status event to greet on — open on the
-      // first inbound audio instead (fires once).
-      if (!requireRecording) maybeGreet();
+      // The gate is open — either recording isn't required, or it is active. Greet on the first
+      // inbound frame that gets through. `maybeGreet` is idempotent, so a `recording.status` that
+      // already greeted wins; this covers the case where the status was SEEDED from session.start and
+      // no setRecordingActive ever fires.
+      maybeGreet();
       const rms = frameRms(pcm16k);
 
       if (speaking) {
@@ -349,8 +358,13 @@ export function createMsteamsStreamingCall(params: {
     },
 
     notifyDtmf: (digit: string) => {
-      // Surface a DTMF key as a caller turn so the agent can run simple IVR flows.
       if (closed || processing || speaking) return;
+      // DTMF tones are in-band, media-derived caller input, so they carry the same Media Access API
+      // obligation as audio: do not run an agent turn over them before recording is active. The
+      // realtime path has always gated keypresses this way; this one ran the turn regardless, so one
+      // repo answered the same inbound message under two different compliance policies.
+      if (requireRecording && !recordingActive) return;
+      // Surface a DTMF key as a caller turn so the agent can run simple IVR flows.
       void runTurn(`The caller pressed the key "${digit}".`);
     },
 

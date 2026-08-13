@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
  * object id would turn any of that into "ring this person". Bounding the target to the existing
  * conversation means the worst a prompt injection buys is a call to the person already talking to it.
  *
- * The logic is reproduced here rather than imported because MsteamsVoiceRuntime cannot be constructed
+ * The logic is reproduced here rather than imported because MsteamsBridgeRuntime cannot be constructed
  * without a live OpenClaw plugin api, a WebSocket server and a realtime provider. What matters is the
  * decision table, and it is asserted in the same order the real method evaluates it.
  */

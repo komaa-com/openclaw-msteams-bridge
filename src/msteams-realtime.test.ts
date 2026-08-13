@@ -452,7 +452,8 @@ describe("createMsteamsRealtimeCall", () => {
         } as unknown as VoiceCallConfig,
         cfg: {} as unknown as OpenClawConfig,
         getLatestFrame: (s) => (s === "camera" ? undefined : screenFrame),
-        visionBudget: new VisionBudget(0), // unlimited
+        visionBudget: new VisionBudget(100), // a cap big enough not to bite; 0 would mean OFF
+        ambientVision: true,
       },
     });
 
@@ -1284,6 +1285,187 @@ describe("createMsteamsRealtimeCall", () => {
       args: { question: "now?" },
     });
     await vi.waitFor(() => expect(consultSpy).toHaveBeenCalledTimes(2));
+  });
+
+  // The on-demand half of vision spend. handleLook charges the budget BEFORE the run, so a run that
+  // threw kept the charge — and because look_at_screen and the ambient push draw on ONE per-call
+  // window, a model retrying a failing look drained the whole minute and took ambient vision with it.
+  it("look_at_screen refunds its budget hit when the vision run throws", async () => {
+    consultSpy.mockClear();
+    consultSpy.mockRejectedValueOnce(new Error("vision provider exploded"));
+    const ctx = createMockSession();
+    const mock = createMockProvider();
+    // Exactly one slot, so an unrefunded hit is immediately observable as a starved window.
+    const budget = new VisionBudget(1);
+    const refund = vi.spyOn(budget, "refund");
+    createMsteamsRealtimeCall({
+      session: ctx.session,
+      deps: {
+        provider: mock.provider,
+        providerConfig: {},
+        tools: [CONSULT_TOOL],
+        toolPolicy: "owner",
+        agentRuntime: { resolveThinkingDefault: () => "high" } as unknown as CoreAgentDeps,
+        voiceConfig: { realtime: {}, agentId: "main" } as unknown as VoiceCallConfig,
+        cfg: {} as unknown as OpenClawConfig,
+        visionBudget: budget,
+        getLatestFrame: () => ({
+          source: "screenshare",
+          dataBase64: "LOOKFAIL",
+          mime: "image/jpeg",
+          width: 10,
+          height: 10,
+          ts: 0,
+        }),
+      },
+    });
+
+    mock.getRequest().onToolCall?.({
+      itemId: "i-look-fail",
+      callId: "look-fail",
+      name: "look_at_screen",
+      args: { question: "what is this?" },
+    });
+
+    await vi.waitFor(() => expect(consultSpy).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(refund).toHaveBeenCalledWith("call-1"));
+    // The caller is still told something went wrong — the refund is not a silent swallow.
+    const errored = mock.submitToolResult.mock.calls.some(
+      (args) =>
+        args[0] === "look-fail" &&
+        typeof (args[1] as { text?: string })?.text === "string" &&
+        (args[1] as { text: string }).text.includes("trouble seeing"),
+    );
+    expect(errored).toBe(true);
+    // ...and the one slot is back, so the ambient push sharing this window is not starved.
+    expect(budget.tryConsume("call-1", Date.now())).toBe(true);
+  });
+
+  // The refund is latched to an actual charge, so a tool that never spends cannot hand back someone
+  // else's slot. Without the latch the shared catch would refund on every failing tool call.
+  it("a failing consult (which spends no vision) refunds nothing", async () => {
+    consultSpy.mockClear();
+    consultSpy.mockRejectedValueOnce(new Error("agent exploded"));
+    const ctx = createMockSession();
+    const mock = createMockProvider();
+    const budget = new VisionBudget(1);
+    const refund = vi.spyOn(budget, "refund");
+    createMsteamsRealtimeCall({
+      session: ctx.session,
+      deps: {
+        provider: mock.provider,
+        providerConfig: {},
+        tools: [CONSULT_TOOL],
+        toolPolicy: "owner",
+        agentRuntime: { resolveThinkingDefault: () => "high" } as unknown as CoreAgentDeps,
+        voiceConfig: { realtime: {}, agentId: "main" } as unknown as VoiceCallConfig,
+        cfg: {} as unknown as OpenClawConfig,
+        visionBudget: budget,
+      },
+    });
+
+    mock.getRequest().onToolCall?.({
+      itemId: "i-consult-fail",
+      callId: "consult-fail",
+      name: REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME,
+      args: { question: "do a thing" },
+    });
+
+    await vi.waitFor(() => expect(consultSpy).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(
+        mock.submitToolResult.mock.calls.some((args) => args[0] === "consult-fail"),
+      ).toBe(true),
+    );
+    expect(refund).not.toHaveBeenCalled();
+  });
+
+  // A successful look keeps its charge: the refund is for runs that produced no answer.
+  it("a successful look_at_screen keeps its budget hit", async () => {
+    consultSpy.mockClear();
+    consultSpy.mockResolvedValueOnce({ text: "A pricing slide." });
+    const ctx = createMockSession();
+    const mock = createMockProvider();
+    const budget = new VisionBudget(1);
+    const refund = vi.spyOn(budget, "refund");
+    createMsteamsRealtimeCall({
+      session: ctx.session,
+      deps: {
+        provider: mock.provider,
+        providerConfig: {},
+        tools: [CONSULT_TOOL],
+        toolPolicy: "owner",
+        agentRuntime: { resolveThinkingDefault: () => "high" } as unknown as CoreAgentDeps,
+        voiceConfig: { realtime: {}, agentId: "main" } as unknown as VoiceCallConfig,
+        cfg: {} as unknown as OpenClawConfig,
+        visionBudget: budget,
+        getLatestFrame: () => ({
+          source: "screenshare",
+          dataBase64: "LOOKOK",
+          mime: "image/jpeg",
+          width: 10,
+          height: 10,
+          ts: 0,
+        }),
+      },
+    });
+
+    mock.getRequest().onToolCall?.({
+      itemId: "i-look-ok",
+      callId: "look-ok",
+      name: "look_at_screen",
+      args: { question: "what is this?" },
+    });
+
+    await vi.waitFor(() => expect(consultSpy).toHaveBeenCalledTimes(1));
+    expect(refund).not.toHaveBeenCalled();
+    // The single slot really was spent.
+    expect(budget.tryConsume("call-1", Date.now())).toBe(false);
+  });
+
+  // The other half of the recording-status race: when the gate finally opens, the frames that
+  // arrived while it was shut were all refused, and a static screen sends no new frame to
+  // re-trigger delivery — so without a flush the model never sees what is already on screen.
+  it("opening the recording gate flushes the ambient frame that arrived while it was shut", () => {
+    const ctx = createMockSession("inactive");
+    const mock = createMockProvider();
+    const budget = new VisionBudget(100);
+    const tryConsume = vi.spyOn(budget, "tryConsume");
+    const call = createMsteamsRealtimeCall({
+      session: ctx.session,
+      deps: {
+        provider: mock.provider,
+        providerConfig: {},
+        toolPolicy: "safe-read-only",
+        agentRuntime: { resolveThinkingDefault: () => "high" } as unknown as CoreAgentDeps,
+        voiceConfig: { realtime: {}, agentId: "main" } as unknown as VoiceCallConfig,
+        cfg: {} as unknown as OpenClawConfig,
+        requireRecordingStatus: true,
+        ambientVision: true,
+        visionBudget: budget,
+        getLatestFrame: (s) =>
+          s === "camera"
+            ? undefined
+            : {
+                source: "screenshare" as const,
+                dataBase64: "GATED",
+                mime: "image/jpeg",
+                width: 1,
+                height: 1,
+                ts: 0,
+              },
+      },
+    });
+
+    // The frame arrives while recording is off: refused, and nothing is spent.
+    call.notifyInboundFrame();
+    expect(tryConsume).not.toHaveBeenCalled();
+
+    // The gate opens with no new frame behind it. The flush is the only thing that can deliver it.
+    call.setRecordingActive(true);
+    expect(tryConsume).toHaveBeenCalledTimes(1);
+
+    call.close();
   });
 
   it("refuses a consult tool call until Teams recording status is active (Media Access API)", () => {

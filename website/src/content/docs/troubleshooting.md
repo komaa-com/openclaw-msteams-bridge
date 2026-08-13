@@ -124,6 +124,9 @@ The agent's own wording tells you which layer to look at - each answer has a dif
 
 3. **"I've been looking quite a lot in the last minute..."**
    The `maxVisionPerMinute` budget (default 30 looks/min per call). Wait a few seconds or raise it.
+   If it says this on the FIRST look of every call, the cap is set to `0`: that is the kill switch for
+   all vision spend, not "unlimited", so nothing is ever allowed through. Remove the key for the
+   default of 30, or set a large number for a cap that never bites.
 
 4. **The agent never even tries to look.**
    `realtime.toolPolicy` is `"none"` - the look tool is deliberately withheld on locked-down calls. Any

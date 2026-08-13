@@ -240,6 +240,91 @@ describe("createMsteamsStreamingCall", () => {
     expect(consult.mock.calls[0]![0].question).toContain("5");
   });
 
+  // A keypress is in-band, media-derived caller input, so it carries the same Media Access API
+  // obligation as audio. This path used to check only closed/processing/speaking and run the turn
+  // regardless, so one repo answered the same inbound message under two compliance policies.
+  it("notifyDtmf is refused until recording is active (Media Access gate)", async () => {
+    const session = fakeSession();
+    const consult = vi.fn(async () => ({ text: "You pressed 5." }));
+    const call = createMsteamsStreamingCall({
+      session,
+      deps: baseDeps({ consult, requireRecordingStatus: true }),
+    });
+
+    call.notifyDtmf("5");
+    await new Promise((r) => setTimeout(r, 30));
+    expect(consult).not.toHaveBeenCalled();
+
+    call.setRecordingActive(true);
+    call.notifyDtmf("5");
+    await vi.waitFor(() => expect(consult).toHaveBeenCalledTimes(1));
+    expect(consult.mock.calls[0]![0].question).toContain("5");
+  });
+
+  // A worker that reports recording:"active" in session.start and never sends a separate
+  // recording.status left this path permanently deaf and silent, while the realtime path (which
+  // seeds from the same field) handled the identical worker fine.
+  it("seeds recording status from session.start so a status-in-start worker is not deaf", async () => {
+    const session = { ...fakeSession(), recordingStatus: "active" } as MsteamsSession & {
+      sent: unknown[];
+    };
+    const transcribe = vi.fn(async () => "hi");
+    const call = createMsteamsStreamingCall({
+      session,
+      // Gate ON, and setRecordingActive is deliberately NEVER called: the seed is the only thing
+      // that can open the gate here.
+      deps: baseDeps({ transcribe, requireRecordingStatus: true }),
+    });
+
+    call.pushAudio(LOUD());
+    call.pushAudio(LOUD());
+    call.pushAudio(SILENT());
+    call.pushAudio(SILENT());
+
+    await vi.waitFor(() => expect(transcribe).toHaveBeenCalledTimes(1));
+  });
+
+  // The other half of the same worker behaviour: greeting used to fire ONLY from setRecordingActive,
+  // so a call whose status arrived in session.start opened silently.
+  it("greets on a seeded-active gate, with no separate recording.status", async () => {
+    const session = { ...fakeSession(), recordingStatus: "active" } as MsteamsSession & {
+      sent: unknown[];
+    };
+    const consult = vi.fn(async () => ({ text: "Hello." }));
+    const call = createMsteamsStreamingCall({
+      session,
+      deps: baseDeps({
+        consult,
+        requireRecordingStatus: true,
+        greetingInstruction: "Greet the caller",
+      }),
+    });
+
+    call.pushAudio(SILENT());
+    await vi.waitFor(() => expect(consult).toHaveBeenCalledTimes(1));
+    expect(consult.mock.calls[0]![0].question).toBe("Greet the caller");
+  });
+
+  // The seed must not open the gate on a worker that reported "inactive" — the fix is a seed, not a
+  // bypass of the gate.
+  it("does not open the gate when session.start reports recording inactive", async () => {
+    const session = { ...fakeSession(), recordingStatus: "inactive" } as MsteamsSession & {
+      sent: unknown[];
+    };
+    const transcribe = vi.fn(async () => "hi");
+    const call = createMsteamsStreamingCall({
+      session,
+      deps: baseDeps({ transcribe, requireRecordingStatus: true }),
+    });
+
+    call.pushAudio(LOUD());
+    call.pushAudio(LOUD());
+    call.pushAudio(SILENT());
+    call.pushAudio(SILENT());
+    await new Promise((r) => setTimeout(r, 30));
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
   it("session mode: streams audio to the live STT session + answers on a final transcript", async () => {
     const session = fakeSession();
     const stt = fakeSttSession();

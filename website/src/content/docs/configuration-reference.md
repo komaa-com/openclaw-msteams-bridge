@@ -32,7 +32,8 @@ check these two first. See [Troubleshooting](/openclaw-msteams-bridge/troublesho
 | `maxConcurrentCalls` | int | `4` | Concurrent active-call cap. |
 | `maxDurationSeconds` | int | `0` (unlimited) | Hard cap on a single answered call's duration. |
 | `staleCallReaperSeconds` | int | `120` | Tear down calls that stop being serviced after this long. |
-| `maxVisionPerMinute` | int | - | Per-call vision spend cap. |
+| `maxVisionPerMinute` | int | `30` | Per-call cap on PAID vision calls over a sliding 60 seconds, shared by `look_at_screen`, the ambient push and the streaming per-turn attach. **`0` switches vision spend OFF** - it is the kill switch, **not** "unlimited". There is no unlimited value; set a large number for a cap that never bites in practice. |
+| `ambientVision` | bool | `false` | Keep pushing the newest changed camera / screen-share frame at the agent between turns, so it stays visually aware without being asked. Off by default: it spends a vision call per scene change for the whole call. `look_at_screen` works either way. Setting this with `maxVisionPerMinute: 0` delivers nothing (the bridge warns at startup). |
 | `meetingRecap` | bool | - | Post an end-of-call recap / minutes. On a StandIn **managed** connection the minutes go through the gateway as TEXT: the reply protocol carries text and cards, not files, so the Word document is not attached (the message says so). Bring-your-own-bot deployments still get the `.docx`. |
 | `bilingual` | bool | - | Enable English/Arabic handling. |
 

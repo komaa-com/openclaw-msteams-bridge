@@ -1,4 +1,4 @@
-// Local resolved config for the self-contained Teams voice plugin.
+// Local resolved config for the self-contained Teams bridge plugin.
 // Hand-written config, only the fields the CVI realtime/TTS code
 // reads. Populated from `api.pluginConfig` (validated by openclaw.plugin.json's configSchema).
 
@@ -63,7 +63,18 @@ export interface VoiceCallConfig {
       wakePhrases?: string[];
       followUpWindowMs?: number;
     };
+    /**
+     * Sliding 60-second cap on PAID vision calls per Teams call, shared by `look_at_screen`, the
+     * ambient push and the streaming per-turn attach. `0` turns vision spend OFF; there is no
+     * "unlimited" value (see {@link ../vision-budget.js VisionBudget}). Default 30.
+     */
     maxVisionPerMinute?: number;
+    /**
+     * Continuous (unrequested) vision: keep pushing the newest changed frame at the model between
+     * turns. OFF by default - it spends a vision call per scene change for the whole call, so it is
+     * opt-in. `look_at_screen` is unaffected; the agent can always ask for a look.
+     */
+    ambientVision?: boolean;
     meetingRecap?: boolean;
     bilingual?: boolean;
   };
@@ -71,4 +82,4 @@ export interface VoiceCallConfig {
 }
 
 /** Alias — the CVI files were authored against `VoiceCallConfig`. */
-export type MsteamsVoiceConfig = VoiceCallConfig;
+export type MsteamsBridgeConfig = VoiceCallConfig;

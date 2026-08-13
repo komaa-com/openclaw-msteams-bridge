@@ -35,11 +35,13 @@ features "just work" once you are connected.
   attributed per participant.
 - **`look_at_screen`** - the agent looks at the current frame (`live`) or at the recent
   scene-change keyframe history (`history`) to answer about something shown earlier.
-- **Ambient view (realtime)** - the latest changed frame per source is pushed to the model
-  periodically, so it stays visually aware between explicit looks; in streaming mode a keyframe is
-  attached per turn instead.
+- **Ambient view** - the latest changed frame per source is pushed to the model periodically, so it
+  stays visually aware between explicit looks; in streaming mode a keyframe is attached per turn
+  instead. Opt-in via `ambientVision` (off by default), because it spends a vision call per scene
+  change for the whole call. `look_at_screen` works either way.
 - **Per-call vision budget** - `maxVisionPerMinute` caps total vision spend (explicit looks +
-  ambient pushes); over budget, ambient pushes back off first.
+  ambient pushes); over budget, ambient pushes back off first. **`0` means OFF, not unlimited** - it
+  is the kill switch for all vision spend. Set a large number if you want a cap that never bites.
 
 ## Rendering (avatar)
 

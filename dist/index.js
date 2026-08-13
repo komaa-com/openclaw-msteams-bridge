@@ -1,9 +1,9 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/core";
-import { MsteamsVoiceRuntime } from "./msteams-runtime.js";
+import { MsteamsBridgeRuntime } from "./msteams-runtime.js";
 import { resolvePluginConfig } from "./plugin-config.js";
 export default definePluginEntry({
     id: "msteams-bridge",
-    name: "Teams Call by StandIn",
+    name: "Teams Bridge by StandIn",
     description: "Microsoft Teams calls and chat for your OpenClaw agent, through StandIn.",
     register(api) {
         const cfg = resolvePluginConfig(api.pluginConfig);
@@ -112,7 +112,7 @@ export default definePluginEntry({
         api.registerService({
             id: "msteams-bridge",
             start: async () => {
-                runtime = new MsteamsVoiceRuntime(api, cfg);
+                runtime = new MsteamsBridgeRuntime(api, cfg);
                 await runtime.start();
             },
             stop: async () => {
