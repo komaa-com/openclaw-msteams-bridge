@@ -2,6 +2,7 @@
   "id": "msteams-bridge",
   "name": "Microsoft Teams Bridge by StandIn",
   "description": "Put your OpenClaw agent in a real Microsoft Teams call: it sees your screen-share and camera, holds a live spoken conversation, and appears as a lip-synced avatar. Realtime speech-to-speech or streaming STT-to-TTS, meeting recaps, outbound call-backs, HMAC-secured.",
+  "icon": "https://standin.komaa.com/brand/standin-s-mark.png",
   "activation": {
     "onStartup": true
   },

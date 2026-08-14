@@ -7,3 +7,7 @@ node_modules/
 .env
 .DS_Store
 *.log
+
+# clawhub package validate output - generated, and 40 KB of it would otherwise
+# land inside the published tarball via the "files" allowlist changing.
+reports/
