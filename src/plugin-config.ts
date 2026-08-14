@@ -48,10 +48,12 @@ export function resolvePluginConfig(rawInput: unknown): ResolvedPluginConfig {
       // key choice and lane selection, which is why the published docs taught `sharedSecret` and
       // silently left the messages lane off for everyone who followed them.
       //
-      // Only accept a STRING. The manifest allows an object (secret-input reference) form; if the host
-      // ever passes an UNRESOLVED object (e.g. an env descriptor whose var is unset), String({}) would yield the
-      // literal "[object Object]" — a non-empty, guessable secret that the fail-closed check in index.ts would
-      // accept. Coerce a non-string to "" so it fails CLOSED (server refuses to start) instead.
+      // Only accept a STRING. The manifest types `secret` as string and OpenClaw validates the raw
+      // config BEFORE it resolves any secret reference, so an object is rejected upstream and never
+      // reaches this resolver. This coercion is the second line of defence: if an UNRESOLVED object
+      // ever did arrive (an env reference whose var is unset), String({}) would yield the literal
+      // "[object Object]", a non-empty and guessable secret that the fail-closed check in index.ts
+      // would accept. Coerce a non-string to "" so it fails CLOSED (server refuses to start) instead.
       sharedSecret: str(c.secret),
     },
     // The messages lane, configured with FLAT keys beside the calling ones - the two lanes of one

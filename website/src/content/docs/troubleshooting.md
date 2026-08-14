@@ -13,7 +13,7 @@ ever appears in the gateway log.
 
 **Causes & fixes:**
 
-- **Secret mismatch** (most common) - `sharedSecret` in your plugin config does not equal the value
+- **Secret mismatch** (most common) - `secret` in your plugin config does not equal the value
   StandIn holds. They must be byte-for-byte identical. Re-copy it from the StandIn sandbox page or
   dashboard.
 - **Bind address** - the default `bindAddress` is `127.0.0.1`, which only accepts local
@@ -22,7 +22,7 @@ ever appears in the gateway log.
   not taken by another process.
 - **Clock skew** - the handshake enforces a 60 s replay window on the signed timestamp. If the host
   clock is far off, every handshake is rejected. Sync time (NTP).
-- **No secret at all** - the plugin fails closed: with an empty or non-string `sharedSecret`, it
+- **No secret at all** - the plugin fails closed: with an empty or non-string `secret`, it
   rejects every handshake. Set a real secret.
 
 ## The plugin isn't loading
@@ -33,6 +33,9 @@ log.
 - Confirm the plugin is installed: `openclaw plugins list` should show `msteams-bridge`.
   Reinstall with `openclaw plugins install npm:@komaa/openclaw-msteams-bridge` if not.
 - Confirm `enabled` is not set to `false` under `plugins.entries."msteams-bridge".config`.
+- Check the log for a config validation error - the schema is `additionalProperties: false`, so one
+  unknown key invalidates the whole config and the plugin never loads. The error names the key it
+  rejected; the StandIn connection secret is the flat `secret`.
 - Restart the gateway after any install or config change: `openclaw gateway restart`.
 
 ## Config changes don't take effect
@@ -102,7 +105,7 @@ move to a subscription tier - see
 ## Outbound never connects
 
 - `outbound.enabled` must be `true` and `outbound.workerBaseUrl` set.
-- The place-call request is signed with `sharedSecret`; a mismatch fails it.
+- The place-call request is signed with `secret`; a mismatch fails it.
 - Check `outbound.tenantId` is the callee's AAD tenant.
 - **No answer:** after `outbound.answerTimeoutMs` (default 120,000 ms) the plugin treats the call
   as unanswered and cancels the ringing call

@@ -22,7 +22,7 @@ check these two first. See [Troubleshooting](/openclaw-msteams-bridge/troublesho
 | `port` | int (1-65535) | `9442` | WebSocket server port. |
 | `bindAddress` | string | `127.0.0.1` | Bind address for BOTH lanes. Loopback by default: the documented posture is a tunnel that terminates TLS publicly and proxies to loopback, so no port is exposed on your LAN. Use `0.0.0.0` only if the hosted bridge reaches the plugin directly. `messagesBindAddress` overrides the messages lane alone. |
 | `path` | string | `/msteams/calling` | WebSocket route; StandIn connects to `{path}/{callId}`. |
-| `sharedSecret` | string \| secret-ref | - | HMAC secret; **must match StandIn**. Fails closed - a non-string coerces to empty and rejects all handshakes. |
+| `secret` | string \| secret-ref | - | HMAC secret; **must match StandIn**. Fails closed - a non-string coerces to empty and rejects all handshakes. |
 | `requireRecordingStatus` | bool | `true` | Hold media processing until Teams reports recording is active. |
 | `inboundPolicy` | enum | unset (deny all) | `disabled` \| `allowlist` \| `pairing` \| `open`. **Unset or `disabled` rejects every inbound call** - you must set a policy to receive calls. `pairing` currently behaves like `allowlist`. |
 | `allowFrom` | string[] | `[]` | Allowlisted callers, matched by AAD object id (case-insensitive) or phone number (digits only). Empty + `allowlist` = deny all. |
@@ -44,8 +44,6 @@ Set on the StandIn Managed Bot path. `secret` alone is enough; the rest are over
 | Key | Meaning |
 |---|---|
 | `secret` | **The connection secret.** One value covering BOTH lanes - calling and messages. This is what the StandIn portal gives you |
-| `sharedSecret` | Per-lane override for CALLING only. BYO deployments set this instead of `secret` |
-| `messagesSecret` | Per-lane override for MESSAGES only |
 | `messagesPort` / `messagesPath` | Where the messages lane listens (default `9444`, `/msteams/messages`) |
 | `callingPort` / `path` | Where the calling lane listens (default `9442`, `/msteams/calling`). `port` is the older name for `callingPort` |
 | `gatewayReplyUrl` | Where replies are posted (default `https://teams.standin.komaa.com/api/chat/reply`); override only for a self-hosted StandIn. Flat, like the other messages-lane keys - `managedBot.gatewayReplyUrl` is still read as the compatibility shape, and the flat key wins |
@@ -102,8 +100,12 @@ See [Outbound Calls](/openclaw-msteams-bridge/outbound-calls/).
 
 ## Secret-valued keys
 
-These accept a literal string or an OpenClaw secret reference: `sharedSecret`,
-`realtime.providers.*.apiKey`, `stt.providers.*.apiKey`. Prefer secret references in production.
+Keep these out of the config file with the `${VAR}` form, which OpenClaw resolves from the
+environment at startup: `secret`, `managedBot.chatSecret`, `realtime.providers.*.apiKey`,
+`stt.providers.*.apiKey`. Prefer that over a literal in production.
+
+`secret` and `realtime.providers.*.apiKey` are typed `string`, so the object secret-reference form is
+rejected by schema validation before it can be resolved. `${VAR}` works at all four.
 
 ## Full example
 
@@ -120,8 +122,7 @@ These accept a literal string or an OpenClaw secret reference: `sharedSecret`,
           "callingPort": 9442,
           "messagesPort": 9444,
           "path": "/msteams/calling",
-          // ONE connection secret from the StandIn portal, covering calling AND messages. BYO
-          // deployments set "sharedSecret" (calling only) instead.
+          // ONE connection secret from the StandIn portal, covering calling AND messages.
           "secret": "<the connection secret from StandIn>",
           "requireRecordingStatus": true,
           "inboundPolicy": "allowlist",

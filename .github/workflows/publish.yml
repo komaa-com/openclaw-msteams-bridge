@@ -1,6 +1,7 @@
 name: Publish to npm
 
-# Publishes @komaa/openclaw-msteams-bridge when you push a version tag (e.g. `v0.1.1`) or publish a GitHub Release.
+# Publishes @komaa/openclaw-msteams-bridge to npm when you push a version tag (e.g. `v0.1.1`) or publish a
+# GitHub Release, and the same tree to ClawHub, where the listing is named @komaa/msteams-bridge.
 on:
   push:
     tags:
@@ -56,15 +57,50 @@ jobs:
       # Also publish to ClawHub (it does NOT auto-sync from npm). Token auth, because the OIDC
       # trusted-publishing path returned "Not logged in" in CI (v0.2.4) — a stored token is reliable.
       # best-effort: a ClawHub-side hiccup must never fail an already-successful npm release; the manual
-      # fallback is `clawhub package publish <owner>/<repo>@<tag> --manual-override-reason "<why>"` from a
-      # maintainer machine that ran `clawhub login`.
+      # fallback is the same staged-folder publish below, run from a maintainer machine that ran
+      # `clawhub login`.
+      # WHY A STAGED FOLDER, not the `<owner>/<repo>@<tag>` source coordinate this step used to pass:
+      # the two registries carry DIFFERENT names on purpose - npm keeps @komaa/openclaw-msteams-bridge,
+      # ClawHub lists @komaa/msteams-bridge. Given a repo ref, ClawHub reads the name out of the committed
+      # package.json, which forces the ClawHub name to equal the npm name - exactly the coupling this split
+      # exists to break. Given a folder, ClawHub reads the name out of THAT folder's package.json, so the
+      # rename lives in a throwaway copy and the committed package.json stays npm's. The --source-* flags
+      # carry the provenance (repo, commit, tag) the repo-ref form used to imply.
+      # `npm pack` builds the copy so the staged tree is byte-for-byte what npm publishes (the `files`
+      # allowlist), rather than a hand-picked list that drifts. Only "name" is rewritten: the version is
+      # the release's version on both registries, so the tag, the npm version and the ClawHub version stay
+      # one number.
+      # Still non-fatal, but no longer silent: a bare `continue-on-error` hid a permanent ClawHub rejection
+      # across several releases. Each stage now emits a ::warning:: naming what failed and exits non-zero,
+      # so the step is flagged in the run summary and a green run stops implying ClawHub succeeded.
       - name: Publish to ClawHub
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
         env:
           CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
         run: |
-          npm i -g clawhub
-          clawhub login --token "$CLAWHUB_TOKEN"
-          clawhub package publish "${GITHUB_REPOSITORY}@${GITHUB_REF_NAME}" \
-            --manual-override-reason "CI auto-publish on tag ${GITHUB_REF_NAME}"
+          # deliberately no `set -e`: every stage is checked by hand so the annotation can name the one that broke.
+          warn() {
+            echo "::warning title=ClawHub publish failed::$1. npm publish already succeeded, so the release is out on npm only. Retry from a maintainer machine: unpack \`npm pack\` output, set its package.json name to @komaa/msteams-bridge, then clawhub package publish <folder> --source-repo ${GITHUB_REPOSITORY} --source-commit ${GITHUB_SHA} --source-ref ${GITHUB_REF_NAME} --manual-override-reason \"<why>\""
+            exit 1
+          }
+
+          if [ -z "$CLAWHUB_TOKEN" ]; then
+            warn "the CLAWHUB_TOKEN secret is unset or empty, so ${GITHUB_REPOSITORY}@${GITHUB_REF_NAME} was never sent to ClawHub"
+          fi
+
+          STAGE="${RUNNER_TEMP:-/tmp}/clawhub"
+          rm -rf "$STAGE" && mkdir -p "$STAGE/pkg" || warn "could not create the staging dir $STAGE"
+          TARBALL="$(npm pack --silent --pack-destination "$STAGE")" || warn "npm pack could not stage the publishable tree"
+          tar -xzf "$STAGE/$TARBALL" -C "$STAGE/pkg" --strip-components=1 || warn "could not unpack $TARBALL into $STAGE/pkg"
+          node -e 'const fs=require("fs"),p=process.argv[1],pkg=JSON.parse(fs.readFileSync(p,"utf8"));pkg.name="@komaa/msteams-bridge";fs.writeFileSync(p,JSON.stringify(pkg,null,2)+"\n");' "$STAGE/pkg/package.json" \
+            || warn "could not rewrite the staged package.json name to @komaa/msteams-bridge"
+
+          npm i -g clawhub || warn "could not install the clawhub CLI"
+          clawhub login --token "$CLAWHUB_TOKEN" || warn "clawhub login rejected CLAWHUB_TOKEN"
+          clawhub package publish "$STAGE/pkg" \
+            --source-repo "${GITHUB_REPOSITORY}" \
+            --source-commit "${GITHUB_SHA}" \
+            --source-ref "${GITHUB_REF_NAME}" \
+            --manual-override-reason "CI auto-publish on tag ${GITHUB_REF_NAME}" \
+            || warn "clawhub package publish rejected the staged folder for ${GITHUB_REPOSITORY}@${GITHUB_REF_NAME} (ClawHub package @komaa/msteams-bridge)"

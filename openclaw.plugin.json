@@ -144,6 +144,24 @@
       "bilingual": {
         "type": "boolean"
       },
+      "responseModel": {
+        "type": "string",
+        "description": "Optional `provider/model` override for the consult and task lanes, e.g. `microsoft-foundry/gpt-5.6-sol`. Omit to inherit `agents.defaults.model.primary`. Set it when the voice lane should consult a different model than your default agent."
+      },
+      "agentId": {
+        "type": "string",
+        "description": "Which agent the consult and recap lanes run against. Defaults to `main`."
+      },
+      "responseTimeoutMs": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "How long a consult may take before the caller is told it timed out, in milliseconds. Defaults to 30000."
+      },
+      "tts": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Text-to-speech settings for the streaming path, passed through to the host TTS runtime unchanged. Ignored in `realtime` mode, where the realtime provider speaks."
+      },
       "stt": {
         "type": "object",
         "additionalProperties": false,
@@ -235,7 +253,7 @@
       },
       "managedBot": {
         "type": "object",
-        "description": "COMPATIBILITY block for the messages lane. Prefer the flat keys beside the calling ones (messagesSecret / messagesPort / messagesPath) - they are the two lanes of one connection, not a sub-product. Still read so an existing config keeps working.",
+        "description": "COMPATIBILITY block for the messages lane. Prefer the flat keys beside the calling ones (messagesPort / messagesPath) - they are the two lanes of one connection, not a sub-product, and the top-level `secret` covers both. Still read so an existing config keeps working.",
         "additionalProperties": false,
         "properties": {
           "enabled": {

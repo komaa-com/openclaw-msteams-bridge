@@ -15,7 +15,7 @@ Azure work you do.
 | Who owns the bot | StandIn | You |
 | Azure app registration | none | you create it |
 | Teams channel in OpenClaw | not needed | required |
-| What you paste here | one `secret` | `sharedSecret` + bot credentials |
+| What you paste here | one `secret` | the same `secret` + your bot's app id, password and tenant id |
 | Chat relay | included, same secret | your own Teams channel |
 
 **Managed Bot is the short path.** Install StandIn from the Teams Store, connect this agent in the
@@ -67,7 +67,7 @@ openclaw plugins install npm:@komaa/openclaw-msteams-bridge
 openclaw gateway restart
 ```
 
-It is also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/openclaw-msteams-bridge`
+It is also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/msteams-bridge`
 (OpenClaw falls back to npm automatically). The package ships prebuilt (v0.1.10+) - no build step
 either way.
 
@@ -77,7 +77,7 @@ The sandbox is the fastest path to a first call and needs no Azure/Teams bot of 
 
 1. Open [standin.komaa.com/sandbox](https://standin.komaa.com/sandbox) and follow it to generate a
    Teams meeting link. It gives you a **shared secret** for the session.
-2. Put that secret in your plugin config as `sharedSecret` (below).
+2. Put that secret in your plugin config as `secret` (below).
 3. Join the meeting yourself; the shared StandIn bot joins and connects to your plugin.
 
 :::tip
@@ -99,7 +99,7 @@ Config lives under `plugins.entries."msteams-bridge".config`. A minimal realtime
           "mode": "realtime",
           "bindAddress": "0.0.0.0",          // so the hosted bridge can reach the plugin
           "port": 9442,
-          "sharedSecret": "<the secret from StandIn>",
+          "secret": "<the secret from StandIn>",
           "inboundPolicy": "open",           // first-call testing; lock down after (see below)
           "realtime": {
             "provider": "openai",
@@ -114,7 +114,7 @@ Config lives under `plugins.entries."msteams-bridge".config`. A minimal realtime
 
 - `bindAddress: "0.0.0.0"` lets the hosted bridge connect (the default `127.0.0.1` only accepts local
   connections).
-- `sharedSecret` must match the value StandIn uses, or the handshake is rejected.
+- `secret` must match the value StandIn uses, or the handshake is rejected.
 - `inboundPolicy` must be set to receive calls at all: **when it is unset, every inbound call is
   denied**. `open` is fine for the first sandbox call.
 - Leave `mode` out to auto-select: realtime if a provider resolves, otherwise streaming.
