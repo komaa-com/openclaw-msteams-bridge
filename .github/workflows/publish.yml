@@ -81,7 +81,7 @@ jobs:
         run: |
           # deliberately no `set -e`: every stage is checked by hand so the annotation can name the one that broke.
           warn() {
-            echo "::warning title=ClawHub publish failed::$1. npm publish already succeeded, so the release is out on npm only. Retry from a maintainer machine: unpack \`npm pack\` output, set its package.json name to @komaa/msteams-bridge, then clawhub package publish <folder> --source-repo ${GITHUB_REPOSITORY} --source-commit ${GITHUB_SHA} --source-ref ${GITHUB_REF_NAME} --manual-override-reason \"<why>\""
+            echo "::warning title=ClawHub publish failed::$1. npm publish already succeeded, so the release is out on npm only. Retry from a maintainer machine: unpack \`npm pack\` output, set its package.json name to @komaa/msteams-bridge (or @komaa/openclaw-msteams-bridge if that is still pinned), then clawhub package publish <folder> --source-repo ${GITHUB_REPOSITORY} --source-commit ${GITHUB_SHA} --source-ref ${GITHUB_REF_NAME} --manual-override-reason \"<why>\""
             exit 1
           }
 
@@ -93,14 +93,35 @@ jobs:
           rm -rf "$STAGE" && mkdir -p "$STAGE/pkg" || warn "could not create the staging dir $STAGE"
           TARBALL="$(npm pack --silent --pack-destination "$STAGE")" || warn "npm pack could not stage the publishable tree"
           tar -xzf "$STAGE/$TARBALL" -C "$STAGE/pkg" --strip-components=1 || warn "could not unpack $TARBALL into $STAGE/pkg"
-          node -e 'const fs=require("fs"),p=process.argv[1],pkg=JSON.parse(fs.readFileSync(p,"utf8"));pkg.name="@komaa/msteams-bridge";fs.writeFileSync(p,JSON.stringify(pkg,null,2)+"\n");' "$STAGE/pkg/package.json" \
-            || warn "could not rewrite the staged package.json name to @komaa/msteams-bridge"
-
           npm i -g clawhub || warn "could not install the clawhub CLI"
           clawhub login --token "$CLAWHUB_TOKEN" || warn "clawhub login rejected CLAWHUB_TOKEN"
-          clawhub package publish "$STAGE/pkg" \
-            --source-repo "${GITHUB_REPOSITORY}" \
-            --source-commit "${GITHUB_SHA}" \
-            --source-ref "${GITHUB_REF_NAME}" \
-            --manual-override-reason "CI auto-publish on tag ${GITHUB_REF_NAME}" \
-            || warn "clawhub package publish rejected the staged folder for ${GITHUB_REPOSITORY}@${GITHUB_REF_NAME} (ClawHub package @komaa/msteams-bridge)"
+
+          # TWO NAMES, IN PREFERENCE ORDER.
+          # @komaa/msteams-bridge is the name we want in the catalogue, but ClawHub welded that
+          # name to the OLD plugin id (msteams-voice) when it was first published in July 2026 and
+          # refuses runtime-id changes. ClawHub support say a soft delete releases the id after 30
+          # days, so the short name becomes publishable on its own schedule with no code change:
+          # this step simply takes it as soon as the server stops rejecting it.
+          # Until then the release still reaches the catalogue under the npm name, which is free.
+          # npmSpec inside the package points at the npm name either way, so a ClawHub install
+          # resolves the same tarball whichever name it landed under.
+          publish_as() {   # $1 = ClawHub package name; returns non-zero if ClawHub refuses it
+            node -e 'const fs=require("fs"),p=process.argv[1],pkg=JSON.parse(fs.readFileSync(p,"utf8"));pkg.name=process.argv[2];fs.writeFileSync(p,JSON.stringify(pkg,null,2)+"\n");' \
+              "$STAGE/pkg/package.json" "$1" || return 1
+            clawhub package publish "$STAGE/pkg" \
+              --source-repo "${GITHUB_REPOSITORY}" \
+              --source-commit "${GITHUB_SHA}" \
+              --source-ref "${GITHUB_REF_NAME}" \
+              --manual-override-reason "CI auto-publish on tag ${GITHUB_REF_NAME}"
+          }
+
+          PREFERRED="@komaa/msteams-bridge"
+          FALLBACK="@komaa/openclaw-msteams-bridge"
+
+          if publish_as "$PREFERRED"; then
+            echo "Published to ClawHub as $PREFERRED"
+          elif publish_as "$FALLBACK"; then
+            echo "::warning title=ClawHub published under the fallback name::$PREFERRED was rejected, so ${GITHUB_REPOSITORY}@${GITHUB_REF_NAME} went to ClawHub as $FALLBACK. Expected until the msteams-voice runtime-id pin on $PREFERRED expires; re-run a tag after that and this step takes the preferred name on its own."
+          else
+            warn "ClawHub rejected BOTH $PREFERRED and $FALLBACK for ${GITHUB_REPOSITORY}@${GITHUB_REF_NAME}"
+          fi
