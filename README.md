@@ -223,7 +223,7 @@ steps 3 and 4 (mode, shared secret, provider key), applying the secure defaults 
 curl -fsSL https://standin.komaa.com/install.sh | bash
 ```
 
-Also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/openclaw-msteams-bridge`
+Also on [ClawHub](https://clawhub.ai): `openclaw plugins install clawhub:@komaa/msteams-bridge`
 (OpenClaw falls back to npm automatically if the ClawHub fetch fails). The package ships prebuilt
 (v0.1.10+): no build step either way.
 

@@ -23,7 +23,7 @@ What you configure to make this work:
 | `bindAddress` | Set to `0.0.0.0` so the hosted bridge can reach the plugin. Default `127.0.0.1` is local-only. |
 | `port` | The port the plugin listens on (default `9442`). Make it reachable by StandIn. |
 | `path` | The WebSocket route (default `/msteams/calling`). |
-| `sharedSecret` | The HMAC secret. It **must match** the value StandIn uses, or the handshake is rejected. |
+| `secret` | The HMAC secret. It **must match** the value StandIn uses, or the handshake is rejected. |
 
 Every connection is authenticated with a replay-proof HMAC handshake - see the [Wire Protocol](/openclaw-msteams-bridge/wire-protocol/).
 This is the same regardless of which tier you use; only the identity and limits differ. For the
@@ -47,7 +47,7 @@ always get a shared secret and StandIn dials in.
 - **Limits:** time-limited (about 5 minutes/day per session).
 - **Use it for:** your first call and quick experiments.
 - **Start:** [standin.komaa.com/sandbox](https://standin.komaa.com/sandbox) - it walks you through
-  generating a meeting link and gives you the shared secret to paste into `sharedSecret`.
+  generating a meeting link and gives you the connection secret to paste into `secret`.
 
 ### Free - develop with your own bot
 
@@ -66,7 +66,7 @@ always get a shared secret and StandIn dials in.
 :::note
 For account, dashboard, and bot-pairing specifics (creating the Azure Bot, entering credentials,
 retrieving the secret), follow the StandIn docs at [docs.komaa.com](https://docs.komaa.com). Those
-steps live on the StandIn side; this plugin only needs the resulting `sharedSecret`.
+steps live on the StandIn side; this plugin only needs the resulting `secret`.
 :::
 
 ## The Managed Bot connection (no Azure bot)
@@ -79,9 +79,8 @@ One secret covers both lanes of that connection:
 - **Calling** - the media WebSocket, `wss://<your-host>/msteams/calling`
 - **Messages** - the Teams chat relay, `https://<your-host>/msteams/messages`
 
-They are two lanes of a single binding, not two products. Per-lane overrides (`sharedSecret`,
-`messagesSecret`) exist for deployments that insist on separate keys, and win over `secret` when set,
-but most installs never need them.
+They are two lanes of a single binding, not two products. The one `secret` authenticates both - you
+do not set a separate secret for the messages lane.
 
 ```jsonc
 "msteams-bridge": {
@@ -107,7 +106,7 @@ channel environment variables:
 | `MSTEAMS_TENANT_ID` | Your Microsoft Entra (AAD) tenant id |
 
 Pairing in the StandIn dashboard links that bot identity to a shared secret; put the secret in
-`sharedSecret`. From then on, inbound calls to your bot are bridged to your plugin.
+`secret`. From then on, inbound calls to your bot are bridged to your plugin.
 
 ## Restricting who can reach the agent
 

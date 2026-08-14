@@ -33,7 +33,7 @@ The agent triggers an outbound call through its realtime tools. Under the hood t
 
 - Signature headers `x-standin-timestamp` / `x-standin-signature` (the legacy
   `x-openclawteamsbridge-*` names are still accepted), signed over
-  `"{timestamp}.{userObjectId}"` with your `sharedSecret`.
+  `"{timestamp}.{userObjectId}"` with your `secret`.
 - The request identifies the callee (`userObjectId`) and `tenantId`; StandIn returns a `callId`.
 - Requests are SSRF-guarded.
 
@@ -83,6 +83,6 @@ one were indistinguishable.
 
 ## Tips
 
-- Outbound needs the same `sharedSecret` as inbound - it signs the place-call request.
+- Outbound needs the same `secret` as inbound - it signs the place-call request.
 - Set `tenantId` to the callee's tenant.
 - Keep `answerTimeoutMs` realistic (people take a few rings); too short gives up before they pick up.

@@ -134,7 +134,7 @@ The plugin assumes the network between StandIn and itself is hostile and applies
 |---|---|---|
 | Handshake auth | HMAC-SHA256 over `{timestampMs}.{callId}`, constant-time compare | Unauthenticated peers connecting at all |
 | Replay guard | 60 s timestamp window + single-use `(callId, ts, sig)` tuples | Captured handshakes being replayed |
-| Fail-closed secret | Empty or malformed `sharedSecret` refuses every handshake | Accidentally running open |
+| Fail-closed secret | Empty or malformed `secret` means the calling server never starts | Accidentally running open |
 | Inbound policy | `inboundPolicy` + `allowFrom`; **unset denies all callers** | Unknown callers reaching the agent |
 | Recording gate | `requireRecordingStatus` holds media until recording is `active` | Processing an un-notified conversation |
 | Outbound SSRF guard | Place-call requests pin validated public destinations | The gateway being steered at internal targets |

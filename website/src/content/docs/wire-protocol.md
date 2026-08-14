@@ -39,7 +39,7 @@ still accepted for backward compatibility; new integrations should send `x-stand
 The signature is:
 
 ```
-HMAC-SHA256(sharedSecret, "{timestampMs}.{callId}")   # hex
+HMAC-SHA256(secret, "{timestampMs}.{callId}")   # hex
 ```
 
 Example:
@@ -58,8 +58,8 @@ check. On success the WebSocket is accepted; any failure rejects the upgrade.
 - **Replay guard:** each accepted `(callId, timestamp, signature)` tuple is **single-use**; a
   captured handshake cannot be replayed. A reconnect authenticates by re-signing with a fresh
   timestamp.
-- **Fail closed:** if `sharedSecret` is empty or unset, the server refuses to start; a non-string
-  secret value coerces to empty and rejects every handshake.
+- **Fail closed:** if `secret` is empty or unset, the calling server never starts - there is nothing
+  to connect to. A non-string value coerces to empty and takes the same path.
 
 ### Connection guards
 
