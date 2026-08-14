@@ -144,7 +144,9 @@ describe("MsteamsBridgeRuntime.placeCall (outbound)", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const arg = vi.mocked(fetchWithSsrFGuard).mock.calls[0][0] as any;
     expect(String(arg.url)).toContain("/api/calls");
-    expect(arg.init.headers["x-openclawteamsbridge-signature"]).toMatch(/^[0-9a-f]{64}$/);
+    // X-StandIn-* is the only pair sent outbound to the StandIn worker.
+    expect(arg.init.headers["x-standin-signature"]).toMatch(/^[0-9a-f]{64}$/);
+    expect(arg.init.headers["x-standin-timestamp"]).toMatch(/^\d+$/);
     expect(JSON.parse(arg.init.body)).toEqual({ userObjectId: "abc-123", tenantId: "tenant-1" });
   });
 
@@ -465,7 +467,7 @@ describe("MsteamsBridgeRuntime.finalizeUnansweredOutbound (H7a cancel-by-callId)
     const arg = vi.mocked(fetchWithSsrFGuard).mock.calls[0][0] as any;
     expect(arg.init.method).toBe("DELETE");
     expect(String(arg.url)).toContain("/api/calls/wc-42");
-    expect(arg.init.headers["x-openclawteamsbridge-signature"]).toMatch(/^[0-9a-f]{64}$/);
-    expect(arg.init.headers["x-openclawteamsbridge-timestamp"]).toMatch(/^\d+$/);
+    expect(arg.init.headers["x-standin-signature"]).toMatch(/^[0-9a-f]{64}$/);
+    expect(arg.init.headers["x-standin-timestamp"]).toMatch(/^\d+$/);
   });
 });

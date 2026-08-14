@@ -31,8 +31,7 @@ and hang up. It is optional and off unless configured.
 The agent triggers an outbound call through its realtime tools. Under the hood the plugin makes an
 **HMAC-signed** request to the StandIn outbound API:
 
-- Signature headers `x-standin-timestamp` / `x-standin-signature` (the legacy
-  `x-openclawteamsbridge-*` names are still accepted), signed over
+- Signature headers `x-standin-timestamp` / `x-standin-signature`, signed over
   `"{timestamp}.{userObjectId}"` with your `secret`.
 - The request identifies the callee (`userObjectId`) and `tenantId`; StandIn returns a `callId`.
 - Requests are SSRF-guarded.

@@ -71,8 +71,8 @@ export class MsteamsMediaStream {
         });
         req.on("error", () => res.writeHead(400).end());
         req.on("end", () => {
-            const ts = String(req.headers["x-standin-timestamp"] ?? req.headers["x-openclawteamsbridge-timestamp"] ?? "");
-            const sig = String(req.headers["x-standin-signature"] ?? req.headers["x-openclawteamsbridge-signature"] ?? "");
+            const ts = String(req.headers["x-standin-timestamp"] ?? "");
+            const sig = String(req.headers["x-standin-signature"] ?? "");
             const tsNum = Number(ts);
             if (!Number.isFinite(tsNum) || Math.abs(Date.now() - tsNum) > this.hmacWindowMs) {
                 res.writeHead(401).end();
@@ -213,8 +213,8 @@ export class MsteamsMediaStream {
             this.rejectUpgrade(socket, 400, "Bad Request (missing callId)");
             return;
         }
-        const timestamp = request.headers["x-standin-timestamp"] ?? request.headers["x-openclawteamsbridge-timestamp"];
-        const signature = request.headers["x-standin-signature"] ?? request.headers["x-openclawteamsbridge-signature"];
+        const timestamp = request.headers["x-standin-timestamp"];
+        const signature = request.headers["x-standin-signature"];
         if (typeof timestamp !== "string" || typeof signature !== "string") {
             this.config.logger?.warn(`MsteamsMediaStream: rejecting upgrade for ${callId} — missing HMAC headers`);
             this.rejectUpgrade(socket, 401, "Unauthorized");

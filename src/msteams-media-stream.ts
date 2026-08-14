@@ -264,9 +264,9 @@ export class MsteamsMediaStream {
     });
     req.on("error", () => res.writeHead(400).end());
     req.on("end", () => {
-      const ts = String(req.headers["x-standin-timestamp"] ?? req.headers["x-openclawteamsbridge-timestamp"] ?? "");
-      const sig = String(req.headers["x-standin-signature"] ?? req.headers["x-openclawteamsbridge-signature"] ?? "");
-      // The SAME recipe as the WS upgrade above, header fallbacks included: HMAC(secret,
+      const ts = String(req.headers["x-standin-timestamp"] ?? "");
+      const sig = String(req.headers["x-standin-signature"] ?? "");
+      // The SAME recipe and the SAME accepted header names as the WS upgrade above: HMAC(secret,
       // "{ts}.{callId}"), lower-cased and whitespace-stripped, constant-time compare, inside the
       // replay window.
       const tsNum = Number(ts);
@@ -449,10 +449,10 @@ export class MsteamsMediaStream {
       return;
     }
 
-    // Prefer the X-StandIn-* names; fall back to the legacy X-OpenClawTeamsBridge-*
-    // pair so pre-rename StandIn deployments keep connecting.
-    const timestamp = request.headers["x-standin-timestamp"] ?? request.headers["x-openclawteamsbridge-timestamp"];
-    const signature = request.headers["x-standin-signature"] ?? request.headers["x-openclawteamsbridge-signature"];
+    // X-StandIn-* is the ONLY accepted pair. An upgrade signed under any other header name must
+    // 401, however correct the signature itself is.
+    const timestamp = request.headers["x-standin-timestamp"];
+    const signature = request.headers["x-standin-signature"];
     if (typeof timestamp !== "string" || typeof signature !== "string") {
       this.config.logger?.warn(
         `MsteamsMediaStream: rejecting upgrade for ${callId} — missing HMAC headers`,
