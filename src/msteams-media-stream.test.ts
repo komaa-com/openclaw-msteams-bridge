@@ -62,20 +62,9 @@ async function startServer(opts: {
   return server;
 }
 
-/** Open an authenticated WS connection for a callId (legacy header names -
- * keeps the pre-rename compatibility path under test). */
+/** Open an authenticated WS connection for a callId, using the only accepted header
+ * pair: X-StandIn-Timestamp / X-StandIn-Signature. */
 function openAuthed(port: number, callId: string): WebSocket {
-  const ts = Date.now();
-  return new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
-    headers: {
-      "x-openclawteamsbridge-timestamp": String(ts),
-      "x-openclawteamsbridge-signature": signHmac(SECRET, ts, callId),
-    },
-  });
-}
-
-/** Same, with the current X-StandIn-* header names. */
-function openAuthedStandIn(port: number, callId: string): WebSocket {
   const ts = Date.now();
   return new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
     headers: {
@@ -107,7 +96,7 @@ describe("MsteamsMediaStream", () => {
     }
   });
 
-  it("accepts a connection with valid HMAC + parses session.start", async () => {
+  it("accepts a connection with valid HMAC (X-StandIn-*) + parses session.start", async () => {
     const port = randomPort();
     let receivedSession: MsteamsSession | undefined;
     server = await startServer({
@@ -123,8 +112,8 @@ describe("MsteamsMediaStream", () => {
 
     const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(ts),
-        "x-openclawteamsbridge-signature": sig,
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": sig,
       },
     });
 
@@ -153,36 +142,6 @@ describe("MsteamsMediaStream", () => {
     ws.close();
   });
 
-  it("accepts a connection with the X-StandIn-* header names", async () => {
-    const port = randomPort();
-    let receivedSession: MsteamsSession | undefined;
-    server = await startServer({
-      port,
-      onSessionStart: (s) => {
-        receivedSession = s;
-      },
-    });
-
-    const callId = "call-standin-headers";
-    const ws = openAuthedStandIn(port, callId);
-    await new Promise<void>((resolve, reject) => {
-      ws.once("open", () => resolve());
-      ws.once("error", reject);
-    });
-    ws.send(
-      JSON.stringify({
-        type: "session.start",
-        callId,
-        threadId: "thread-si",
-        caller: { aadId: "aad-1", displayName: "Alice", tenantId: "tenant-1" },
-      }),
-    );
-    await waitFor(() => receivedSession !== undefined);
-    expect(receivedSession?.callId).toBe(callId);
-
-    ws.close();
-  });
-
   it('normalizes unknown session.start direction (e.g. "join" from meeting joins) to inbound', async () => {
     // The hosted bridge sends direction:"join" when the bot joins a meeting; the protocol
     // enum only has inbound|outbound. Rejecting the message killed the whole session.
@@ -199,8 +158,8 @@ describe("MsteamsMediaStream", () => {
     const ts = Date.now();
     const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(ts),
-        "x-openclawteamsbridge-signature": signHmac(SECRET, ts, callId),
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": signHmac(SECRET, ts, callId),
       },
     });
     await new Promise<void>((resolve, reject) => {
@@ -272,8 +231,8 @@ describe("MsteamsMediaStream", () => {
     const callId = "call-replay";
     const ts = Date.now();
     const headers = {
-      "x-openclawteamsbridge-timestamp": String(ts),
-      "x-openclawteamsbridge-signature": signHmac(SECRET, ts, callId),
+      "x-standin-timestamp": String(ts),
+      "x-standin-signature": signHmac(SECRET, ts, callId),
     };
 
     // First connection with the signed tuple succeeds...
@@ -302,8 +261,8 @@ describe("MsteamsMediaStream", () => {
     const ts2 = ts + 1;
     const ws3 = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(ts2),
-        "x-openclawteamsbridge-signature": signHmac(SECRET, ts2, callId),
+        "x-standin-timestamp": String(ts2),
+        "x-standin-signature": signHmac(SECRET, ts2, callId),
       },
     });
     await new Promise<void>((resolve, reject) => {
@@ -329,8 +288,8 @@ describe("MsteamsMediaStream", () => {
 
       const callId = "call-replay-boundary";
       const headers = {
-        "x-openclawteamsbridge-timestamp": String(t0),
-        "x-openclawteamsbridge-signature": signHmac(SECRET, t0, callId),
+        "x-standin-timestamp": String(t0),
+        "x-standin-signature": signHmac(SECRET, t0, callId),
       };
 
       const ws1 = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, { headers });
@@ -365,8 +324,8 @@ describe("MsteamsMediaStream", () => {
     const callId = "call-bad-sig";
     const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(Date.now()),
-        "x-openclawteamsbridge-signature": "deadbeef",
+        "x-standin-timestamp": String(Date.now()),
+        "x-standin-signature": "deadbeef",
       },
     });
 
@@ -393,8 +352,8 @@ describe("MsteamsMediaStream", () => {
 
     const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(staleTs),
-        "x-openclawteamsbridge-signature": sig,
+        "x-standin-timestamp": String(staleTs),
+        "x-standin-signature": sig,
       },
     });
 
@@ -415,8 +374,8 @@ describe("MsteamsMediaStream", () => {
     const sig = signHmac(SECRET, ts, "");
     const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(ts),
-        "x-openclawteamsbridge-signature": sig,
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": sig,
       },
     });
 
@@ -487,7 +446,7 @@ describe("MsteamsMediaStream", () => {
 
     // The server must still accept a valid handshake afterwards.
     const callId = "call-after-malformed";
-    const ws = openAuthedStandIn(port, callId);
+    const ws = openAuthed(port, callId);
     await new Promise<void>((resolve, reject) => {
       ws.once("open", () => resolve());
       ws.once("error", reject);
@@ -527,7 +486,7 @@ describe("MsteamsMediaStream", () => {
     });
 
     const callId = "call-after-rst";
-    const ws = openAuthedStandIn(port, callId);
+    const ws = openAuthed(port, callId);
     await new Promise<void>((resolve, reject) => {
       ws.once("open", () => resolve());
       ws.once("error", reject);
@@ -551,8 +510,8 @@ describe("MsteamsMediaStream", () => {
     const sig = signHmac(SECRET, ts, callId);
     const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(ts),
-        "x-openclawteamsbridge-signature": sig,
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": sig,
       },
     });
     await new Promise<void>((resolve, reject) => {
@@ -593,8 +552,8 @@ describe("MsteamsMediaStream", () => {
     const sig = signHmac(SECRET, ts, callId);
     const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(ts),
-        "x-openclawteamsbridge-signature": sig,
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": sig,
       },
     });
     await new Promise<void>((resolve, reject) => {
@@ -626,8 +585,8 @@ describe("MsteamsMediaStream", () => {
     const sig = signHmac(SECRET, ts, callId);
     const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(ts),
-        "x-openclawteamsbridge-signature": sig,
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": sig,
       },
     });
     await new Promise<void>((resolve, reject) => {
@@ -799,8 +758,8 @@ describe("MsteamsMediaStream", () => {
     const sig = signHmac(SECRET, ts, callId);
     const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(ts),
-        "x-openclawteamsbridge-signature": sig,
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": sig,
       },
     });
     await new Promise<void>((resolve, reject) => {
@@ -1101,8 +1060,8 @@ describe("MsteamsMediaStream", () => {
     const ts = Date.now();
     const ws = new WebSocket(`ws://127.0.0.1:${port}${PATH}/${callId}`, {
       headers: {
-        "x-openclawteamsbridge-timestamp": String(ts),
-        "x-openclawteamsbridge-signature": signHmac(SECRET, ts, callId).toUpperCase(),
+        "x-standin-timestamp": String(ts),
+        "x-standin-signature": signHmac(SECRET, ts, callId).toUpperCase(),
       },
     });
     const outcome = await new Promise<"open" | "error" | "unexpected-response">((resolve) => {

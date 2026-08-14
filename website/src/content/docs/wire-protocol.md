@@ -33,8 +33,8 @@ On the upgrade request, StandIn sends:
 | `x-standin-timestamp` | the signing timestamp, in **milliseconds** (Unix epoch) |
 | `x-standin-signature` | the signature (hex) |
 
-The legacy header names `x-openclawteamsbridge-timestamp` / `x-openclawteamsbridge-signature` are
-still accepted for backward compatibility; new integrations should send `x-standin-*`.
+These are the only accepted names. A request signed under any other header name is rejected with
+401, exactly like an unsigned one.
 
 The signature is:
 

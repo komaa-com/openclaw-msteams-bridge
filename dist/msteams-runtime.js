@@ -272,8 +272,6 @@ export class MsteamsBridgeRuntime {
                     "content-type": "application/json",
                     "x-standin-timestamp": String(timestampMs),
                     "x-standin-signature": signature,
-                    "x-openclawteamsbridge-timestamp": String(timestampMs),
-                    "x-openclawteamsbridge-signature": signature,
                 },
                 body: JSON.stringify({ userObjectId, tenantId: ob.tenantId }),
             },
@@ -382,8 +380,6 @@ export class MsteamsBridgeRuntime {
                     headers: {
                         "x-standin-timestamp": String(timestampMs),
                         "x-standin-signature": signature,
-                        "x-openclawteamsbridge-timestamp": String(timestampMs),
-                        "x-openclawteamsbridge-signature": signature,
                     },
                 },
                 policy: { allowedHostnames: [new URL(url).hostname], allowPrivateNetwork: true },
