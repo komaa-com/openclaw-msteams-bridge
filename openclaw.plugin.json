@@ -296,7 +296,7 @@
       },
       "gatewayReplyUrl": {
         "type": "string",
-        "description": "Where replies are posted. Defaults to the StandIn gateway; override only for a self-hosted StandIn. Flat here beside the other messages-lane keys - the docs have always shown it at the root, while the schema accepted it only under managedBot, and additionalProperties is false, so following the documentation produced a config that failed validation."
+        "description": "Where replies are posted. Defaults to the StandIn gateway; override only for a self-hosted StandIn. Set it at the root, beside the other messages-lane keys."
       },
       "callingPort": {
         "type": "integer",
