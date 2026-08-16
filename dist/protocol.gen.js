@@ -6,7 +6,7 @@ export const VideoFrameSourceSchema = z.enum(["camera", "screenshare"]);
 export const SessionStartSchema = z.object({
     type: z.literal("session.start"),
     callId: z.string().min(1),
-    threadId: z.string().min(1),
+    threadId: z.string(),
     caller: z.object({
         aadId: z.string().nullable().optional(),
         displayName: z.string().nullable().optional(),

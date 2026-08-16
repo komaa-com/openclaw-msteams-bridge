@@ -142,6 +142,44 @@ describe("MsteamsMediaStream", () => {
     ws.close();
   });
 
+  it("accepts a session.start with an EMPTY threadId (a 1:1 call has no meeting thread)", async () => {
+    // Regression: the schema carried a min-length check on threadId, so the moment the media bridge
+    // stopped smuggling the call id into that field (a 1:1 call genuinely has no thread) every 1:1
+    // session.start was rejected as invalid, no session ever started, and the caller heard the
+    // worker's local echo. Empty is the honest wire value and MUST be accepted.
+    const port = randomPort();
+    let receivedSession: MsteamsSession | undefined;
+    server = await startServer({
+      port,
+      onSessionStart: (s) => {
+        receivedSession = s;
+      },
+    });
+
+    const callId = "call-one-to-one";
+    const ws = openAuthed(port, callId);
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+    });
+
+    ws.send(
+      JSON.stringify({
+        type: "session.start",
+        callId,
+        threadId: "",
+        caller: { aadId: "aad-1", displayName: "Alice", tenantId: "tenant-1" },
+      }),
+    );
+
+    await waitFor(() => receivedSession !== undefined);
+    expect(receivedSession?.callId).toBe(callId);
+    expect(receivedSession?.threadId).toBe("");
+    expect(server.sessionCount).toBe(1);
+
+    ws.close();
+  });
+
   it('normalizes unknown session.start direction (e.g. "join" from meeting joins) to inbound', async () => {
     // The hosted bridge sends direction:"join" when the bot joins a meeting; the protocol
     // enum only has inbound|outbound. Rejecting the message killed the whole session.
