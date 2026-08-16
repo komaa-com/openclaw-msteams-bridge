@@ -49,9 +49,12 @@ export const SessionStartSchema = z.object({
    */
   callId: z.string().min(1),
   /**
-   * Teams chat thread id for the call.
+   * Teams chat thread id for the call. EMPTY on a 1:1 call, which has no meeting thread: the worker
+   * never substitutes the call id here (a call id in this field made the plugin POST minutes to a
+   * conversation that does not exist). Receivers MUST accept the empty string - a min-length check
+   * on this field rejected every 1:1 session.start and dropped the call to echo.
    */
-  threadId: z.string().min(1),
+  threadId: z.string(),
   /**
    * Caller identity (best-effort; see CallerInfo).
    */
